@@ -1,0 +1,351 @@
+openapi: 3.1.0
+info:
+  title: 生产管理 P0 API
+  version: 1.0.0
+  description: 对应生产管理模块 PRD V1.2；数量字段统一使用 decimal(18,6) 字符串。
+servers:
+  - url: http://127.0.0.1:5185/api/v1/production
+security:
+  - TenantContext: []
+tags:
+  - { name: Readiness }
+  - { name: Demand }
+  - { name: WorkOrder }
+  - { name: Quality }
+  - { name: Completion }
+  - { name: Close }
+  - { name: Planning }
+  - { name: Dashboard }
+paths:
+  /readiness:
+    get:
+      tags: [Readiness]
+      summary: 生产服务与租户能力就绪检查
+      responses: { '200': { description: 就绪结果 } }
+  /demands:
+    get:
+      tags: [Demand]
+      summary: 分页查询需求
+      parameters: [ { $ref: '#/components/parameters/Page' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/Status' } ]
+      responses: { '200': { description: 需求分页 } }
+    post:
+      tags: [Demand]
+      summary: 创建生产需求
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDemand' }
+      responses:
+        '201': { description: 已创建, content: { application/json: { schema: { $ref: '#/components/schemas/Demand' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /demands/{id}/validate:
+    post:
+      tags: [Demand]
+      summary: 校验产品、工厂、BOM 和工艺，输出阻断原因
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { productActive: { type: boolean }, factoryActive: { type: boolean }, bomEffective: { type: boolean }, routingEffective: { type: boolean } } } } } }
+      responses: { '200': { description: 校验后需求 }, default: { $ref: '#/components/responses/Error' } }
+  /demands/{id}/approve:
+    post:
+      tags: [Demand]
+      summary: 审批需求；制单人与审批人分离
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
+      responses: { '200': { description: 已审批 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders:
+    get:
+      tags: [WorkOrder]
+      summary: 分页查询工单
+      responses: { '200': { description: 工单分页 } }
+    post:
+      tags: [WorkOrder]
+      summary: 创建 DRAFT/PLANNED 工单并保存需求 pegging
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateWorkOrder' } } } }
+      responses: { '201': { description: 已创建, content: { application/json: { schema: { $ref: '#/components/schemas/WorkOrder' } } } }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}:
+    get:
+      tags: [WorkOrder]
+      summary: 获取工单详情和 ETag
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: 工单详情 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/release-impact:
+    post:
+      tags: [WorkOrder]
+      summary: 下达影响预览，不改变状态
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: 阻断项与修复动作 } }
+  /work-orders/{id}/release:
+    post:
+      tags: [WorkOrder]
+      summary: 校验 BOM/工艺快照、APS、齐套后下达
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
+      responses: { '200': { description: 已下达 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/start:
+    post:
+      tags: [WorkOrder]
+      summary: 开工
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '200': { description: 已开工 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/pause:
+    post:
+      tags: [WorkOrder]
+      summary: 暂停，原因必填
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '200': { description: 已暂停 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/resume:
+    post:
+      tags: [WorkOrder]
+      summary: 恢复生产
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '200': { description: 已恢复 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/reports:
+    post:
+      tags: [WorkOrder]
+      summary: 原子提交报工并校验数量守恒
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WorkReportInput' } } } }
+      responses: { '201': { description: 已过账报工 }, default: { $ref: '#/components/responses/Error' } }
+  /work-reports/{id}/corrections:
+    post:
+      tags: [WorkOrder]
+      summary: 保留原记录并生成更正记录
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '201': { description: 已更正 }, default: { $ref: '#/components/responses/Error' } }
+  /inspections:
+    get:
+      tags: [Quality]
+      summary: 查询 FQC
+      responses: { '200': { description: 检验列表 } }
+    post:
+      tags: [Quality]
+      summary: 创建 FQC 或返工复检
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '201': { description: 已创建 }, default: { $ref: '#/components/responses/Error' } }
+  /inspections/{id}/result:
+    post:
+      tags: [Quality]
+      summary: 提交 FQC 结果；失败进入 DISPOSITION_PENDING
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '200': { description: 检验结果 }, default: { $ref: '#/components/responses/Error' } }
+  /inspections/{id}/rework:
+    post:
+      tags: [Quality]
+      summary: 创建返工事实
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '201': { description: 返工单 }, default: { $ref: '#/components/responses/Error' } }
+  /inspections/{id}/scrap:
+    post:
+      tags: [Quality]
+      summary: 质量主管审批报废；与检验人分离
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '200': { description: 已报废 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/completion-allocation-preview:
+    post:
+      tags: [Completion]
+      summary: 按强 pegging 和确定性优先级预览销售分配
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: 分配预览 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/completions:
+    post:
+      tags: [Completion]
+      summary: 提交成品入库，返回 POSTING 异步任务
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CompletionInput' } } } }
+      responses:
+        '202': { description: 已受理, content: { application/json: { schema: { $ref: '#/components/schemas/CompletionAccepted' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /completions/{id}:
+    get:
+      tags: [Completion]
+      summary: 查询完工、库存结果和销售分配
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: 完工详情 }, default: { $ref: '#/components/responses/Error' } }
+  /completions/{id}/retry:
+    post:
+      tags: [Completion]
+      summary: 修复库存拒绝后复用原业务幂等关系重试
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '202': { description: 已重新提交 }, default: { $ref: '#/components/responses/Error' } }
+  /internal/completions/{id}/inventory-result:
+    post:
+      tags: [Completion]
+      summary: 库存确认、明确拒绝或结果未知回调
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties:
+                result: { type: string, enum: [POSTED, REJECTED, UNKNOWN] }
+                externalTransactionId: { type: string }
+                failureCode: { type: string }
+                failureMessage: { type: string }
+      responses: { '200': { description: 已处理 }, '202': { description: 结果未知，继续查询原任务 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/close-check:
+    post:
+      tags: [Close]
+      summary: 检查 FQC、投退料、完工任务和入库事实
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: 结案检查 } }
+  /work-orders/{id}/close-submit:
+    post:
+      tags: [Close]
+      summary: 提交结案复核
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
+      responses: { '201': { description: 待复核 }, default: { $ref: '#/components/responses/Error' } }
+  /work-order-closes/{id}/approve:
+    post:
+      tags: [Close]
+      summary: 不同账号复核并关闭工单
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '200': { description: 工单已关闭 }, default: { $ref: '#/components/responses/Error' } }
+  /mrp-runs:
+    post:
+      tags: [Planning]
+      summary: 创建 MRP 异步任务
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '202': { description: 任务已创建 }, default: { $ref: '#/components/responses/Error' } }
+  /schedule-runs:
+    post:
+      tags: [Planning]
+      summary: 创建 APS 异步任务
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses: { '202': { description: 任务已创建 }, default: { $ref: '#/components/responses/Error' } }
+  /tasks/{id}:
+    get:
+      tags: [Planning]
+      summary: 查询长任务状态
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses: { '200': { description: 任务状态 }, default: { $ref: '#/components/responses/Error' } }
+  /dashboard/kpis:
+    get:
+      tags: [Dashboard]
+      summary: 按租户和数据范围返回真实 KPI
+      responses: { '200': { description: KPI、风险和更新时间 } }
+components:
+  securitySchemes:
+    TenantContext:
+      type: apiKey
+      in: header
+      name: X-Tenant-Id
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 } }
+    IfMatch: { name: If-Match, in: header, required: false, schema: { type: string }, description: 查询响应中的 ETag/row version }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+    Status: { name: status, in: query, schema: { type: string } }
+  responses:
+    Error:
+      description: 统一业务错误
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Decimal: { type: string, pattern: '^(0|[1-9]\\d*)(\\.\\d{1,6})?$' }
+    CreateDemand:
+      type: object
+      required: [sourceType, productId, qty, uom, dueDate, factoryResourceId]
+      properties:
+        sourceType: { type: string }
+        sourceId: { type: string }
+        sourceRevision: { type: integer, minimum: 1 }
+        productId: { type: string }
+        productName: { type: string }
+        qty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+        dueDate: { type: string, format: date }
+        priority: { type: integer, minimum: 1, maximum: 100 }
+        factoryResourceId: { type: string }
+    Demand:
+      allOf:
+        - { $ref: '#/components/schemas/CreateDemand' }
+        - type: object
+          required: [id, code, status, version]
+          properties:
+            id: { type: string, format: uuid }
+            code: { type: string }
+            status: { type: string, enum: [RECEIVED, VALIDATING, PENDING_REVIEW, APPROVED, PLANNED, FULFILLED, BLOCKED, REJECTED, CANCELLED, MERGED] }
+            version: { type: integer }
+            blockReasons: { type: array, items: { type: string } }
+    CreateWorkOrder:
+      type: object
+      required: [productId, factoryResourceId, workCenterResourceId, plannedQty, uom, dueDate]
+      properties:
+        productId: { type: string }
+        factoryResourceId: { type: string }
+        workCenterResourceId: { type: string }
+        plannedQty: { $ref: '#/components/schemas/Decimal' }
+        inputQty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+        dueDate: { type: string, format: date }
+        bomSnapshotId: { type: string, format: uuid }
+        routingSnapshotId: { type: string, format: uuid }
+        scheduleCandidateId: { type: string, format: uuid }
+        kittingStatus: { type: string, enum: [READY, PARTIAL_READY, SHORTAGE, EXPIRED] }
+        demandLinks: { type: array, items: { type: object, required: [demandId, allocatedQty], properties: { demandId: { type: string, format: uuid }, allocatedQty: { $ref: '#/components/schemas/Decimal' }, priorityRank: { type: integer }, customerLocked: { type: boolean }, promisedDate: { type: string, format: date } } } }
+    WorkOrder:
+      allOf:
+        - { $ref: '#/components/schemas/CreateWorkOrder' }
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            code: { type: string }
+            status: { type: string, enum: [DRAFT, PLANNED, SCHEDULED, KITTING, RELEASED, IN_PROGRESS, PAUSED, COMPLETED, CLOSING, CLOSED, CANCELLING, CANCELLED] }
+            reportedGoodQty: { $ref: '#/components/schemas/Decimal' }
+            reportedDefectQty: { $ref: '#/components/schemas/Decimal' }
+            reportedScrapQty: { $ref: '#/components/schemas/Decimal' }
+            postedQty: { $ref: '#/components/schemas/Decimal' }
+            version: { type: integer }
+    WorkReportInput:
+      type: object
+      required: [goodQty, uom]
+      properties:
+        goodQty: { $ref: '#/components/schemas/Decimal' }
+        defectQty: { $ref: '#/components/schemas/Decimal' }
+        scrapQty: { $ref: '#/components/schemas/Decimal' }
+        inputQty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+        remark: { type: string, maxLength: 500 }
+    CompletionInput:
+      type: object
+      required: [inspectionId, qty, uom, warehouseResourceId, inventoryWarehouseId, traceMode, productionDate, allocationRevision]
+      properties:
+        inspectionId: { type: string, format: uuid }
+        qty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+        warehouseResourceId: { type: string, description: 平台管理仓库资源 ID }
+        inventoryWarehouseId: { type: string, description: 库存系统仓库 ID }
+        binId: { type: string }
+        traceMode: { type: string, enum: [NONE, BATCH, SERIAL] }
+        batchNo: { type: string }
+        serialNumbers: { type: array, items: { type: string }, uniqueItems: true }
+        productionDate: { type: string, format: date }
+        allocationRevision: { type: integer, minimum: 1 }
+        remark: { type: string, maxLength: 500 }
+    CompletionAccepted:
+      type: object
+      required: [completionId, taskId, status, idempotencyKey, traceId]
+      properties:
+        completionId: { type: string, format: uuid }
+        taskId: { type: string, format: uuid }
+        status: { const: POSTING }
+        idempotencyKey: { type: string }
+        traceId: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, suggestion, retryable, fieldErrors, traceId]
+          properties:
+            code: { type: string, example: PRODUCTION_422_QUANTITY_VIOLATION }
+            message: { type: string }
+            suggestion: { type: string }
+            retryable: { type: boolean }
+            fieldErrors: { type: array, items: { type: object, properties: { field: { type: string }, message: { type: string } } } }
+            details: {}
+            traceId: { type: string }
