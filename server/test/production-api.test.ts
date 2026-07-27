@@ -11,7 +11,7 @@ describe("Production P0 API", () => {
 
   beforeEach(() => {
     repository = new InMemoryProductionRepository();
-    app = buildProductionApp(repository);
+    app = buildProductionApp(repository, { allowInsecureHeaders: true });
   });
   afterEach(async () => { await app.close(); });
 

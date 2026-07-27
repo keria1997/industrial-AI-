@@ -11,7 +11,8 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit",
     "test:api": "vitest run server/test",
-    "test": "npm run test:api"
+    "test:frontend": "vitest run src/app/tests",
+    "test": "npm run test:api && npm run test:frontend"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

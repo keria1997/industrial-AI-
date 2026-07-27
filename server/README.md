@@ -1,6 +1,6 @@
-# 生产管理 P0 服务端
+# 生产管理 P0 与首期履约服务端
 
-本实现对应《生产管理模块 PRD V1.2 P0 开发就绪版》，API 前缀为 `/api/v1/production`。
+本实现源自《生产管理模块 PRD V1.2 P0 开发就绪版》，现作为《工业AI平台 V2.1.0 需求规格说明书》的生产域后端基线，API 前缀为 `/api/v1/production`。
 
 ## 已实现范围
 
@@ -8,11 +8,15 @@
 - 主链路 API：需求受理与审批、工单创建/下达/开停工、报工与更正、FQC 判定及返工/报废、完工入库、库存回调/拒绝重试、结案双人复核、任务和驾驶舱 KPI。
 - MRP 与 APS 提供异步任务入口；求解器、平台权限中心、库存、销售和消息队列通过任务/Outbox 契约接入。
 - 正式运行使用 PostgreSQL；未设置 `DATABASE_URL` 时启用进程内仓储，仅用于本地联调和自动化测试。
+- 首期履约 API：销售订单/审批/发货申请、库存组成事实、原子预留、缺口生产需求、完工事件、重校验、部分/全量出库和履约追踪。
+- `ReferenceWmsAdapter` 与 `ReferenceEventPublisher` 只用于开发和自动化测试，不是客户 WMS 或消息队列集成证明。
 
 ## 启动
 
 ```bash
 cp server/.env.example server/.env
+export AUTH_SECRET='replace-with-a-long-random-secret'
+export FULFILLMENT_DATA_KEY="$(openssl rand -base64 32)"
 export DATABASE_URL='postgresql://...'
 npm run db:migrate:production
 npm run start:api
@@ -26,14 +30,16 @@ npm run test:api
 ```
 
 服务默认监听 `http://127.0.0.1:5185/api/v1/production`。
+若本地端口冲突，可同时设置 `PRODUCTION_API_PORT` 和前端的 `VITE_API_PROXY_TARGET` 指向新端口。
 
-## 网关请求上下文
+## 会话与请求上下文
 
-所有请求必须携带 `X-Tenant-Id`、`X-Actor-Id`。写操作还必须携带 `X-Idempotency-Key`。建议网关同时传递：
+业务请求必须携带 `Authorization: Bearer <token>`，并通过 `X-Tenant-Id` 选择令牌已授权的租户。账号、权限和权限版本只从签名声明读取，浏览器提交的 `X-Actor-Id`、`X-Permissions` 等头不会被信任。写操作还必须携带 `X-Idempotency-Key`。
 
-- `X-Employee-Id`
-- `X-Permissions`：逗号分隔的权限码；`*` 仅用于开发测试
-- `X-Permission-Version`
+本地开发可调用 `POST /api/v1/session/login`，内置账号为 `admin`、`reviewer`、`operator`、`inspector`，默认密码为 `123456`。可用 `DEMO_AUTH_ACCOUNT`、`DEMO_AUTH_PASSWORD` 和 `DEMO_AUTH_ENABLED` 调整；生产环境始终禁用该演示登录，且未配置 `AUTH_SECRET` 时拒绝启动。当前实现没有刷新令牌、服务端撤销和企业 SSO/OIDC，不能视为正式统一身份中心。
+
+其他上下文头：
+
 - `X-Trace-Id`
 - `If-Match`：修改命令使用查询返回的 ETag/版本号
 - `X-Production-Capability`：`disabled` 阻断未开通租户，`unavailable` 表示平台校验不可用
@@ -60,5 +66,4 @@ npm run test:api
 - `production.close.submit/approve`
 - `production.mrp.run`、`production.aps.run`
 
-接口契约见 `server/docs/openapi.yaml`，数据库迁移见 `server/db/migrations/001_production_p0.sql`。
-
+接口契约见 `server/docs/openapi.yaml`，数据库迁移见 `server/db/migrations/001_production_p0.sql` 至 `006_production_fulfillment_link.sql`。

@@ -36,6 +36,13 @@ export interface Demand {
 export interface DemandSource {
   id: string; tenantId: string; demandId: string; sourceSystem: string; sourceType: string; sourceId: string;
   sourceLineId?: string; sourceRevision: number; qty: string; payloadSnapshot: Record<string, unknown>;
+  shipmentRequestId?: string; shipmentRequestLineId?: string; salesOrderLineId?: string;
+}
+
+export interface DemandTraceability {
+  sourceSystem: string; sourceType: string; salesOrderId?: string; salesOrderLineId?: string;
+  shipmentRequestId?: string; shipmentRequestLineId?: string; inventoryWarehouseId?: string;
+  inventoryFactVersion?: number; correlationId: string; traceId?: string;
 }
 
 export interface WorkOrderDemand {
@@ -115,7 +122,8 @@ export interface StatusHistory {
 export interface OutboxEvent {
   id: string; tenantId: string; eventId: string; eventType: string; eventVersion: number; aggregateType: string;
   aggregateId: string; aggregateVersion: number; correlationId?: string; traceId: string; payload: Record<string, unknown>;
-  status: "PENDING"; retryCount: number; createdAt: string;
+  status: "PENDING" | "PUBLISHED" | "RETRY_WAIT" | "DEAD_LETTER"; retryCount: number; createdAt: string;
+  publishedAt?: string; nextRetryAt?: string; errorMessage?: string;
 }
 
 export interface AuditSnapshot {
@@ -127,4 +135,23 @@ export interface AuditSnapshot {
 export interface IdempotencyRecord {
   tenantId: string; commandType: string; idempotencyKey: string; requestHash: string; responseStatus: number;
   responseBody: unknown; aggregateType?: string; aggregateId?: string; traceId: string; createdAt: string;
+}
+
+export interface InventoryAvailability {
+  tenantId: string; productId: string; inventoryWarehouseId: string; availableQty: string; uom: string;
+  factVersion: number; sourceEventId: string; sourceSystem: string; asOf: string; updatedAt: string;
+}
+
+export interface InboxEvent {
+  id: string; tenantId: string; consumerName: string; eventId: string; eventType: string; eventVersion: number;
+  aggregateId?: string; aggregateVersion?: number; status: "PROCESSED"; payload: Record<string, unknown>;
+  retryCount: number; receivedAt: string; processedAt: string;
+}
+
+export interface SalesOrderIntake {
+  id: string; tenantId: string; salesOrderId: string; sourceLineId: string; sourceRevision: number;
+  productId: string; productName?: string; orderedQty: string; availableQty: string; shortageQty: string; uom: string;
+  dueDate: string; factoryResourceId: string; inventoryWarehouseId: string; inventoryFactVersion: number;
+  decision: "FULFILL_FROM_STOCK" | "CREATE_PRODUCTION_DEMAND"; demandId?: string; status: "COMPLETED";
+  correlationId: string; traceId: string; createdBy: string; version: number; createdAt: string;
 }

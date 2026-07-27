@@ -1,32 +1,89 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
+import { SidebarItem } from './app/SidebarItem';
+import { tenantOptions, useAppRuntime } from './app/AppRuntimeProvider';
+import { getModulesForRole, isRoleName } from './app/moduleRegistry';
 import PlatformManagementV2 from './platform/PlatformManagement';
-import ProductionManagementV2 from './production/ProductionManagementV2';
+import {
+  ProductionApiError,
+  createSalesOrderIntake,
+  listProductionDemands,
+} from './api/production/salesProduction';
+import { productionOperationsApi } from './api/production/operations';
+import { procurementApi } from './api/procurement';
+import { clearAuthenticatedSession, loginWithPassword, saveAuthenticatedSession } from './api/session';
+import * as financeApi from './api/finance';
+import { AIHubManagement as AIHubManagementV2, AIAssistantDrawer } from './features/ai-hub';
+import {
+  approveFulfillmentOrder,
+  cancelFulfillmentOrder,
+  checkAndReserveShipmentTask,
+  confirmFulfillmentOrder,
+  createFulfillmentOrder,
+  createFulfillmentShipmentRequest,
+  createProductionRequestForTask,
+  getFulfillmentOutbound,
+  listFulfillmentOrders,
+  listFulfillmentShipmentTasks,
+  postFulfillmentOutbound,
+} from './api/fulfillment';
+import {
+  createPendingSalesOrderFromQuote,
+  createSalesTabUrl,
+  getQuoteStatus as getSalesQuoteStatus,
+  getSalesOrderActions,
+  isSalesOrderEditable,
+  isQuoteConvertible,
+  resolveSalesTab,
+  salesOrderStatuses,
+  validateShipmentDeliveryDate,
+} from './features/sales/model/salesRules';
+import { SalesShipmentOrderEditModal } from './features/sales/components/SalesShipmentOrderEditModal';
+import {
+  completeSalesOutbound,
+  createInventoryTabUrl,
+  createInventoryWarehouseUrl,
+  createSalesOutboundNavigationQuery,
+  loadSalesOutboundTasks,
+  cancelSalesOutbound,
+  recordWarehouseProductionResult,
+  requestSalesOutbound,
+  resolveInventoryTab,
+  resolveInventoryWarehouseId,
+  resolveSalesOutboundOrderId,
+} from './features/inventory/model/salesOutboundBridge';
+import { InventoryMasterDataPanel } from './features/inventory/pages/InventoryMasterDataPanel';
+import { InventoryStockQueryPanel } from './features/inventory/pages/InventoryStockQueryPanel';
+import { loadInventoryMasterData } from './features/inventory/model/inventoryMasterData';
+import {
+  completeProductionMaterialIssueTask,
+  createInventoryProductionPlan,
+  createInventoryPurchaseRequest,
+  createProductionMaterialIssueTask,
+  loadInventoryPurchaseRequests,
+  loadProductionMaterialIssueTasks,
+  markProductionMaterialIssueTaskShortage,
+  suggestInventoryReplenishmentQty,
+  updateInventoryPurchaseRequestStatus,
+} from './features/inventory/model/inventoryActionBridge';
+import {
+  recordSalesOrderProductionRequested,
+  recordSalesOrderShipped,
+  salesWorkspaceStorageKey,
+} from './features/sales/model/salesShipmentBridge';
 import {
   PLATFORM_STATE_CHANGED_EVENT,
-  getAuthorizedFactoryCodes,
-  hasPlatformPermission,
-  isPlatformActorEnabled,
-  isPlatformCapabilityEnabled,
   loadPlatformProductionLines,
   loadPlatformState,
-  platformGrantedPermissionCodes,
   platformStorageKey,
 } from './platform/platformSeed';
 import { 
-  LayoutDashboard, Database, BrainCircuit, Server, Cpu, Settings, Bell, Search, User, Plus, UploadCloud, Play, FileText, Activity, AlertTriangle, CheckCircle2, Clock, ChevronRight, MoreVertical, Zap, TrendingUp, Factory, Package, ShoppingCart, Wallet, Users, Network, MessageSquare, Target, TrendingDown, ChevronDown, Filter, Download, Box, Edit2, Trash2, X, BookOpen, Eye, Copy, Check, File, Calendar, CalendarDays, Briefcase, Phone, Send, MessageCircle, Calculator, CalendarRange, ClipboardList, Hammer, ShieldCheck, Route, MonitorCog, Bot, PlayCircle, RefreshCcw, AlertCircle, Layers, CalendarCheck, GitCommit, Truck, ArrowRight, FileOutput, List, GitMerge, ScanLine, ClipboardCheck, RefreshCw, ListChecks, Microscope, Microchip, Inbox, Import, Workflow, MapPin, Timer, Coffee, FileSpreadsheet, ArrowUpCircle, ListTodo, Info, ArrowDownToLine, ArrowUpFromLine, Warehouse, ArrowRightLeft, BadgeDollarSign, FilePlus, Store, Landmark, Receipt, CreditCard, Coins, PieChart, HardHat, Fingerprint, Award, UserCheck, ShieldAlert, Link, Share2, Sparkles, Mic, Power, Wrench, Building, Key, Gauge
+  LayoutDashboard, Database, BrainCircuit, Server, Cpu, Settings, Bell, Search, User, Plus, UploadCloud, Play, FileText, Activity, AlertTriangle, CheckCircle2, Clock, ChevronRight, MoreVertical, Zap, TrendingUp, Factory, Package, ShoppingCart, Wallet, Users, Network, MessageSquare, Target, TrendingDown, ChevronDown, Filter, Download, Box, Edit2, Trash2, X, BookOpen, Eye, Copy, Check, File, Calendar, CalendarDays, Briefcase, Phone, Send, MessageCircle, Calculator, CalendarRange, ClipboardList, Hammer, ShieldCheck, Route, MonitorCog, Bot, PlayCircle, RefreshCcw, RotateCcw, AlertCircle, Layers, CalendarCheck, GitCommit, Truck, ArrowRight, FileOutput, List, GitMerge, ScanLine, ClipboardCheck, RefreshCw, ListChecks, Microscope, Microchip, Inbox, Import, Workflow, MapPin, Timer, Coffee, FileSpreadsheet, ArrowUpCircle, ListTodo, Info, ArrowDownToLine, ArrowUpFromLine, Warehouse, ArrowRightLeft, BadgeDollarSign, FilePlus, Store, Landmark, Receipt, CreditCard, Coins, PieChart, HardHat, Fingerprint, Award, UserCheck, ShieldAlert, Link, Share2, Sparkles, Mic, Power, Wrench, Building, Key, Gauge
 } from 'lucide-react';
 
 // ==========================================
 // 公共组件区 (工作台及全局 - 统一浅色科技风)
 // ==========================================
-
-const SidebarItem = ({ icon: Icon, label, active, onClick }: any) => (
-  <div onClick={onClick} className={`flex items-center px-5 py-3.5 my-1 rounded-xl cursor-pointer transition-all duration-200 relative overflow-hidden group ${active ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800 font-medium'}`}>
-    {active && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-r-full"></div>}
-    <Icon size={18} className={`mr-3 shrink-0 transition-colors ${active ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-500'}`} />
-    <span className="text-[14px]">{label}</span>
-  </div>
-);
 
 const getCardTheme = (theme) => {
     const themes = {
@@ -106,7 +163,7 @@ const LoginPage = ({ onLogin }) => {
     setError('验证码已发送，演示验证码为 2606');
   };
 
-  const submitLogin = () => {
+  const submitLogin = async () => {
     setError('');
     if (mode === 'account') {
       if (!account.trim() || !password.trim()) {
@@ -119,25 +176,19 @@ const LoginPage = ({ onLogin }) => {
         return;
       }
     } else {
-      if (!/^1[3-9]\d{9}$/.test(phone)) {
-        setError('请输入有效手机号');
-        return;
-      }
-      if (!sentSmsCode || smsCode !== sentSmsCode) {
-        setError('请输入正确的短信验证码');
-        return;
-      }
+      setError('短信登录尚未接入可信认证服务，请使用账号登录');
+      return;
     }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      await onLogin({ account: account.trim(), password });
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : '登录失败，请稍后重试');
+      setPassword('');
+      refreshCaptcha();
+    } finally {
       setLoading(false);
-      onLogin({
-        name: mode === 'account' ? '操作员 01' : `手机用户 ${phone.slice(-4)}`,
-        role: '超级管理员',
-        account: mode === 'account' ? account : phone,
-        loginType: mode
-      });
-    }, 450);
+    }
   };
 
   return (
@@ -167,7 +218,7 @@ const LoginPage = ({ onLogin }) => {
         <section className="w-full max-w-[430px] ml-auto bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
           <div className="grid grid-cols-2 bg-white/6 rounded-lg p-1 mb-6">
             <button onClick={() => { setMode('account'); setError(''); }} className={`h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 transition-colors ${mode === 'account' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}><User size={14} />账号登录</button>
-            <button onClick={() => { setMode('phone'); setError(''); }} className={`h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 transition-colors ${mode === 'phone' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}><Phone size={14} />手机号登录</button>
+            <button disabled title="短信认证服务尚未接入" onClick={() => { setMode('phone'); setError('短信登录尚未接入可信认证服务，请使用账号登录'); }} className="h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 text-slate-500 cursor-not-allowed"><Phone size={14} />手机号登录</button>
           </div>
 
           {mode === 'account' ? (
@@ -746,6 +797,7 @@ const linkedFlowSteps = [
   { key: 'opportunity', module: '销售管理', label: '创建商机/订单', icon: Target },
   { key: 'approval', module: '销售管理', label: '订单审批', icon: ClipboardCheck },
   { key: 'stockCheck', module: '库存管理', label: '库存自动校验', icon: ScanLine },
+  { key: 'productionDemand', module: '生产管理', label: '生产需求接收', icon: Inbox },
   { key: 'mpsMrp', module: '生产管理', label: 'MPS/MRP 展算', icon: Calculator },
   { key: 'purchaseRequest', module: '采购管理', label: '采购申请/审批', icon: FilePlus },
   { key: 'purchaseOrder', module: '采购管理', label: '采购订单/送货', icon: ShoppingCart },
@@ -767,7 +819,8 @@ const linkedFlowIssueFixes = [
 const businessFlowActionMap = {
   opportunity: { label: '提交订单审批', action: 'approveOrder', tone: 'blue' },
   approval: { label: '审批通过并校验库存', action: 'checkStock', tone: 'blue' },
-  stockCheck: { label: '库存不足，生成 MPS/MRP', action: 'runMrp', tone: 'amber' },
+  stockCheck: { label: '查看已创建生产需求', action: 'openProductionDemand', tone: 'amber' },
+  productionDemand: { label: '创建 MPS/MRP 任务', action: 'runMrp', tone: 'blue' },
   mpsMrp: { label: '缺料转采购申请', action: 'createPr', tone: 'purple' },
   purchaseRequest: { label: '采购审批通过', action: 'approvePr', tone: 'blue' },
   purchaseOrder: { label: '供应商送货并入库', action: 'receiveMaterial', tone: 'emerald' },
@@ -787,7 +840,9 @@ const BusinessFlowDock = ({ moduleName, flow, onAction }: any) => {
   const currentIndex = getLinkedFlowStepIndex(flow.currentStep);
   const currentStep = linkedFlowSteps[currentIndex] || linkedFlowSteps[0];
   if (currentStep.module !== moduleName) return null;
-  const currentAction = businessFlowActionMap[currentStep.key] || businessFlowActionMap.opportunity;
+  const currentAction = currentStep.key === 'stockCheck' && flow.stockEnough
+    ? { label: '库存充足，执行销售出库', action: 'shipSales', tone: 'emerald' }
+    : businessFlowActionMap[currentStep.key] || businessFlowActionMap.opportunity;
   const tone = monitorToneMap[currentAction.tone] || monitorToneMap.blue;
   const StepIcon = currentStep.icon;
   const handoffCopy = {
@@ -803,8 +858,13 @@ const BusinessFlowDock = ({ moduleName, flow, onAction }: any) => {
     },
     stockCheck: {
       title: '库存待办：校验可用库存',
-      desc: '库存按销售订单锁定可用量。当前成品不足，需要把缺口推送给生产生成 MPS/MRP。',
-      output: '输出：生产计划需求'
+      desc: '服务端已按库存事实版本计算可用量；当前成品不足，缺口已经在同一事务中生成生产需求。',
+      output: '输出：持久化生产需求'
+    },
+    productionDemand: {
+      title: '生产待办：销售缺货需求已接收',
+      desc: '生产需求已保存来源销售订单、库存事实版本、缺口、交期和关联 ID，可进入后续计划评审。',
+      output: '输出：待评审生产需求'
     },
     mpsMrp: {
       title: '生产待办：MPS/MRP 展算',
@@ -852,7 +912,11 @@ const BusinessFlowDock = ({ moduleName, flow, onAction }: any) => {
       output: '输出：订单闭环完成'
     }
   };
-  const copy = handoffCopy[currentStep.key] || handoffCopy.opportunity;
+  const copy = currentStep.key === 'stockCheck' && flow.stockEnough ? {
+    title: '库存结果：可用量满足订单',
+    desc: '服务端库存事实校验已通过，本订单跳过 MPS/MRP 与采购，直接进入销售出库。',
+    output: '输出：销售出库任务'
+  } : handoffCopy[currentStep.key] || handoffCopy.opportunity;
 
   return (
     <div className="bg-white border border-blue-100 rounded-2xl shadow-sm p-4 mb-6">
@@ -935,18 +999,18 @@ const sales_dashboardMetrics = [
 ];
 
 const sales_quotesData = [
-  { id: 'QT-20260615-001', client: '商洛墨翠宝石开发有限公司', date: '2026-06-15', validUntil: '2026-08-15', status: '正常', product: 'FG001 工业控制器顶配版 / 标准型 × 1 件', productName: 'FG001 工业控制器顶配版', spec: '标准型', unit: '件', qty: 1, unitPrice: 500, discountRate: 100, discountAmount: 0, amount: '¥500.00' },
-  { id: 'QT-20260508-001', client: 'test01客户', date: '2026-05-08', validUntil: '2026-06-07', status: '已过期', product: 'FG001 工业控制器顶配版 / 标准型 × 17 件', productName: 'FG001 工业控制器顶配版', spec: '标准型', unit: '件', qty: 17, unitPrice: 500, discountRate: 95, discountAmount: 0, amount: '¥8,075.00' }
+  { id: 'QT-20260615-001', client: '商洛墨翠宝石开发有限公司', date: '2026-06-15', validUntil: '2026-08-15', status: '正常', product: 'FG001 工业控制器顶配版 / 标准型 × 1 件', productName: 'FG001 工业控制器顶配版', spec: '标准型', unit: '件', qty: 1, unitPrice: 500, discountRate: 100, discountAmount: 0, amount: '¥500.00', creator: '销售主管' },
+  { id: 'QT-20260508-001', client: 'test01客户', date: '2026-05-08', validUntil: '2026-06-07', status: '已过期', product: 'FG001 工业控制器顶配版 / 标准型 × 17 件', productName: 'FG001 工业控制器顶配版', spec: '标准型', unit: '件', qty: 17, unitPrice: 500, discountRate: 95, discountAmount: 0, amount: '¥8,075.00', creator: '操作员 01' }
 ];
 
 const sales_ordersData = [
-  { id: 'SO-20260508-001', client: 'test01客户', salesman: '操作员 01', product: 'FG001 工业控制器顶配版 × 17 件', productName: 'FG001 工业控制器顶配版', qty: 17, availableStock: 8, shortage: 9, amount: '¥8,075.00', receivable: '待生成', date: '2026-07-18', deliveryDate: '2026-07-25', outStatus: '未发货', status: '待确认', createdAt: '2026-07-18 09:10:00' },
-  { id: 'SO-20260615-001', client: '商洛墨翠宝石开发有限公司', salesman: '销售主管', product: 'FG001 工业控制器顶配版 × 1 件', productName: 'FG001 工业控制器顶配版', qty: 1, availableStock: 120, shortage: 0, amount: '¥500.00', receivable: '待生成', date: '2026-07-20', deliveryDate: '2026-07-27', outStatus: '未发货', status: '已确认', createdAt: '2026-07-20 14:26:00' }
+  { id: 'SO-20260508-001', client: 'test01客户', salesman: '操作员 01', product: 'FG001 工业控制器顶配版 × 17 件', productName: 'FG001 工业控制器顶配版', qty: 17, availableStock: 2300, shortage: 0, amount: '¥8,075.00', receivable: '待生成', date: '2026-07-18', deliveryDate: '2026-07-25', outStatus: '未发货', status: '待发货', createdAt: '2026-07-18 09:10:00' },
+  { id: 'SO-20260615-001', client: '商洛墨翠宝石开发有限公司', salesman: '销售主管', product: 'FG001 工业控制器顶配版 × 1 件', productName: 'FG001 工业控制器顶配版', qty: 1, availableStock: 2300, shortage: 0, amount: '¥500.00', receivable: '待生成', date: '2026-07-20', deliveryDate: '2026-07-27', outStatus: '未发货', status: '已确认', createdAt: '2026-07-20 14:26:00' }
 ];
 
 const sales_customersListData = [
   { id: 'KH-20260612-005', name: '商洛墨翠宝石开发有限公司', code: '91611000MA70X6T62Q', contact: '张新国', phone: '18184987811', contacts: [{ name: '张新国', phone: '18184987811', role: '决策人' }], address: '陕西省商洛市商州区产业园', owner: '销售主管', level: 'D', status: '合作中', industry: '-', lastInteractionAt: '2026-05-18' },
-  { id: 'KH-20260612-001', name: '上海万申产业股份有限公司', code: '91310115MA1K4X5Q8E', contact: '李经理', phone: '-', contacts: [{ name: '李经理', phone: '', role: '关键使用人' }], address: '上海市浦东新区金桥开发区', owner: '', level: 'D', status: '跟进中', industry: '-', lastInteractionAt: '2026-05-02' },
+  { id: 'KH-20260612-001', name: '上海万申产业股份有限公司', code: '91310115MA1K4X5Q8E', contact: '李经理', phone: '-', contacts: [{ name: '李经理', phone: '', role: '关键使用人' }], address: '上海市浦东新区金桥开发区', owner: '', level: 'D', status: '合作中', industry: '-', lastInteractionAt: '2026-05-02' },
   { id: 'KH-20260508-001', name: 'test01客户', code: '-', contact: '客户1', phone: '17768122341', contacts: [{ name: '客户1', phone: '17768122341', role: '决策人' }], address: '浙江省杭州市滨江区', owner: '操作员 01', level: 'B', status: '合作中', industry: '茶产业', lastInteractionAt: '2026-07-22' }
 ];
 
@@ -959,10 +1023,15 @@ const sales_baseDataLevels = [
 ];
 
 const sales_industriesData = [
-  { id: 'IND-001', name: '制造业', parentId: '', sort: 1, status: '启用' },
-  { id: 'IND-002', name: '智能制造', parentId: 'IND-001', sort: 1, status: '启用' },
-  { id: 'IND-003', name: '宝石加工', parentId: 'IND-001', sort: 2, status: '启用' },
-  { id: 'IND-004', name: '茶产业', parentId: '', sort: 2, status: '启用' }
+  ...['电子信息', '机械装备', '食品加工', '石油化工', '茶产业', '纺织服装', '医药健康', '新能源', '其他'].map((name, index) => ({
+    id: `IND-${String(index + 1).padStart(3, '0')}`,
+    name,
+    parentId: '',
+    sort: index + 1,
+    status: '启用',
+    remark: index === 0 ? '电子设备及零部件制造相关行业' : name,
+    createdAt: '2026-03-16 08:48:19',
+  }))
 ];
 
 const sales_defaultOutreachSettings = {
@@ -983,11 +1052,8 @@ const sales_daysUntil = (date) => {
 };
 
 const sales_getQuoteStatus = (quote) => {
-  if (quote.status === '已转订单' || quote.status === '已失效') return quote.status;
-  const remainingDays = sales_daysUntil(quote.validUntil);
-  if (remainingDays < 0) return '已过期';
-  if (remainingDays <= 7) return '临期';
-  return '正常';
+  const convertedOrderId = quote.convertedOrderId || (quote.status === '已转订单' ? 'legacy-conversion' : '');
+  return getSalesQuoteStatus(quote.validUntil, new Date(), convertedOrderId);
 };
 
 const sales_makeDocumentId = (prefix) => {
@@ -998,7 +1064,7 @@ const sales_makeDocumentId = (prefix) => {
 
 const sales_loadWorkspace = (tenantId) => {
   try {
-    const saved = localStorage.getItem(`industrial-ai-sales:v4:${tenantId || 'default'}`);
+    const saved = localStorage.getItem(salesWorkspaceStorageKey(tenantId));
     if (saved) return JSON.parse(saved);
   } catch {
     // Use seed data when local persistence is unavailable.
@@ -1054,7 +1120,7 @@ const sales_recordFields = {
     { key: 'date', label: '订单日期', type: 'date' },
     { key: 'deliveryDate', label: '交期' },
     { key: 'outStatus', label: '出库状态' },
-    { key: 'status', label: '状态' }
+    { key: 'status', label: '订单状态' }
   ],
   customer: [
     { key: 'id', label: '客户编码' },
@@ -1067,19 +1133,17 @@ const sales_recordFields = {
     { key: 'industry', label: '行业' }
   ],
   level: [
-    { key: 'level', label: '等级' },
-    { key: 'name', label: '名称' },
-    { key: 'min', label: '年采购额下限' },
-    { key: 'desc', label: '描述' },
-    { key: 'sort', label: '排序' },
-    { key: 'status', label: '状态' }
+    { key: 'level', label: '等级代码 *', placeholder: '如：A, B, C, VIP' },
+    { key: 'name', label: '等级名称 *', placeholder: '如：A级（重要客户）' },
+    { key: 'min', label: '年采购额下限（万元）' },
+    { key: 'desc', label: '描述', placeholder: '如：年采购额 ≥ 50 万' },
+    { key: 'sort', label: '排序权重', type: 'number' },
+    { key: 'status', label: '状态' },
+    { key: 'color', label: '颜色标识', type: 'color' }
   ],
   industry: [
-    { key: 'id', label: '行业编码' },
-    { key: 'name', label: '行业名称' },
-    { key: 'parentId', label: '父级行业编码（顶级留空）' },
-    { key: 'sort', label: '排序' },
-    { key: 'status', label: '状态' }
+    { key: 'name', label: '行业名称 *', placeholder: '请输入行业名称' },
+    { key: 'remark', label: '备注', placeholder: '请输入备注（可选）' }
   ]
 };
 
@@ -1087,7 +1151,7 @@ const Sales_Toast = ({ toast, onClose }) => {
   return <CenterToast toast={toast} onClose={onClose} />;
 };
 
-const Sales_ConfirmModal = ({ title, desc, confirmText = '确认', tone = 'blue', onCancel, onConfirm }) => (
+const Sales_ConfirmModal = ({ title, desc, confirmText = '确认', tone = 'blue', pending = false, onCancel, onConfirm }) => (
   <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
     <div className="bg-white rounded-2xl w-[420px] shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
       <div className="p-6">
@@ -1098,22 +1162,165 @@ const Sales_ConfirmModal = ({ title, desc, confirmText = '确认', tone = 'blue'
         <p className="text-[13px] text-slate-500 leading-relaxed">{desc}</p>
       </div>
       <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-        <button onClick={onCancel} className="px-4 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors">取消</button>
-        <button onClick={onConfirm} className={`px-4 py-2 text-[13px] font-bold text-white rounded-lg shadow-sm transition-colors ${tone === 'danger' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{confirmText}</button>
+        <button disabled={pending} onClick={onCancel} className="px-4 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50">取消</button>
+        <button disabled={pending} onClick={onConfirm} className={`px-4 py-2 text-[13px] font-bold text-white rounded-lg shadow-sm transition-colors disabled:opacity-60 flex items-center gap-2 ${tone === 'danger' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{pending && <RefreshCw size={14} className="animate-spin" />}{pending ? '正在校验库存' : confirmText}</button>
       </div>
     </div>
   </div>
 );
 
+const Sales_OrderEditModal = ({ mode = 'edit', record, customers = [], products = [], onClose, onSubmit }) => {
+  const [client, setClient] = useState(record?.client || '');
+  const [salesman, setSalesman] = useState(record?.salesman || '');
+  const [orderDate, setOrderDate] = useState(record?.date || new Date().toISOString().slice(0, 10));
+  const [deliveryDate, setDeliveryDate] = useState(record?.deliveryDate && record.deliveryDate !== '待确认' ? record.deliveryDate : '');
+  const [lines, setLines] = useState(() => {
+    if (record?.lines && Array.isArray(record.lines) && record.lines.length > 0) return record.lines.map(l => ({ ...l, key: Date.now() + Math.random() }));
+    if (record?.productName) return [{ key: Date.now(), productName: record.productName, productId: record.productId || '', spec: record.spec || '', unit: record.unit || '件', quantity: Number(record.qty || 1), unitPrice: Number(record.unitPrice || 0) }];
+    return [];
+  });
+  const [discountRate, setDiscountRate] = useState(record?.discountRate ?? 100);
+  const [discountAmount, setDiscountAmount] = useState(record?.discountAmount || 0);
+  const [remark, setRemark] = useState(record?.remark || '');
+  const [error, setError] = useState('');
+  const outStatus = record?.outStatus || '未发货';
+  const orderStatus = record?.status || '待发货';
+  const subtotal = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
+  const total = Math.max(0, subtotal * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
+  const updateLine = (key, field, value) => setLines(prev => prev.map(line => line.key === key ? { ...line, [field]: value } : line));
+  const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), productName: '', productId: '', spec: '', unit: '件', quantity: 1, unitPrice: 0 }]);
+  const removeLine = (key) => setLines(prev => prev.filter(line => line.key !== key));
+
+  const handleSave = () => {
+    if (!client.trim() || !orderDate || !deliveryDate) { setError('请完整填写客户、订单日期和交期'); return; }
+    if (lines.length === 0) { setError('请至少添加一个产品'); return; }
+    const invalid = lines.find(l => !l.productName.trim() || Number(l.quantity) <= 0 || Number(l.unitPrice) <= 0);
+    if (invalid) { setError('每个产品需填写名称、数量和单价'); return; }
+    const productSummary = lines.length === 1
+      ? `${lines[0].productName.trim()} / ${lines[0].spec.trim()} × ${lines[0].quantity} ${lines[0].unit}`
+      : `${lines[0].productName.trim()} 等 ${lines.length} 项产品`;
+    onSubmit({
+      ...record,
+      client: client.trim(),
+      salesman: salesman || '系统管理员',
+      date: orderDate,
+      deliveryDate,
+      productId: lines[0].productId,
+      product: productSummary,
+      productName: lines[0].productName.trim(),
+      spec: lines[0].spec,
+      unit: lines[0].unit,
+      qty: lines.reduce((sum, l) => sum + Number(l.quantity || 0), 0),
+      unitPrice: lines[0].unitPrice,
+      lines: lines.map(({ key, ...rest }) => rest),
+      discountRate: Number(discountRate),
+      discountAmount: Number(discountAmount),
+      remark,
+      amount: sales_formatMoney(total),
+    });
+  };
+
+  const statusBadge = (label, value, color) => (
+    <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2.5 flex items-center justify-between">
+      <span className="text-[13px] text-slate-500 font-medium">{label}</span>
+      <span className={`text-[12px] font-bold px-2.5 py-0.5 rounded-full ${color}`}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-6">
+      <div className="bg-white rounded-xl w-[1200px] max-w-full max-h-[95vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
+          <div className="flex items-center text-[16px] font-bold text-slate-800">
+            <ShoppingCart size={18} className="text-blue-600 mr-2" /> 编辑销售订单
+            <span className="ml-3 text-[13px] font-normal text-slate-400">{record?.id}</span>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={20} /></button>
+        </div>
+        <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+          {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-lg px-4 py-2.5 text-[13px] font-medium">{error}</div>}
+          <section>
+            <div className="flex items-center mb-4"><div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div><span className="text-[15px] font-bold text-slate-800">基本信息</span></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">客户 <span className="text-rose-500">*</span></label><input value={client} onChange={(e) => setClient(e.target.value)} list="order-customers" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /><datalist id="order-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">销售人员</label><input value={salesman} onChange={(e) => setSalesman(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">订单日期 <span className="text-rose-500">*</span></label><input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">交期 <span className="text-rose-500">*</span></label><input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
+            </div>
+          </section>
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center"><div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div><span className="text-[15px] font-bold text-slate-800">产品明细</span></div>
+              <button onClick={addLine} className="flex items-center text-[13px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg transition-colors"><Plus size={14} className="mr-1.5" /> 添加产品</button>
+            </div>
+            <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                          <table className="w-full min-w-[1100px] text-left text-[13px]">
+                <thead className="bg-[#fafafa] text-slate-600 border-b border-slate-200 font-bold"><tr><th className="px-5 py-3.5 font-medium">产品</th><th className="px-5 py-3.5 font-medium text-center">规格型号</th><th className="px-5 py-3.5 font-medium text-center">单位</th><th className="px-5 py-3.5 font-medium text-center">数量</th><th className="px-5 py-3.5 font-medium text-center">单价</th><th className="px-5 py-3.5 font-medium text-center">金额</th><th className="px-5 py-3.5 font-medium text-center">操作</th></tr></thead>
+                <tbody>
+                  {lines.length > 0 ? lines.map((line) => (
+                    <tr key={line.key} className="border-b border-slate-50">
+                      <td className="px-3 py-3"><input type="text" list="order-products" value={line.productName} onChange={(e) => { const value = e.target.value; updateLine(line.key, 'productName', value); const matched = products.find((p) => p.name === value || p.id === value); if (matched) { updateLine(line.key, 'productId', matched.id); updateLine(line.key, 'spec', matched.id); updateLine(line.key, 'unit', matched.unit === 'PCS' ? '件' : matched.unit === '台' ? '台' : '套'); updateLine(line.key, 'unitPrice', Number(matched.unitPrice || 0)); } }} placeholder="搜索选择产品" className="w-48 border border-slate-200 rounded-md px-2 py-1.5 text-[12px] font-bold outline-none focus:border-blue-500" /><datalist id="order-products">{products.map((p) => <option key={p.id} value={p.name} />)}</datalist></td>
+                      <td className="px-3 py-3 text-center"><input value={line.spec} onChange={(e) => updateLine(line.key, 'spec', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
+                      <td className="px-3 py-3 text-center"><select value={line.unit} onChange={(e) => updateLine(line.key, 'unit', e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
+                      <td className="px-3 py-3 text-center"><input type="number" min="1" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', Number(e.target.value))} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
+                      <td className="px-3 py-3 text-center"><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', Number(e.target.value))} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
+                      <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0))}</td>
+                      <td className="px-5 py-4 text-center"><button onClick={() => removeLine(line.key)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50"><Trash2 size={14}/></button></td>
+                    </tr>
+                  )) : (<tr><td colSpan="7" className="px-5 py-12 text-center text-slate-400">请点击'添加产品'按钮添加产品明细</td></tr>)}
+                </tbody>
+                {lines.length > 0 && (<tfoot className="border-t border-slate-200 bg-slate-50"><tr><td colSpan="5" className="px-5 py-3 text-right text-[12px] font-bold text-slate-500">小计</td><td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(subtotal)}</td><td></td></tr></tfoot>)}
+              </table>
+            </div>
+          </section>
+          <section>
+            <div className="flex items-center mb-4"><div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div><span className="text-[15px] font-bold text-slate-800">优惠设置</span></div>
+            <div className="grid grid-cols-3 gap-4">
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">折扣率 (%)</label><input type="number" min="0" max="100" value={discountRate} onChange={(e) => setDiscountRate(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">减免金额</label><input type="number" min="0" step="0.01" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">订单总额</label><div className="w-full border border-slate-100 rounded-lg px-3 py-2.5 text-[13px] font-mono font-bold text-blue-700 bg-blue-50/50">{sales_formatMoney(total)}</div></div>
+            </div>
+          </section>
+          <section>
+            <div className="flex items-center mb-4"><div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div><span className="text-[15px] font-bold text-slate-800">订单状态</span></div>
+            <div className="grid grid-cols-2 gap-4">
+              {statusBadge('出库状态', outStatus, outStatus === '未发货' ? 'bg-slate-100 text-slate-600' : outStatus === '部分发货' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}
+              {statusBadge('订单状态', orderStatus, orderStatus === '待发货' ? 'bg-blue-100 text-blue-700' : orderStatus === '已发货' ? 'bg-emerald-100 text-emerald-700' : orderStatus === '部分发货' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600')}
+            </div>
+          </section>
+        </div>
+        <div className="p-5 border-t border-slate-100 flex justify-end gap-3 shrink-0 bg-slate-50/50 rounded-b-xl">
+          <button onClick={onClose} className="px-5 py-2 text-[13px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors">取消</button>
+          <button onClick={handleSave} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm">保存</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Sales_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
   const [draft, setDraft] = useState(record || {});
   const fields = sales_recordFields[type] || [];
   const readOnly = mode === 'view';
-  const title = `${mode === 'view' ? '查看' : mode === 'create' ? '新增' : '编辑'}${sales_entityLabels[type] || '记录'}`;
+  const title = type === 'level'
+    ? `${mode === 'create' ? '新增' : '编辑'}等级配置`
+    : `${mode === 'create' ? '新增' : '编辑'}${sales_entityLabels[type] || '记录'}`;
 
   const handleChange = (key, value) => {
     setDraft(prev => ({ ...prev, [key]: value }));
   };
+
+  const orderRequiredFieldsComplete = type !== 'order' || [
+    draft.client,
+    draft.salesman,
+    draft.product,
+    draft.amount,
+    draft.date,
+    draft.deliveryDate,
+  ].every(value => String(value || '').trim());
+  const recordRequiredFieldsComplete = type === 'order'
+    ? orderRequiredFieldsComplete
+    : String(draft.name || '').trim() && (type !== 'level' || String(draft.level || '').trim());
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-6">
@@ -1126,23 +1333,30 @@ const Sales_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={20} /></button>
         </div>
         <div className="p-6 overflow-y-auto grid grid-cols-2 gap-5 custom-scrollbar">
-          {fields.map(field => (
-            <div key={field.key} className={field.key === 'desc' ? 'col-span-2' : ''}>
-              <label className="block text-[13px] text-slate-600 mb-2 font-medium">{field.label}</label>
-              <input
-                type={field.type || 'text'}
-                value={draft[field.key] || ''}
-                readOnly={readOnly || (mode === 'edit' && ['id', 'level'].includes(field.key))}
-                onChange={(e) => handleChange(field.key, e.target.value)}
-                className={`w-full border rounded-lg px-3 py-2.5 text-[13px] outline-none transition-colors ${readOnly ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-800'}`}
-              />
-            </div>
-          ))}
+          {fields.map(field => {
+            const fieldReadOnly = readOnly || (mode === 'edit' && (
+              ['id', 'level'].includes(field.key)
+              || (type === 'order' && ['receivable', 'outStatus', 'status'].includes(field.key))
+            ));
+            return (
+              <div key={field.key} className={field.key === 'desc' ? 'col-span-2' : ''}>
+                <label className="block text-[13px] text-slate-600 mb-2 font-medium">{field.label}</label>
+                <input
+                  type={field.type || 'text'}
+                  placeholder={field.placeholder || ''}
+                  value={draft[field.key] || ''}
+                  readOnly={fieldReadOnly}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  className={`w-full border rounded-lg px-3 py-2.5 text-[13px] outline-none transition-colors ${fieldReadOnly ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-800'}`}
+                />
+              </div>
+            );
+          })}
         </div>
         <div className="p-5 border-t border-slate-100 flex justify-end gap-3 shrink-0 bg-slate-50/50 rounded-b-2xl">
           <button onClick={onClose} className="px-5 py-2 text-[13px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors">{readOnly ? '关闭' : '取消'}</button>
           {!readOnly && (
-            <button onClick={() => onSubmit(draft)} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm">
+            <button disabled={!recordRequiredFieldsComplete} onClick={() => onSubmit(draft)} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
               保存
             </button>
           )}
@@ -1167,7 +1381,7 @@ const Sales_QuickOrderModal = ({ onClose, onCreate }) => {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [remark, setRemark] = useState('客户要求按约定交期交付，缺货部分转生产计划。');
   const [error, setError] = useState('');
-  const availableStock = 120;
+  const availableStock = resolveOrderAvailQty({ productName, productId: '' });
   const subtotal = Math.max(0, Number(quantity) * Number(unitPrice));
   const total = Math.max(0, subtotal * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
   const shortage = Math.max(0, Number(quantity) - availableStock);
@@ -1175,6 +1389,11 @@ const Sales_QuickOrderModal = ({ onClose, onCreate }) => {
   const handleCreate = () => {
       if (!client.trim() || !hasProduct || !productName.trim() || Number(quantity) <= 0 || Number(unitPrice) <= 0) {
           setError('请完整填写客户、产品、数量和单价后再创建订单');
+          return;
+      }
+      const deliveryDateError = validateShipmentDeliveryDate(orderDate, deliveryDate);
+      if (deliveryDateError) {
+          setError(deliveryDateError);
           return;
       }
       onCreate({
@@ -1197,15 +1416,15 @@ const Sales_QuickOrderModal = ({ onClose, onCreate }) => {
           date: orderDate,
           deliveryDate,
           outStatus: '未发货',
-          status: '待确认',
+          status: '待发货',
           createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
           updatedAt: new Date().toLocaleString('zh-CN', { hour12: false })
       });
   };
 
   return (
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-      <div className="bg-white rounded-xl w-[860px] max-w-full max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
+      <div className="bg-white rounded-xl w-[1100px] max-w-full max-h-[95vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
                   <div className="flex items-center text-[16px] font-bold text-slate-800">
                       <ShoppingCart size={18} className="text-blue-600 mr-2" /> 快速创建订单
@@ -1356,7 +1575,7 @@ const Sales_QuickOrderModal = ({ onClose, onCreate }) => {
 
 const Sales_QuoteEditModal = ({ onClose, onConfirm }) => {
   return (
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
           <div className="bg-white rounded-xl w-[600px] max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
                   <div className="flex items-center text-[16px] font-bold text-slate-800">
@@ -1398,7 +1617,7 @@ const Sales_ReminderModal = ({ onClose, onConfirm }) => {
   const [isCopied, setIsCopied] = useState(false);
 
   const scripts = {
-      wechat: "王总您好，打扰了。系统提示您这边的「test01产品」订单 (单号：SO-20260508-001) 还在待确认状态，且之前的报价刚好到期。最近产线排期比较满，如果近期有投产计划，您可以先确认订单，我这边帮您走个特批，把产线档期和物料价格先锁死，避免影响您的交期和成本。您看是否需要我发一份最新的合同给您？",
+      wechat: "王总您好，打扰了。系统提示您这边的「test01产品」订单 (单号：SO-20260508-001) 还在待发货状态，且之前的报价刚好到期。最近产线排期比较满，如果近期有投产计划，您可以先确认订单，我这边帮您走个特批，把产线档期和物料价格先锁死，避免影响您的交期和成本。您看是否需要我发一份最新的合同给您？",
       phone: "【沟通切入点】\n1. 寒暄后，直接点明意图：系统显示报价已过期，但考虑到长期合作，主动帮忙申请价格保护。\n2. 强调稀缺性：近期元器件价格波动，产线排期紧张，尽早确认可以锁定价格和档期。\n3. 提供台阶：询问是否有需要补充的方案细节或内部审批流程卡点，表达协助意愿。"
   };
   const [currentText, setCurrentText] = useState(scripts.wechat);
@@ -1421,7 +1640,7 @@ const Sales_ReminderModal = ({ onClose, onConfirm }) => {
   };
 
   return (
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
           <div className="bg-white rounded-2xl w-[600px] max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
                   <div className="flex items-center text-[16px] font-bold text-slate-800">
@@ -1603,7 +1822,7 @@ const Sales_TrendChart = () => {
             <div>
               <h4 className="font-bold text-slate-800 text-[14px] mb-2">智能中枢深度关联分析：</h4>
               <p className="text-[13px] text-slate-600 leading-relaxed">
-                追踪当前【销售订单】全盘数据，AI 发现多笔高额订单长期停滞在「待确认」状态。发现：<span className="font-bold text-slate-800">业务推进缓慢的核心原因为开单后缺乏对客户的自动化催办与提醒机制。</span>
+                追踪当前【销售订单】全盘数据，AI 发现多笔高额订单长期停滞在「待发货」状态。发现：<span className="font-bold text-slate-800">业务推进缓慢的核心原因为开单后缺乏对客户的自动化催办与提醒机制。</span>
               </p>
             </div>
           </div>
@@ -1691,14 +1910,14 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
   const stalledOrders = orders.filter((order) => {
     const created = order.createdAt || order.date;
     const ageDays = created ? Math.floor((Date.now() - new Date(created).getTime()) / 86400000) : 0;
-    return order.status === '待确认' && ageDays > Number(outreachSettings.thresholdDays || 3);
+    return order.status === '待发货' && ageDays > Number(outreachSettings.thresholdDays || 3);
   });
-  const deliveryRiskOrders = orders.filter((order) => ['待确认', '已确认', '生产补货中'].includes(order.status) && sales_daysUntil(order.deliveryDate) <= 3);
+  const deliveryRiskOrders = orders.filter((order) => ['待发货', '已确认', '生产中', '生产补货中'].includes(order.status) && sales_daysUntil(order.deliveryDate) <= 3);
   const orderAmount = orders.reduce((sum, order) => sum + sales_parseMoney(order.amount), 0);
   const dashboardMetrics = [
     { id: 1, title: '生效报价数', value: normalizedQuotes.filter((quote) => ['正常', '临期'].includes(quote.status)).length, suffix: '份', subtitle: '有效窗口内可继续转化', tagColor: 'emerald' },
     { id: 2, title: '报价 ➔ 订单', value: orders.length, suffix: '单', subtitle: '当前销售订单总量', tagColor: 'blue' },
-    { id: 3, title: '异常停滞订单', value: stalledOrders.length, suffix: '单', subtitle: `待确认超过 ${outreachSettings.thresholdDays || 3} 天`, tagColor: stalledOrders.length ? 'rose' : 'emerald' },
+    { id: 3, title: '异常停滞订单', value: stalledOrders.length, suffix: '单', subtitle: `待发货超过 ${outreachSettings.thresholdDays || 3} 天`, tagColor: stalledOrders.length ? 'rose' : 'emerald' },
     { id: 4, title: '订单销售额', value: (orderAmount / 10000).toFixed(1), suffix: '万元', subtitle: `${deliveryRiskOrders.length} 单交付高危`, tagColor: deliveryRiskOrders.length ? 'amber' : 'emerald' },
   ];
 
@@ -1812,53 +2031,87 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
   );
 };
 
-const Sales_QuoteCreateModal = ({ onClose, onCreate }) => {
-  const [hasProduct, setHasProduct] = useState(true);
-  const [client, setClient] = useState('商洛墨翠宝石开发有限公司');
-  const [quoteDate, setQuoteDate] = useState(new Date().toISOString().slice(0, 10));
-  const [validUntil, setValidUntil] = useState(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
-  const [productName, setProductName] = useState('FG001 工业控制器顶配版');
-  const [spec, setSpec] = useState('标准型');
-  const [unit, setUnit] = useState('件');
-  const [quantity, setQuantity] = useState(10);
-  const [unitPrice, setUnitPrice] = useState(500);
-  const [discountRate, setDiscountRate] = useState(100);
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [remark, setRemark] = useState('');
+const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], products = [], onClose, onCreate }) => {
+  const editing = mode === 'edit';
+  const [client, setClient] = useState(record?.client || '');
+  const [quoteDate, setQuoteDate] = useState(record?.date || new Date().toISOString().slice(0, 10));
+  const [validUntil, setValidUntil] = useState(record?.validUntil || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+  const [lines, setLines] = useState(() => {
+    const enrichLine = (line) => {
+      const matched = products.find((p) => p.id === line.productId || p.name === line.productName);
+      return {
+        ...line,
+        warehouseId: line.warehouseId || matched?.warehouseId || '',
+        available: line.available != null ? line.available : (matched?.availQty != null ? Number(matched.availQty) : null),
+      };
+    };
+    if (record?.lines && Array.isArray(record.lines) && record.lines.length > 0) return record.lines.map(enrichLine);
+    if (record?.productName) return [enrichLine({ key: Date.now(), productName: record.productName, productId: record.productId || '', spec: record.spec || '', unit: record.unit || '件', quantity: Number(record.qty || 1), unitPrice: Number(record.unitPrice || 0) })];
+    return [];
+  });
+  const [discountRate, setDiscountRate] = useState(record?.discountRate ?? 100);
+  const [discountAmount, setDiscountAmount] = useState(record?.discountAmount || 0);
+  const [remark, setRemark] = useState(record?.remark || '');
   const [error, setError] = useState('');
-  const total = Math.max(0, Number(quantity) * Number(unitPrice) * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
+  const subtotal = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
+  const total = Math.max(0, subtotal * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
+  const updateLine = (key, field, value) => setLines(prev => prev.map(line => line.key === key ? { ...line, [field]: value } : line));
+  const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), warehouseId: '', productName: '', productId: '', spec: '', unit: '件', available: null, quantity: 1, unitPrice: 0 }]);
+  const removeLine = (key) => setLines(prev => prev.filter(line => line.key !== key));
+  const warehouseOptions = products.reduce((acc, p) => {
+    if (p.warehouseId && !acc.find((w) => w.warehouseId === p.warehouseId)) acc.push({ warehouseId: p.warehouseId, warehouse: p.warehouse });
+    return acc;
+  }, []);
 
   const handleCreate = () => {
-      if (!client.trim() || !hasProduct || !productName.trim() || Number(quantity) <= 0 || Number(unitPrice) <= 0 || !quoteDate || !validUntil) {
-          setError('请完整填写客户、有效期、产品、数量和单价');
+      if (!client.trim() || !quoteDate || !validUntil) {
+          setError('请完整填写客户和有效期');
           return;
       }
+      if (lines.length === 0) {
+          setError('请至少添加一个产品');
+          return;
+      }
+      const invalidLine = lines.find(line => !line.productName.trim() || Number(line.quantity) <= 0 || Number(line.unitPrice) <= 0);
+      if (invalidLine) {
+          setError('每个产品需填写名称、数量和单价');
+          return;
+      }
+      const productSummary = lines.length === 1
+          ? `${lines[0].productName.trim()} / ${lines[0].spec.trim()} × ${lines[0].quantity} ${lines[0].unit}`
+          : `${lines[0].productName.trim()} 等 ${lines.length} 项产品`;
+      const savedAt = new Date().toISOString();
       onCreate({
-          id: sales_makeDocumentId('QT'),
+          ...record,
+          id: record?.id || sales_makeDocumentId('QT'),
+          version: editing ? Number(record?.version || 1) + 1 : 1,
           client: client.trim(),
           date: quoteDate,
           validUntil,
           status: '正常',
-          product: `${productName.trim()} / ${spec.trim()} × ${quantity} ${unit}`,
-          productName: productName.trim(),
-          spec,
-          unit,
-          qty: Number(quantity),
-          unitPrice: Number(unitPrice),
+          productId: lines[0].productId,
+          product: productSummary,
+          productName: lines[0].productName.trim(),
+          spec: lines[0].spec,
+          unit: lines[0].unit,
+          qty: lines.reduce((sum, l) => sum + Number(l.quantity || 0), 0),
+          unitPrice: lines[0].unitPrice,
+          lines: lines.map(({ key, ...rest }) => rest),
           discountRate: Number(discountRate),
           discountAmount: Number(discountAmount),
           remark,
           amount: sales_formatMoney(total),
-          createdAt: new Date().toLocaleString('zh-CN', { hour12: false })
+          createdAt: record?.createdAt || savedAt,
+          updatedAt: savedAt,
       });
   };
 
   return (
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-          <div className="bg-white rounded-xl w-[860px] max-w-full max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
+          <div className="bg-white rounded-xl w-[1200px] max-w-full max-h-[95vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
                   <div className="flex items-center text-[16px] font-bold text-slate-800">
-                      <FileText size={18} className="text-blue-600 mr-2" /> 新增报价单
+                      <FileText size={18} className="text-blue-600 mr-2" /> {editing ? '编辑报价单' : '新增报价单'}
                   </div>
                   <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
                       <X size={20} />
@@ -1876,7 +2129,8 @@ const Sales_QuoteCreateModal = ({ onClose, onCreate }) => {
                               <div>
                                   <label className="block text-[13px] text-slate-600 mb-2">客户 <span className="text-rose-500">*</span></label>
                                   <div className="relative">
-                                      <input type="text" value={client} onChange={(e) => setClient(e.target.value)} placeholder="搜索选择客户" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors" />
+                                      <input type="text" list="sales-quote-customers" value={client} onChange={(e) => setClient(e.target.value)} placeholder="搜索选择客户" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors" />
+                                      <datalist id="sales-quote-customers">{customers.map((customer) => <option key={customer.id} value={customer.name} />)}</datalist>
                                       <Search size={14} className="absolute right-3 top-3 text-slate-400" />
                                   </div>
                               </div>
@@ -1902,38 +2156,69 @@ const Sales_QuoteCreateModal = ({ onClose, onCreate }) => {
                               <div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div>
                               <span className="text-[15px] font-bold text-slate-800">产品明细</span>
                           </div>
-                          <button onClick={() => setHasProduct(true)} className="flex items-center text-[13px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg transition-colors">
-                              <Plus size={14} className="mr-1.5" /> {hasProduct ? '已添加产品' : '添加产品'}
+                          <button onClick={addLine} className="flex items-center text-[13px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg transition-colors">
+                              <Plus size={14} className="mr-1.5" /> 添加产品
                           </button>
                       </div>
-                      <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="border border-slate-200 rounded-lg overflow-x-auto">
                           <table className="w-full text-left text-[13px]">
                               <thead className="bg-[#fafafa] text-slate-600 border-b border-slate-200 font-bold">
                                   <tr>
-                                      <th className="px-5 py-3.5 font-medium">产品</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">规格型号</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">单位</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">数量</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">单价</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">操作</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap">仓库</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap">产品</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap text-center">规格型号</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap text-center">单位</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap text-center">可用量</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap text-center">数量</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap text-center">单价</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap text-center">金额</th>
+                                      <th className="px-5 py-3.5 font-medium whitespace-nowrap text-center">操作</th>
                                   </tr>
                               </thead>
                               <tbody>
-                                  {hasProduct ? (
-                                      <tr className="border-b border-slate-50">
-                                          <td className="px-3 py-3"><input value={productName} onChange={(e) => setProductName(e.target.value)} className="w-48 border border-slate-200 rounded-md px-2 py-1.5 text-[12px] font-bold outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-center"><input value={spec} onChange={(e) => setSpec(e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-center"><select value={unit} onChange={(e) => setUnit(e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
-                                          <td className="px-3 py-3 text-center"><input type="number" min="1" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-center"><input type="number" min="0.01" step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(Number(e.target.value))} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
-                                          <td className="px-5 py-4 text-center"><button onClick={() => setHasProduct(false)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50"><Trash2 size={14}/></button></td>
+                                  {lines.length > 0 ? lines.map((line) => {
+                                      const warehouseProducts = line.warehouseId ? products.filter((p) => p.warehouseId === line.warehouseId) : [];
+                                      const qtyNum = Number(line.quantity || 0);
+                                      const availNum = Number(line.available ?? -1);
+                                      const isShort = availNum >= 0 && qtyNum > availNum;
+                                      return (
+                                      <tr key={line.key} className="border-b border-slate-50">
+                                          <td className="px-3 py-3">
+                                              <select value={line.warehouseId} onChange={(e) => { const wid = e.target.value; setLines(prev => prev.map(l => l.key === line.key ? { ...l, warehouseId: wid, productId: '', productName: '', spec: '', unit: '件', available: null, quantity: 1, unitPrice: 0 } : l)); }} className="w-32 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] outline-none focus:border-blue-500">
+                                                  <option value="">选择仓库</option>
+                                                  {warehouseOptions.map((w) => <option key={w.warehouseId} value={w.warehouseId}>{w.warehouse}</option>)}
+                                              </select>
+                                          </td>
+                                          <td className="px-3 py-3">
+                                              <select value={line.productId} disabled={!line.warehouseId} onChange={(e) => { const pid = e.target.value; const matched = products.find((p) => p.id === pid); if (matched) { setLines(prev => prev.map(l => l.key === line.key ? { ...l, productId: matched.id, productName: matched.name, spec: matched.id, unit: matched.unit === 'PCS' ? '件' : matched.unit === '台' ? '台' : '套', available: Number(matched.availQty ?? 0), quantity: 1, unitPrice: Number(matched.unitPrice || 0) } : l)); } }} className="w-44 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400">
+                                                  <option value="">{line.warehouseId ? '选择产品' : '先选仓库'}</option>
+                                                  {warehouseProducts.map((p) => <option key={p.id} value={p.id}>{p.id} {p.name}</option>)}
+                                              </select>
+                                          </td>
+                                          <td className="px-3 py-3 text-center"><input value={line.spec} onChange={(e) => updateLine(line.key, 'spec', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
+                                          <td className="px-3 py-3 text-center"><select value={line.unit} onChange={(e) => updateLine(line.key, 'unit', e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
+                                          <td className={`px-3 py-3 text-center font-mono font-bold ${isShort ? 'text-rose-600' : 'text-emerald-600'}`}>{line.available != null ? line.available : '-'}</td>
+                                          <td className="px-3 py-3 text-center"><input type="number" min="1" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', Number(e.target.value))} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
+                                          <td className="px-3 py-3 text-center"><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', Number(e.target.value))} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
+                                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0))}</td>
+                                          <td className="px-5 py-4 text-center"><button onClick={() => removeLine(line.key)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50"><Trash2 size={14}/></button></td>
                                       </tr>
-                                  ) : (
+                                      );
+                                  }) : (
                                       <tr>
-                                          <td colSpan="6" className="px-5 py-12 text-center text-slate-400">请点击'添加产品'按钮添加产品明细</td>
+                                          <td colSpan="9" className="px-5 py-12 text-center text-slate-400">请点击'添加产品'按钮添加产品明细</td>
                                       </tr>
                                   )}
                               </tbody>
+                              {lines.length > 0 && (
+                                  <tfoot className="border-t border-slate-200 bg-slate-50">
+                                      <tr>
+                                          <td colSpan="7" className="px-5 py-3 text-right text-[12px] font-bold text-slate-500">小计</td>
+                                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(subtotal)}</td>
+                                          <td></td>
+                                      </tr>
+                                  </tfoot>
+                              )}
                           </table>
                       </div>
                   </div>
@@ -1971,23 +2256,65 @@ const Sales_QuoteCreateModal = ({ onClose, onCreate }) => {
               <div className="p-5 border-t border-slate-100 flex justify-end space-x-4 shrink-0 bg-white rounded-b-xl">
                   {error && <div className="mr-auto flex items-center text-[12px] text-rose-600"><AlertCircle size={14} className="mr-1.5" />{error}</div>}
                   <button onClick={onClose} className="px-6 py-2.5 text-[14px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">取消</button>
-                  <button onClick={handleCreate} className="px-6 py-2.5 text-[14px] font-medium text-white bg-[#2563EB] hover:bg-blue-700 rounded-lg transition-colors shadow-sm">创建报价单</button>
+                  <button onClick={handleCreate} className="px-6 py-2.5 text-[14px] font-medium text-white bg-[#2563EB] hover:bg-blue-700 rounded-lg transition-colors shadow-sm">{editing ? '保存修改' : '创建报价单'}</button>
               </div>
           </div>
       </div>
   );
 };
 
-const Sales_QuotesView = ({ quotes, setQuotes, onConvertToOrder, onToast, onAudit }) => {
+const Sales_QuoteDetailModal = ({ quote, onClose }) => {
+  const originalAmount = Number(quote.qty || 0) * Number(quote.unitPrice || 0);
+  const discountedAmount = originalAmount * Number(quote.discountRate ?? 100) / 100;
+  const finalAmount = Math.max(0, discountedAmount - Number(quote.discountAmount || 0));
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm sm:p-6">
+      <div className="flex max-h-[92vh] w-[1100px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-2 text-[16px] font-bold text-slate-800"><FileText size={18} className="text-blue-600" />报价单详情</div>
+          <button title="关闭" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700"><X size={20} /></button>
+        </div>
+        <div className="space-y-6 overflow-y-auto p-6 custom-scrollbar">
+              <section>
+            <h4 className="mb-3 text-[13px] font-bold text-slate-800">基本信息</h4>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 md:grid-cols-4">
+              {[
+                ['报价单号', quote.id], ['状态', sales_getQuoteStatus(quote)], ['客户', quote.client], ['报价金额', sales_formatMoney(finalAmount)],
+                ['报价日期', quote.date], ['有效期至', quote.validUntil], ['创建人', quote.creator || '当前用户'], ['备注', quote.remark || '-'],
+              ].map(([label, value]) => <div key={label} className="min-h-[64px] bg-white px-4 py-3"><div className="mb-1 text-[11px] text-slate-400">{label}</div><div className="break-words text-[12px] font-bold text-slate-700">{value}</div></div>)}
+            </div>
+          </section>
+          <section>
+            <h4 className="mb-3 text-[13px] font-bold text-slate-800">优惠汇总</h4>
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-[12px] md:grid-cols-4">
+              <div><div className="text-slate-400">原价</div><div className="mt-1 font-mono font-bold text-slate-700">{sales_formatMoney(originalAmount)}</div></div>
+              <div><div className="text-slate-400">折扣率</div><div className="mt-1 font-mono font-bold text-slate-700">{quote.discountRate ?? 100}%</div></div>
+              <div><div className="text-slate-400">优惠金额</div><div className="mt-1 font-mono font-bold text-slate-700">{sales_formatMoney(quote.discountAmount || 0)}</div></div>
+              <div><div className="text-slate-400">优惠后</div><div className="mt-1 font-mono font-bold text-blue-700">{sales_formatMoney(finalAmount)}</div></div>
+            </div>
+          </section>
+          <section>
+            <h4 className="mb-3 text-[13px] font-bold text-slate-800">产品明细</h4>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full whitespace-nowrap text-left text-[12px]"><thead className="border-b border-slate-200 bg-slate-50 text-slate-500"><tr><th className="px-4 py-3">产品名称</th><th className="px-4 py-3">规格型号</th><th className="px-4 py-3">单位</th><th className="px-4 py-3">数量</th><th className="px-4 py-3">单价</th><th className="px-4 py-3 text-right">金额</th></tr></thead><tbody>{(quote.lines && quote.lines.length > 0 ? quote.lines : [{ productName: quote.productName, spec: quote.spec, unit: quote.unit, qty: quote.qty, unitPrice: quote.unitPrice }]).map((line, idx) => { const lineAmount = Number(line.qty || 0) * Number(line.unitPrice || 0); return (<tr key={idx}><td className="px-4 py-4 font-bold text-slate-800">{line.productName}</td><td className="px-4 py-4 text-slate-600">{line.spec || '-'}</td><td className="px-4 py-4 text-slate-600">{line.unit || '件'}</td><td className="px-4 py-4 font-mono text-slate-700">{line.qty}</td><td className="px-4 py-4 font-mono text-slate-700">{sales_formatMoney(line.unitPrice)}</td><td className="px-4 py-4 text-right font-mono font-bold text-slate-800">{sales_formatMoney(lineAmount)}</td></tr>); })}</tbody><tfoot className="border-t border-slate-100 bg-slate-50"><tr><td colSpan="5" className="px-4 py-3 text-right font-bold text-slate-500">合计</td><td className="px-4 py-3 text-right font-mono font-bold text-blue-700">{sales_formatMoney(finalAmount)}</td></tr></tfoot></table>
+            </div>
+          </section>
+        </div>
+        <div className="flex justify-end border-t border-slate-100 bg-slate-50 px-6 py-4"><button onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-5 py-2 text-[13px] font-bold text-slate-600 hover:bg-slate-100">关闭</button></div>
+      </div>
+    </div>
+  );
+};
+
+const Sales_QuotesView = ({ quotes, setQuotes, customers, onToast, onAudit, onApproveAndConvert, onOpenOrder }) => {
   const [isCreateQuoteModalOpen, setIsCreateQuoteModalOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState('全部');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => new URLSearchParams(window.location.search).get('focusOrder') || '');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [recordModal, setRecordModal] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  const [confirmConvert, setConfirmConvert] = useState(null);
-  const filters = ['全部', '正常', '临期', '已过期', '已转订单'];
+  const [conversionQuote, setConversionQuote] = useState(null);
+  const filters = ['全部', '正常', '已过期', '已转订单'];
   const normalizedQuotes = quotes.map((quote) => ({ ...quote, status: sales_getQuoteStatus(quote) }));
   const visibleQuotes = normalizedQuotes.filter(row => {
       const matchFilter = activeFilter === '全部' || row.status === activeFilter;
@@ -2015,20 +2342,15 @@ const Sales_QuotesView = ({ quotes, setQuotes, onConvertToOrder, onToast, onAudi
       onAudit('编辑产品报价单', quote.id);
   };
 
-  const handleDeleteQuote = () => {
-      setQuotes(prev => prev.filter(item => item.id !== confirmDelete.id));
-      onToast('报价单已删除', confirmDelete.id, 'danger');
-      onAudit('删除产品报价单', confirmDelete.id);
-      setConfirmDelete(null);
-  };
-
-  const handleConvertQuote = () => {
-      onConvertToOrder(confirmConvert);
-      setConfirmConvert(null);
-  };
-
   return (
       <div className="space-y-4 max-w-full mx-auto animate-in fade-in duration-300">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                  ['报价单总数', normalizedQuotes.length, FileText, 'text-blue-600 bg-blue-50'],
+                  ['已过期', normalizedQuotes.filter((item) => item.status === '已过期').length, AlertTriangle, 'text-rose-600 bg-rose-50'],
+                  ['总报价金额', sales_formatMoney(normalizedQuotes.reduce((sum, item) => sum + sales_parseMoney(item.amount), 0)), BadgeDollarSign, 'text-emerald-600 bg-emerald-50'],
+              ].map(([label, value, Icon, tone]) => <div key={label as string} className="flex min-h-[88px] items-center justify-between rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm"><div><div className="text-[12px] font-bold text-slate-500">{label}</div><div className="mt-2 font-mono text-[22px] font-bold text-slate-800">{value}</div></div><div className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}><Icon size={18} /></div></div>)}
+          </div>
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white">
                   <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-100">
@@ -2068,10 +2390,10 @@ const Sales_QuotesView = ({ quotes, setQuotes, onConvertToOrder, onToast, onAudi
                                   <td className="px-6 py-4 text-slate-700 font-mono font-bold">{row.amount}</td>
                                   <td className="px-6 py-4 text-right">
                                       <div className="flex items-center justify-end space-x-2">
-                                          <button title="查看" onClick={() => setRecordModal({ mode: 'view', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Eye size={14}/></button>
-                                          <button title="编辑" onClick={() => setRecordModal({ mode: 'edit', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>
-                                          {['正常', '临期'].includes(row.status) && <button title="转为销售订单" onClick={() => setConfirmConvert(row)} className="p-1 border border-emerald-200 text-emerald-600 rounded hover:bg-emerald-50 transition-colors"><ShoppingCart size={14}/></button>}
-                                          {['正常', '临期'].includes(row.status) && <button title="删除" onClick={() => setConfirmDelete(row)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50 transition-colors"><Trash2 size={14}/></button>}
+                                          <button title="查看" aria-label={`查看报价单 ${row.id}`} onClick={() => setRecordModal({ mode: 'view', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Eye size={14}/></button>
+                                          {row.status !== '已转订单' && <button title="编辑" aria-label={`编辑报价单 ${row.id}`} onClick={() => setRecordModal({ mode: 'edit', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>}
+                                          {isQuoteConvertible(row) && <button title="审批确认并转销售订单" aria-label={`审批确认报价单 ${row.id} 并转销售订单`} onClick={() => setConversionQuote(row)} className="p-1 border border-emerald-200 text-emerald-600 rounded hover:bg-emerald-50 transition-colors"><CheckCircle2 size={14}/></button>}
+                                          {row.status === '已转订单' && row.convertedOrderId && <button title="查看销售订单" aria-label={`查看报价单 ${row.id} 生成的销售订单`} onClick={() => onOpenOrder(row.convertedOrderId)} className="p-1 border border-blue-200 text-blue-600 rounded hover:bg-blue-50 transition-colors"><ArrowRight size={14}/></button>}
                                       </div>
                                   </td>
                               </tr>
@@ -2082,32 +2404,26 @@ const Sales_QuotesView = ({ quotes, setQuotes, onConvertToOrder, onToast, onAudi
               </div>
               <Pagination total={visibleQuotes.length} page={currentPage} limit={limit} onPageChange={setPage} onLimitChange={setLimit} />
           </div>
-          {isCreateQuoteModalOpen && <Sales_QuoteCreateModal onClose={() => setIsCreateQuoteModalOpen(false)} onCreate={handleCreateQuote} />}
-          {recordModal && <Sales_RecordModal type="quote" mode={recordModal.mode} record={recordModal.record} onClose={() => setRecordModal(null)} onSubmit={handleSaveQuote} />}
-          {confirmDelete && (
+          {isCreateQuoteModalOpen && <Sales_QuoteCreateModal customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} onClose={() => setIsCreateQuoteModalOpen(false)} onCreate={handleCreateQuote} />}
+          {recordModal?.mode === 'view' && <Sales_QuoteDetailModal quote={recordModal.record} onClose={() => setRecordModal(null)} />}
+          {recordModal?.mode === 'edit' && <Sales_QuoteCreateModal mode="edit" record={recordModal.record} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} onClose={() => setRecordModal(null)} onCreate={handleSaveQuote} />}
+          {conversionQuote && (
               <Sales_ConfirmModal
-                  title="删除报价单"
-                  desc={`确定删除 ${confirmDelete.id} 吗？该操作只影响当前前端演示数据。`}
-                  confirmText="删除"
-                  tone="danger"
-                  onCancel={() => setConfirmDelete(null)}
-                  onConfirm={handleDeleteQuote}
-              />
-          )}
-          {confirmConvert && (
-              <Sales_ConfirmModal
-                  title="转为销售订单"
-                  desc={`将 ${confirmConvert.id} 的客户、产品与金额带入新销售订单。转化后报价单将锁定为“已转订单”。`}
-                  confirmText="确认转订单"
-                  onCancel={() => setConfirmConvert(null)}
-                  onConfirm={handleConvertQuote}
+                  title="审批确认产品报价"
+                  desc={`确认客户与销售经理已线下确认 ${conversionQuote.id} 的价格和商务条款吗？审批后将生成一张待确认、未发货的销售订单，不会在此步骤发起库存或出库作业。`}
+                  confirmText="审批确认并转订单"
+                  onCancel={() => setConversionQuote(null)}
+                  onConfirm={() => {
+                      const order = onApproveAndConvert(conversionQuote);
+                      if (order) setConversionQuote(null);
+                  }}
               />
           )}
       </div>
   );
 };
 
-const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose }) => {
+const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel, onOutbound }) => {
   const isLinked = businessFlow?.orderId === order.id;
   const flowSteps = [
     { key: 'approval', label: '订单审批' },
@@ -2125,24 +2441,50 @@ const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose }) => {
     { label: '财务应收单', value: `AR-${order.id.replace('SO-', '')}`, ready: isLinked && isLinkedFlowAtLeast(businessFlow, 'financeDocs') }
   ];
   const orderAudits = audits.filter(item => item.entityId === order.id);
+  const detailLines = Array.isArray(order.lines) && order.lines.length > 0
+    ? order.lines
+    : [{ productName: order.productName, spec: order.spec, unit: order.unit, quantity: Number(order.qty || 0), unitPrice: Number(order.unitPrice || sales_parseMoney(order.amount) / Math.max(1, Number(order.qty || 1))) }];
+  const orderOriginalAmount = detailLines.reduce(
+    (total, line) => total + Number(line.quantity ?? line.qty ?? 0) * Number(line.unitPrice || 0),
+    0,
+  );
+  const orderShippedQty = Number(order.shippedQty ?? (order.outStatus === '全部发货' ? order.qty : 0));
+  const orderRemainingQty = Number(order.remainingQty ?? Number(order.qty || 0) - orderShippedQty);
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 sm:p-6">
-      <div className="bg-white rounded-xl w-[920px] max-w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="bg-white rounded-xl w-[1200px] max-w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
         <div className="flex justify-between items-start p-5 border-b border-slate-100">
-          <div><div className="flex items-center gap-2"><ShoppingCart size={18} className="text-blue-600"/><h3 className="text-[16px] font-bold text-slate-800">销售订单详情</h3><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-[11px] font-mono font-bold">{order.id}</span></div><p className="mt-1.5 text-[12px] text-slate-400">订单、库存、生产与财务使用同一业务单号持续追踪</p></div>
+          <div><div className="flex items-center gap-2"><ShoppingCart size={18} className="text-blue-600"/><h3 className="text-[16px] font-bold text-slate-800">订单详情</h3><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-[11px] font-mono font-bold">{order.id}</span></div><p className="mt-1.5 text-[12px] text-slate-400">销售订单与出库、生产需求保持同一来源单号</p></div>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700"><X size={20}/></button>
         </div>
         <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
           <section>
-            <h4 className="text-[13px] font-bold text-slate-800 mb-3">订单信息</h4>
+            <h4 className="text-[13px] font-bold text-slate-800 mb-3">基本信息</h4>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
               {[
-                ['客户', order.client], ['销售人员', order.salesman], ['订单金额', order.amount], ['当前状态', order.status],
-                ['产品明细', order.product], ['订单日期', order.date], ['要求交期', order.deliveryDate], ['出库状态', order.outStatus],
-                ['可用库存', order.availableStock ?? '-'], ['订购数量', order.qty ?? '-'], ['缺货数量', order.shortage ?? '-'], ['应收金额', order.receivable]
+                ['客户', order.client], ['当前状态', order.status === '生产补货中' ? '生产中' : order.status], ['订单金额', order.amount], ['出库单号', order.outboundNo || (order.outStatus === '未发货' ? '-' : `OUT-${order.id.replace('SO-', '')}`)],
+                ['订单日期', order.date], ['交货日期', order.deliveryDate], ['销售人员', order.salesman], ['创建人', order.creator || order.salesman || '当前用户'],
+                ['备注', order.remark || '-'], ['出库状态', order.outStatus], ['可用库存', resolveOrderAvailQty(order)], ['应收金额', order.receivable]
               ].map(([label, value]) => <div key={label} className="bg-white px-4 py-3 min-h-[66px]"><div className="text-[11px] text-slate-400 mb-1">{label}</div><div className={`text-[12px] font-bold break-words ${label === '缺货数量' && Number(value) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>{value}</div></div>)}
             </div>
+          </section>
+
+          <section>
+            <h4 className="mb-3 text-[13px] font-bold text-slate-800">优惠汇总</h4>
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-[12px] md:grid-cols-4">
+              {[
+                ['原价', sales_formatMoney(orderOriginalAmount)],
+                ['折扣率', `${order.discountRate ?? 100}%`],
+                ['优惠金额', sales_formatMoney(order.discountAmount || 0)],
+                ['优惠后', order.amount],
+              ].map(([label, value]) => <div key={label}><div className="text-slate-400">{label}</div><div className={`mt-1 font-mono font-bold ${label === '优惠后' ? 'text-blue-700' : 'text-slate-700'}`}>{value}</div></div>)}
+            </div>
+          </section>
+
+          <section>
+            <h4 className="mb-3 text-[13px] font-bold text-slate-800">产品明细</h4>
+	            <div className="overflow-x-auto rounded-lg border border-slate-200"><table className="w-full whitespace-nowrap text-left text-[12px]"><thead className="border-b border-slate-200 bg-slate-50 text-slate-500"><tr><th className="px-4 py-3">产品名称</th><th className="px-4 py-3">规格型号</th><th className="px-4 py-3">单位</th><th className="px-4 py-3">销售数量</th><th className="px-4 py-3">已出库数量</th><th className="px-4 py-3">剩余数量</th><th className="px-4 py-3">单价</th><th className="px-4 py-3 text-right">金额</th></tr></thead><tbody>{detailLines.map((line, idx) => { const lineQty = Number(line.quantity ?? line.qty ?? 0); const linePrice = Number(line.unitPrice || 0); const shipped = detailLines.length === 1 ? orderShippedQty : Number(line.shippedQty ?? 0); const remaining = detailLines.length === 1 ? orderRemainingQty : Number(line.remainingQty ?? (lineQty - shipped)); return <tr key={idx}><td className="px-4 py-4 font-bold text-slate-800">{line.productName || order.productName}</td><td className="px-4 py-4 text-slate-600">{line.spec || '-'}</td><td className="px-4 py-4 text-slate-600">{line.unit || order.unit || '件'}</td><td className="px-4 py-4 font-mono">{lineQty}</td><td className="px-4 py-4 font-mono">{shipped}</td><td className="px-4 py-4 font-mono">{remaining}</td><td className="px-4 py-4 font-mono">{sales_formatMoney(linePrice)}</td><td className="px-4 py-4 text-right font-mono font-bold">{sales_formatMoney(lineQty * linePrice)}</td></tr>; })}</tbody></table></div>
           </section>
 
           <section>
@@ -2161,80 +2503,189 @@ const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose }) => {
           </section>
           {order.remark && <section><h4 className="text-[13px] font-bold text-slate-800 mb-2">订单备注</h4><div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-[12px] leading-relaxed text-slate-600">{order.remark}</div></section>}
         </div>
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end"><button onClick={onClose} className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-[13px] font-bold text-slate-600 hover:bg-slate-100">关闭</button></div>
+        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap justify-end gap-3">
+          {(['已确认', '部分发货'].includes(order.status) || order.outStatus === '已移交仓库') && <button onClick={onOutbound} className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 text-[13px] font-bold text-white hover:bg-blue-700"><Truck size={14}/>{order.status === '部分发货' ? '发起剩余发货' : '去发货'}</button>}
+          {(order.status === '待发货' && order.outStatus === '未发货' || (order.status === '已确认' && (order.outStatus === '库存不足' || order.outStatus === '未发货'))) && <button onClick={onCancel} className="px-5 py-2 rounded-lg border border-rose-200 bg-white text-[13px] font-bold text-rose-600 hover:bg-rose-50">取消订单</button>}
+          <button onClick={onClose} className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-[13px] font-bold text-slate-600 hover:bg-slate-100">关闭</button>
+        </div>
       </div>
     </div>
   );
 };
 
-const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit }) => {
+const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit, onRequestOutbound, onReviewFormalOrder, onConfirmFormalOrder, onCancelFormalOrder, onCancelOrderOutbound, onNavigateProduction, customers = [], products = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('全部状态');
+  const [statusFilter, setStatusFilter] = useState('全部');
+  const [customerFilter, setCustomerFilter] = useState('全部客户');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [recordModal, setRecordModal] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [menuOrderId, setMenuOrderId] = useState(null);
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const orderMenuRef = useRef(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const savedLinkedOrder = businessFlow ? orders.find(row => row.id === businessFlow.orderId) : null;
   const linkedOrder = businessFlow ? {
       ...savedLinkedOrder,
       id: businessFlow.orderId,
-      client: businessFlow.customer,
-      salesman: '系统联动',
-      product: savedLinkedOrder?.product || businessFlow.product,
-      productName: savedLinkedOrder?.productName || businessFlow.product,
-      qty: savedLinkedOrder?.qty || businessFlow.qty,
-      availableStock: savedLinkedOrder?.availableStock ?? businessFlow.availableStock,
+      client: savedLinkedOrder?.client ?? businessFlow.customer,
+      salesman: savedLinkedOrder?.salesman ?? '系统联动',
+      product: savedLinkedOrder?.product ?? businessFlow.product,
+      productName: savedLinkedOrder?.productName ?? businessFlow.product,
+      qty: savedLinkedOrder?.qty ?? businessFlow.qty,
+      availableStock: resolveOrderAvailQty(savedLinkedOrder || { productName: businessFlow?.product, productId: businessFlow?.productId }),
       shortage: savedLinkedOrder?.shortage ?? businessFlow.shortage,
-      amount: businessFlow.amount,
+      amount: savedLinkedOrder?.amount ?? businessFlow.amount,
       receivable: isLinkedFlowAtLeast(businessFlow, 'financeDocs') ? businessFlow.amount : '待生成',
-      date: savedLinkedOrder?.date || new Date().toISOString().slice(0, 10),
-      deliveryDate: isLinkedFlowAtLeast(businessFlow, 'delivery') ? '已发货' : savedLinkedOrder?.deliveryDate || '待排程',
+      date: savedLinkedOrder?.date ?? new Date().toISOString().slice(0, 10),
+      deliveryDate: isLinkedFlowAtLeast(businessFlow, 'delivery') ? '已发货' : savedLinkedOrder?.deliveryDate ?? '待排程',
       outStatus: isLinkedFlowAtLeast(businessFlow, 'delivery') ? '全部发货' : isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '未发货' : savedLinkedOrder?.outStatus || '未发货',
-      status: isLinkedFlowAtLeast(businessFlow, 'settlement') ? '已完成' : isLinkedFlowAtLeast(businessFlow, 'delivery') ? '已发货' : isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '已确认' : isLinkedFlowAtLeast(businessFlow, 'stockCheck') ? (Number(businessFlow.shortage || 0) > 0 ? '生产补货中' : '已确认') : savedLinkedOrder?.status || '待确认',
+      status: isLinkedFlowAtLeast(businessFlow, 'settlement') ? '已完成' : isLinkedFlowAtLeast(businessFlow, 'delivery') ? '已发货' : isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '已确认' : isLinkedFlowAtLeast(businessFlow, 'stockCheck') ? (Number(businessFlow.shortage || 0) > 0 ? '生产中' : '已确认') : savedLinkedOrder?.status || '待发货',
       remark: savedLinkedOrder?.remark
   } : null;
   const orderRows = linkedOrder ? [linkedOrder, ...orders.filter(row => row.id !== linkedOrder.id)] : orders;
   const visibleOrders = orderRows.filter(row => {
       const keyword = searchTerm.trim().toLowerCase();
       const matchSearch = !keyword || `${row.id} ${row.client} ${row.product}`.toLowerCase().includes(keyword);
-      const matchStatus = statusFilter === '全部状态' || row.status === statusFilter;
-      return matchSearch && matchStatus;
+      const normalizedStatus = row.status === '生产补货中' ? '生产中' : row.status;
+      const matchStatus = statusFilter === '全部' || normalizedStatus === statusFilter;
+      const matchCustomer = customerFilter === '全部客户' || row.client === customerFilter;
+      return matchSearch && matchStatus && matchCustomer;
   });
   const totalPages = Math.max(1, Math.ceil(visibleOrders.length / limit));
   const currentPage = Math.min(page, totalPages);
   const pagedOrders = visibleOrders.slice((currentPage - 1) * limit, currentPage * limit);
+  const actionsForOrder = (order) => {
+      return getSalesOrderActions(order.status === '生产补货中' ? '生产中' : order.status, order.outStatus, order.reviewStatus, Boolean(order.aggregateId));
+  };
+  const activeMenuOrder = menuOrderId ? orderRows.find((order) => order.id === menuOrderId) : null;
+  const activeMenuActions = activeMenuOrder
+      ? actionsForOrder(activeMenuOrder)
+      : [];
 
-  useEffect(() => setPage(1), [searchTerm, statusFilter, limit]);
+  useEffect(() => setPage(1), [searchTerm, statusFilter, customerFilter, limit]);
+
+  useEffect(() => {
+      const focusedOrder = new URLSearchParams(window.location.search).get('focusOrder');
+      if (focusedOrder) setSearchTerm(focusedOrder);
+  }, []);
+
+  useEffect(() => {
+      if (!menuOrderId) return undefined;
+      const closeMenuOnOutsidePointer = (event) => {
+          if (orderMenuRef.current?.contains(event.target)) return;
+          setMenuOrderId(null);
+          setMenuAnchor(null);
+      };
+      const closeMenuOnEscape = (event) => {
+          if (event.key !== 'Escape') return;
+          setMenuOrderId(null);
+          setMenuAnchor(null);
+      };
+      document.addEventListener('pointerdown', closeMenuOnOutsidePointer);
+      document.addEventListener('keydown', closeMenuOnEscape);
+      return () => {
+          document.removeEventListener('pointerdown', closeMenuOnOutsidePointer);
+          document.removeEventListener('keydown', closeMenuOnEscape);
+      };
+  }, [menuOrderId]);
 
   const updateOrder = (order) => {
-      setOrders(prev => prev.map(item => item.id === order.id ? order : item));
+      const currentOrder = orders.find(item => item.id === order.id);
+      if (!currentOrder || !isSalesOrderEditable(currentOrder.status, currentOrder.outStatus)) {
+          setRecordModal(null);
+          onToast('订单不可编辑', `${order.id} 已进入后续履约流程，请刷新后查看最新状态`, 'warning');
+          return;
+      }
+      const editableFields = ['client', 'salesman', 'product', 'productName', 'productId', 'spec', 'unit', 'qty', 'unitPrice', 'lines', 'discountRate', 'discountAmount', 'amount', 'date', 'deliveryDate', 'remark'];
+      const editableChanges = Object.fromEntries(editableFields.map(field => [field, order[field]]));
+      setOrders(prev => prev.map(item => item.id === order.id ? {
+          ...item,
+          ...editableChanges,
+          shortage: Math.max(0, Number(editableChanges.qty ?? item.qty ?? 0) - resolveOrderAvailQty(item)),
+          status: item.status,
+          outStatus: item.outStatus,
+          receivable: item.receivable,
+          updatedAt: new Date().toISOString(),
+      } : item));
       setRecordModal(null);
       onToast('订单已更新', order.id);
       onAudit('编辑销售订单', order.id);
   };
 
+  const submitShipmentOrderEdit = async (order) => {
+      setIsSubmitting(true);
+      try {
+          if (!order.aggregateId) {
+              const visibleOrder = { ...order, status: '已确认', outStatus: '未发货', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+              setOrders(prev => prev.map(item => item.id === order.id ? visibleOrder : item));
+              onAudit('确认销售发货内容', order.id);
+              setRecordModal(null);
+              onBusinessFlowAction?.('confirmSalesOrder', visibleOrder);
+              onToast('订单已确认', `${order.id} 已进入已确认，可继续去发货`);
+              return;
+          }
+          const updatedOrder = await onConfirmFormalOrder(order);
+          const visibleOrder = updatedOrder
+              ? { ...updatedOrder, deliveryDate: order.deliveryDate }
+              : { ...order, status: '已确认', outStatus: '未发货' };
+          setOrders(prev => prev.map(item => item.id === order.id || (order.aggregateId && item.aggregateId === order.aggregateId) ? visibleOrder : item));
+          onToast('订单已确认', `${order.id} 已进入已确认，可继续去发货`);
+          onAudit('确认销售发货内容', order.id);
+          setRecordModal(null);
+      } catch (error) {
+          onToast('确认订单失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
+
   const duplicateOrder = (row) => {
-      const newOrder = { ...row, id: sales_makeDocumentId('SO'), sourceQuoteId: '', status: '待确认', outStatus: '未发货', receivable: '待生成', createdAt: new Date().toISOString() };
+      const newOrder = { ...row, id: sales_makeDocumentId('SO'), sourceQuoteId: '', status: '待发货', outStatus: '未发货', receivable: '待生成', createdAt: new Date().toISOString() };
       setOrders(prev => [newOrder, ...prev]);
       onToast('订单已复制', `${row.id} 已生成副本`);
       onAudit('复制销售订单', newOrder.id);
   };
 
-  const runOrderAction = () => {
+  const runOrderAction = async () => {
       const { action, row } = confirmAction;
-      if (action === 'delete') {
-          setOrders(prev => prev.filter(item => item.id !== row.id));
-          onToast('订单已删除', row.id, 'danger');
-          onAudit('删除销售订单', row.id);
-      } else if (action === 'dispatch') {
-          const shortage = Math.max(0, Number(row.qty || 0) - Number(row.availableStock || 0));
-          const status = shortage > 0 ? '生产补货中' : '已确认';
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, shortage, status, outStatus: '未发货', updatedAt: new Date().toISOString() } : item));
-          onToast(shortage > 0 ? '库存不足，已转生产补货' : '库存已锁定，进入待出库队列', `${row.id} · 缺口 ${shortage} ${row.unit || '件'}`, shortage > 0 ? 'warning' : 'success');
-          onAudit(shortage > 0 ? '发起发货并触发生产补货' : '发起发货并锁定库存', row.id);
-          onBusinessFlowAction?.('approveOrder', { ...row, shortage });
+      if (action === 'review') {
+          setIsSubmitting(true);
+          try {
+              const updatedOrder = await onReviewFormalOrder(row);
+              if (updatedOrder) setOrders(prev => prev.map(item => item.aggregateId === row.aggregateId ? updatedOrder : item));
+              onToast('订单复核已通过', `${row.id} 总体仍为待发货，可由销售发起发货`);
+              onAudit('完成订单复核', row.id);
+          } catch (error) {
+              onToast('订单复核失败', error instanceof Error ? error.message : '请由独立复核人登录后重试', 'danger');
+          } finally {
+              setIsSubmitting(false);
+              setConfirmAction(null);
+          }
+          return;
+      }
+      if (action === 'dispatch') {
+          if (row.aggregateId) {
+              onToast('请按正式流程操作', `${row.id} 需先完成复核，再发起发货`, 'warning');
+              setConfirmAction(null);
+              return;
+          }
+          const updatedOrder = {
+              ...row,
+              status: '已确认',
+              outStatus: '未发货',
+              confirmedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+          };
+          setOrders(prev => prev.map(item => item.id === row.id ? updatedOrder : item));
+          onToast('订单已确认', `${row.id} 已交由仓库执行出库`);
+          onAudit('确认销售订单并移交仓库', row.id);
+          onBusinessFlowAction?.('confirmSalesOrder', updatedOrder);
+          setConfirmAction(null);
+          return;
       } else if (action === 'recheck') {
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, availableStock: Number(item.qty || 0), shortage: 0, status: '已确认', outStatus: '未发货', updatedAt: new Date().toISOString() } : item));
+          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, availableStock: resolveOrderAvailQty(item), shortage: 0, status: '已确认', outStatus: '未发货', updatedAt: new Date().toISOString() } : item));
           onToast('库存再校验通过', `${row.id} 已回到待出库队列`);
           onAudit('生产入库后库存自动再校验', row.id);
       } else if (action === 'partialShip') {
@@ -2249,39 +2700,78 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
           setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '已完成', updatedAt: new Date().toISOString() } : item));
           onToast('销售订单已完成', row.id);
           onAudit('完成销售订单', row.id);
+          if (businessFlow?.orderId === row.id) {
+              onBusinessFlowAction?.('confirmReceipt');
+          }
+      } else if (action === 'rollback') {
+          onCancelOrderOutbound?.(row);
+          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '待发货', outStatus: '未发货', updatedAt: new Date().toISOString() } : item));
+          onToast('订单已退回待发货', `${row.id} 已退回待发货，可编辑订单内容`, 'warning');
+          onAudit('已确认订单退回待发货编辑', row.id);
+          setConfirmAction(null);
+          return;
       } else {
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '已取消', updatedAt: new Date().toISOString() } : item));
+          if (row.aggregateId) {
+              setIsSubmitting(true);
+              try {
+                  const updatedOrder = await onCancelFormalOrder(row);
+                  if (updatedOrder) setOrders(prev => prev.map(item => item.aggregateId === row.aggregateId ? updatedOrder : item));
+                  onToast('销售订单已取消', row.id, 'warning');
+                  onAudit('取消销售订单', row.id);
+              } catch (error) {
+                  onToast('订单取消失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
+              } finally {
+                  setIsSubmitting(false);
+                  setConfirmAction(null);
+              }
+              return;
+          }
+          onCancelOrderOutbound?.(row);
+          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '已取消', outStatus: '已取消', updatedAt: new Date().toISOString() } : item));
           onToast('销售订单已取消', row.id, 'warning');
           onAudit('取消销售订单', row.id);
       }
       setConfirmAction(null);
   };
 
+  const navigateToOutbound = (row) => {
+      onAudit('从销售订单进入库存出库', row.id);
+      onRequestOutbound(row);
+  };
+
+  const closeOrderMenu = () => {
+      setMenuOrderId(null);
+      setMenuAnchor(null);
+  };
+
   return (
   <div className="max-w-full mx-auto animate-in fade-in duration-300">
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white">
+          <div className="p-4 border-b border-slate-100 space-y-3 bg-white">
+              <div className="flex flex-wrap gap-1 rounded-lg bg-slate-50 p-1 w-max max-w-full overflow-x-auto">
+                  {['全部', ...salesOrderStatuses].map((status) => <button key={status} onClick={() => setStatusFilter(status)} className={`shrink-0 rounded-md px-3 py-1.5 text-[12px] font-bold transition-colors ${statusFilter === status ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{status}</button>)}
+              </div>
               <div className="flex flex-wrap gap-3">
                   <div className="relative border border-slate-200 rounded-lg flex items-center bg-white px-3 w-64 hover:border-slate-300 transition-colors focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
                       <Search size={14} className="text-slate-400 mr-2" />
                       <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="搜索订单号、客户" className="text-[13px] outline-none w-full py-1.5 bg-transparent" />
                   </div>
-                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-[34px] border border-slate-200 rounded-lg bg-white px-3 text-[13px] text-slate-600 outline-none focus:border-blue-500">
-                      {['全部状态', '待确认', '已确认', '生产补货中', '部分发货', '已发货', '已完成', '已取消'].map(item => <option key={item}>{item}</option>)}
+                  <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} className="h-[34px] min-w-40 border border-slate-200 rounded-lg bg-white px-3 text-[13px] text-slate-600 outline-none focus:border-blue-500">
+                      <option>全部客户</option>{Array.from(new Set(orderRows.map((item) => item.client))).map((client) => <option key={client}>{client}</option>)}
                   </select>
               </div>
           </div>
           <div className="overflow-x-auto">
-              <table className="w-full text-left text-[13px] whitespace-nowrap">
+              <table className="w-full min-w-[1460px] text-left text-[13px] whitespace-nowrap">
                   <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-100">
-                      <tr><th className="px-6 py-3.5 font-medium">订单编号</th><th className="px-6 py-3.5 font-medium">客户</th><th className="px-6 py-3.5 font-medium">销售人员</th><th className="px-6 py-3.5 font-medium">产品明细</th><th className="px-6 py-3.5 font-medium">订单金额</th><th className="px-6 py-3.5 font-medium">应收金额</th><th className="px-6 py-3.5 font-medium">订单日期</th><th className="px-6 py-3.5 font-medium">交期</th><th className="px-6 py-3.5 font-medium">出库状态</th><th className="px-6 py-3.5 font-medium">状态</th><th className="px-6 py-3.5 font-medium text-right">操作</th></tr>
+                      <tr><th className="px-6 py-3.5 font-medium">订单编号</th><th className="px-6 py-3.5 font-medium">客户</th><th className="px-6 py-3.5 font-medium">销售人员</th><th className="px-6 py-3.5 font-medium">产品明细</th><th className="px-6 py-3.5 font-medium">订单金额</th><th className="px-6 py-3.5 font-medium">应收金额</th><th className="px-6 py-3.5 font-medium">订单日期</th><th className="px-6 py-3.5 font-medium">交期</th><th className="px-6 py-3.5 font-medium">出库状态</th><th className="px-6 py-3.5 font-medium">状态</th><th className="sticky right-0 z-20 w-[96px] min-w-[96px] border-l border-slate-200 bg-[#fafafa] px-4 py-3.5 font-medium text-right shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">操作</th></tr>
                   </thead>
                   <tbody>
                       {pagedOrders.map((row) => {
-                          const canEdit = row.status === '待确认';
-                          const canDelete = ['待确认', '已取消'].includes(row.status) && row.id !== businessFlow?.orderId;
+                          const normalizedStatus = row.status === '生产补货中' ? '生产中' : row.status;
+                          const actions = actionsForOrder(row);
                           return (
-                          <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                          <tr key={row.id} className="group border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                               <td onClick={() => setRecordModal({ mode: 'detail', record: row })} className="px-6 py-4 text-blue-500 cursor-pointer font-mono font-bold hover:underline">{row.id}</td>
                               <td className="px-6 py-4 text-slate-800 font-bold">{row.client}</td>
                               <td className="px-6 py-4 text-slate-700">{row.salesman}</td>
@@ -2290,28 +2780,34 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
                               <td className="px-6 py-4 text-amber-500 font-mono font-bold">{row.receivable}</td>
                               <td className="px-6 py-4 text-slate-700 font-mono">{row.date}</td>
                               <td className="px-6 py-4 text-slate-700 font-mono">{row.deliveryDate}</td>
-                              <td className="px-6 py-4 text-slate-700">{row.outStatus}</td>
+                              <td className="px-6 py-4 text-slate-700">{row.outStatus}{row.aggregateId && <div className="mt-1 text-[10px] font-mono text-slate-400">已发 {row.shippedQty || 0} · 剩余 {row.remainingQty || 0} · {row.confirmationStatus}</div>}</td>
                               <td className="px-6 py-4">
                                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[12px] border font-medium ${
                                       ['已发货', '已完成'].includes(row.status) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                                       ['已确认', '部分发货'].includes(row.status) ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                                      row.status === '生产补货中' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                      normalizedStatus === '生产中' ? 'bg-amber-50 text-amber-700 border-amber-100' :
                                       row.status === '已取消' ? 'bg-rose-50 text-rose-600 border-rose-100' :
                                       'bg-orange-50 text-orange-600 border-orange-100'
-                                  }`}><span className="w-1.5 h-1.5 bg-current rounded-full mr-1.5"></span>{row.status}</span>
+                                  }`}><span className="w-1.5 h-1.5 bg-current rounded-full mr-1.5"></span>{normalizedStatus}</span>
                               </td>
-                              <td className="px-6 py-4 text-right">
+                              <td className="sticky right-0 z-10 w-[96px] min-w-[96px] border-l border-slate-100 bg-white px-4 py-4 text-right shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] transition-colors group-hover:bg-slate-50">
                                   <div className="flex items-center justify-end space-x-1.5">
                                       <button title="查看" onClick={() => setRecordModal({ mode: 'detail', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Eye size={14}/></button>
-                                      <button title="复制" onClick={() => duplicateOrder(row)} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Copy size={14}/></button>
-                                      <button disabled={!canEdit} title={canEdit ? '编辑' : '当前状态不可编辑'} onClick={() => setRecordModal({ mode: 'edit', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><Edit2 size={14}/></button>
-                                      <button disabled={row.status !== '待确认'} title={row.status === '待确认' ? '发起发货并校验库存' : '仅待确认订单可发起发货'} onClick={() => setConfirmAction({ action: 'dispatch', row })} className="p-1 border border-emerald-200 text-emerald-500 rounded hover:bg-emerald-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><Check size={14}/></button>
-                                      {row.status === '生产补货中' && <button title="模拟生产入库并重新校验" onClick={() => setConfirmAction({ action: 'recheck', row })} className="p-1 border border-amber-200 text-amber-600 rounded hover:bg-amber-50 transition-colors"><RefreshCcw size={14}/></button>}
-                                      {row.status === '已确认' && <button title="部分发货" onClick={() => setConfirmAction({ action: 'partialShip', row })} className="p-1 border border-blue-200 text-blue-600 rounded hover:bg-blue-50 transition-colors"><Package size={14}/></button>}
-                                      {['已确认', '部分发货'].includes(row.status) && <button title="全部发货并生成应收" onClick={() => setConfirmAction({ action: 'ship', row })} className="p-1 border border-blue-200 text-blue-600 rounded hover:bg-blue-50 transition-colors"><Truck size={14}/></button>}
-                                      {row.status === '已发货' && <button title="完成订单" onClick={() => setConfirmAction({ action: 'complete', row })} className="p-1 border border-emerald-200 text-emerald-600 rounded hover:bg-emerald-50 transition-colors"><CheckCircle2 size={14}/></button>}
-                                      <button disabled={['已取消', '已完成', '已发货'].includes(row.status)} title="取消订单" onClick={() => setConfirmAction({ action: 'cancel', row })} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><X size={14}/></button>
-                                      <button disabled={!canDelete} title={canDelete ? '删除' : '仅未生效或已作废订单可删除'} onClick={() => setConfirmAction({ action: 'delete', row })} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={14}/></button>
+                                      {actions.includes('confirm') && <button title="确认订单" aria-label={`订单 ${row.id} 确认订单`} onClick={() => setRecordModal({ mode: 'shipment', record: row })} className="p-1 border border-blue-200 text-blue-600 rounded hover:bg-blue-50 transition-colors"><ShieldCheck size={14}/></button>}
+                                      {actions.includes('outbound') && <button title={row.status === '部分发货' ? '发起剩余发货' : '去发货'} aria-label={`订单 ${row.id} ${row.status === '部分发货' ? '发起剩余发货' : '去发货'}`} onClick={() => navigateToOutbound(row)} className="p-1 border border-emerald-200 text-emerald-600 rounded hover:bg-emerald-50 transition-colors"><Truck size={14}/></button>}
+                                      {actions.length > 0 && <button title="更多操作" aria-label={`订单 ${row.id} 更多操作`} onClick={(event) => {
+                                          if (menuOrderId === row.id) {
+                                              closeOrderMenu();
+                                              return;
+                                          }
+                                          const rect = event.currentTarget.getBoundingClientRect();
+                                          const menuHeight = 148;
+                                          const top = rect.bottom + 6 + menuHeight <= window.innerHeight
+                                              ? rect.bottom + 6
+                                              : Math.max(8, rect.top - menuHeight - 6);
+                                          setMenuAnchor({ top, right: Math.max(8, window.innerWidth - rect.right) });
+                                          setMenuOrderId(row.id);
+                                      }} className="p-1 border border-slate-200 text-slate-500 rounded hover:bg-slate-50 transition-colors"><MoreVertical size={14}/></button>}
                                   </div>
                               </td>
                           </tr>
@@ -2322,14 +2818,29 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
           </div>
           <Pagination total={visibleOrders.length} page={currentPage} limit={limit} onPageChange={setPage} onLimitChange={setLimit} />
       </div>
-      {recordModal?.mode === 'edit' && <Sales_RecordModal type="order" mode="edit" record={recordModal.record} onClose={() => setRecordModal(null)} onSubmit={updateOrder} />}
-      {recordModal?.mode === 'detail' && <Sales_OrderDetailModal order={recordModal.record} businessFlow={businessFlow} audits={audits} onClose={() => setRecordModal(null)} />}
+      {activeMenuOrder && menuAnchor && (
+          <div ref={orderMenuRef} role="menu" aria-label={`订单 ${activeMenuOrder.id} 操作菜单`} style={{ top: menuAnchor.top, right: menuAnchor.right }} className="fixed z-[70] min-w-[148px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 text-left shadow-xl">
+              {activeMenuActions.includes('edit') && <button role="menuitem" onClick={() => { setRecordModal({ mode: 'edit', record: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><Edit2 size={14} className="text-blue-600" />编辑订单</button>}
+              {activeMenuActions.includes('review') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'review', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><ShieldCheck size={14} className="text-blue-600" />审批 / 复核</button>}
+              {activeMenuActions.includes('confirm') && <button role="menuitem" onClick={() => { setRecordModal({ mode: 'shipment', record: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><ShieldCheck size={14} className="text-blue-600" />确认订单</button>}
+              {activeMenuActions.includes('outbound') && <button role="menuitem" onClick={() => { navigateToOutbound(activeMenuOrder); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><Truck size={14} className="text-emerald-600" />{activeMenuOrder.status === '部分发货' ? '发起剩余发货' : '去发货'}</button>}
+              {activeMenuActions.includes('rollback') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'rollback', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-amber-700 hover:bg-amber-50"><RotateCcw size={14} className="text-amber-600" />退回待发货</button>}
+              {activeMenuActions.includes('expedite') && <button role="menuitem" onClick={() => { onNavigateProduction(); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><Factory size={14} className="text-amber-600" />查看生产补货</button>}
+              {activeMenuActions.includes('complete') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'complete', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><CheckCircle2 size={14} className="text-emerald-600" />确认收货</button>}
+              {activeMenuActions.includes('duplicate') && <button role="menuitem" onClick={() => { duplicateOrder(activeMenuOrder); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><Copy size={14} className="text-blue-600" />复制订单</button>}
+              {activeMenuActions.includes('cancel') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'cancel', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-rose-600 hover:bg-rose-50"><X size={14} />取消订单</button>}
+          </div>
+      )}
+      {recordModal?.mode === 'edit' && <Sales_OrderEditModal mode="edit" record={recordModal.record} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} onClose={() => setRecordModal(null)} onSubmit={updateOrder} />}
+      {recordModal?.mode === 'shipment' && <SalesShipmentOrderEditModal mode="confirm" order={recordModal.record} pending={isSubmitting} products={inv_stockData.filter((p) => p.kind === "产品")} onClose={() => setRecordModal(null)} onSubmit={submitShipmentOrderEdit} />}
+      {recordModal?.mode === 'detail' && <Sales_OrderDetailModal order={recordModal.record} businessFlow={businessFlow} audits={audits} onClose={() => setRecordModal(null)} onCancel={() => { setConfirmAction({ action: 'cancel', row: recordModal.record }); setRecordModal(null); }} onOutbound={() => { setRecordModal(null); navigateToOutbound(recordModal.record); }} />}
       {confirmAction && (
           <Sales_ConfirmModal
-              title={({ delete: '删除订单', dispatch: '发起发货', recheck: '库存再校验', partialShip: '确认部分发货', ship: '确认全部发货', complete: '完成订单', cancel: '取消订单' })[confirmAction.action]}
-              desc={confirmAction.action === 'dispatch' ? `系统将校验 ${confirmAction.row.id} 的可用库存；不足时自动转生产补货，充足时锁定库存并进入待出库。` : `确定对 ${confirmAction.row.id} 执行该操作吗？`}
-              confirmText={({ delete: '删除', dispatch: '发起发货', recheck: '重新校验', partialShip: '部分发货', ship: '全部发货', complete: '确认完成', cancel: '取消订单' })[confirmAction.action]}
-              tone={['delete', 'cancel'].includes(confirmAction.action) ? 'danger' : 'blue'}
+              title={({ review: '审批 / 复核订单', requestShipment: '发起发货', dispatch: '确认订单', recheck: '库存再校验', complete: '确认收货', cancel: '取消订单', rollback: '退回待发货' })[confirmAction.action]}
+              desc={confirmAction.action === 'review' ? `复核只更新 ${confirmAction.row.id} 的独立确认状态，总体仍保持待确认；创建人与复核人必须分离。` : confirmAction.action === 'requestShipment' ? `${confirmAction.row.id} 将移交仓库进行权威库存校验；此时不会提前进入已确认。` : confirmAction.action === 'dispatch' ? `确认后，${confirmAction.row.id} 将交由仓库执行出库；仓库发现库存不足时负责发起生产申请。` : confirmAction.action === 'rollback' ? `${confirmAction.row.id} 将退回待发货状态，已创建的出库任务将被取消，订单明细恢复可编辑。` : `确定对 ${confirmAction.row.id} 执行该操作吗？`}
+              confirmText={({ review: '确认复核通过', requestShipment: '提交发货申请', dispatch: '确认订单', recheck: '重新校验', complete: '确认收货', cancel: '取消订单', rollback: '确认退回' })[confirmAction.action]}
+              tone={confirmAction.action === 'cancel' ? 'danger' : confirmAction.action === 'rollback' ? 'warning' : 'blue'}
+              pending={isSubmitting}
               onCancel={() => setConfirmAction(null)}
               onConfirm={runOrderAction}
           />
@@ -2341,7 +2852,7 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
 const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onSubmit }) => {
   const readOnly = mode === 'view';
   const [draft, setDraft] = useState(record || {
-    id: sales_makeDocumentId('KH'), name: '', code: '', address: '', owner: '', level: 'D', status: '潜在客户', industry: '', lastInteractionAt: new Date().toISOString().slice(0, 10)
+    id: sales_makeDocumentId('KH'), name: '', code: '', address: '', owner: '', level: 'D', status: '合作中', industry: '', remark: '', lastInteractionAt: new Date().toISOString().slice(0, 10)
   });
   const [contacts, setContacts] = useState(record?.contacts?.length ? record.contacts : [{ name: record?.contact || '', phone: record?.phone === '-' ? '' : record?.phone || '', role: '决策人' }]);
   const [error, setError] = useState('');
@@ -2352,8 +2863,8 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
 
   const submit = () => {
     const primary = contacts[0] || {};
-    if (!draft.name?.trim() || !draft.industry || !primary.name?.trim() || !primary.phone?.trim()) {
-      setError('请填写客户名称、所属行业、主联系人和联系电话');
+    if (!draft.name?.trim() || !primary.name?.trim()) {
+      setError('请填写客户名称和联系人');
       return;
     }
     const duplicate = customers.find((item) => item.id !== draft.id && (item.name.trim() === draft.name.trim() || (draft.code?.trim() && draft.code !== '-' && item.code === draft.code.trim())));
@@ -2368,7 +2879,7 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm sm:p-6">
       <div className="flex max-h-[92vh] w-[900px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <div><div className="flex items-center gap-2 text-[16px] font-bold text-slate-800"><Users size={18} className="text-blue-600" />{readOnly ? '客户档案详情' : mode === 'create' ? '新增客户档案' : '编辑客户档案'}</div><p className="mt-1 text-[12px] text-slate-400">客户主数据、联系人矩阵与归属信息统一维护</p></div>
+          <div className="flex items-center gap-2 text-[16px] font-bold text-slate-800"><Users size={18} className="text-blue-600" />{readOnly ? '客户详情' : mode === 'create' ? '新增客户' : '编辑客户'}</div>
           <button title="关闭" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700"><X size={20} /></button>
         </div>
         <div className="space-y-7 overflow-y-auto px-6 py-5 custom-scrollbar">
@@ -2378,9 +2889,10 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
               <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">客户编码</span><input value={draft.id} readOnly className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-500" /></label>
               <label className="block sm:col-span-2"><span className="mb-2 block text-[12px] font-bold text-slate-500">客户名称 <b className="text-rose-500">*</b></span><input value={draft.name || ''} readOnly={readOnly} onChange={(event) => setField('name', event.target.value)} placeholder="输入企业全称，保存时自动查重" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label>
               <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">统一社会信用代码</span><input value={draft.code === '-' ? '' : draft.code || ''} readOnly={readOnly} onChange={(event) => setField('code', event.target.value.toUpperCase())} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label>
-              <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">所属行业 <b className="text-rose-500">*</b></span><select value={draft.industry === '-' ? '' : draft.industry || ''} disabled={readOnly} onChange={(event) => setField('industry', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none focus:border-blue-500 disabled:bg-slate-50"><option value="">请选择行业</option>{activeIndustries.map((item) => <option key={item.id} value={item.name}>{item.parentId ? '　└ ' : ''}{item.name}</option>)}</select></label>
+              <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">行业</span><select value={draft.industry === '-' ? '' : draft.industry || ''} disabled={readOnly} onChange={(event) => setField('industry', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none focus:border-blue-500 disabled:bg-slate-50"><option value="">请选择行业</option>{activeIndustries.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
               <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">最近互动日期</span><input type="date" value={draft.lastInteractionAt || ''} readOnly={readOnly} onChange={(event) => setField('lastInteractionAt', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label>
               <label className="block sm:col-span-2 lg:col-span-3"><span className="mb-2 block text-[12px] font-bold text-slate-500">客户地址 / 定位</span><input value={draft.address || ''} readOnly={readOnly} onChange={(event) => setField('address', event.target.value)} placeholder="省 / 市 / 区 / 详细地址" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label>
+              <label className="block sm:col-span-2 lg:col-span-3"><span className="mb-2 block text-[12px] font-bold text-slate-500">备注</span><textarea value={draft.remark || ''} readOnly={readOnly} onChange={(event) => setField('remark', event.target.value)} placeholder="请输入备注信息" rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label>
             </div>
           </section>
           <section className="border-y border-slate-100 py-6">
@@ -2389,11 +2901,11 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
           </section>
           <section>
             <h4 className="mb-4 text-[13px] font-bold text-slate-800">业务与财务属性</h4>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3"><label><span className="mb-2 block text-[12px] font-bold text-slate-500">归属销售</span><input value={draft.owner || ''} readOnly={readOnly} onChange={(event) => setField('owner', event.target.value)} placeholder="留空即进入公海池" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">客户等级</span><select value={draft.level || 'D'} disabled={readOnly} onChange={(event) => setField('level', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50">{['VIP','A','B','C','D'].map((item) => <option key={item}>{item}</option>)}</select></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">合作状态</span><select value={draft.status || '潜在客户'} disabled={readOnly} onChange={(event) => setField('status', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50">{['潜在客户','跟进中','合作中','已流失'].map((item) => <option key={item}>{item}</option>)}</select></label></div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3"><label><span className="mb-2 block text-[12px] font-bold text-slate-500">归属销售</span><input value={draft.owner || ''} readOnly={readOnly} onChange={(event) => setField('owner', event.target.value)} placeholder="留空即进入公海池" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">客户等级</span><select value={draft.level || 'D'} disabled={readOnly} onChange={(event) => setField('level', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50">{['D','C','B','A','VIP'].map((item) => <option key={item} value={item}>{item}级客户</option>)}</select></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">状态</span><select value={draft.status || '合作中'} disabled={readOnly} onChange={(event) => setField('status', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50">{['合作中','潜在客户','跟进中','已流失'].map((item) => <option key={item}>{item}</option>)}</select></label></div>
           </section>
           {error && <div role="alert" className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-700"><AlertCircle size={15} />{error}</div>}
         </div>
-        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4"><button onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-5 py-2 text-[13px] font-bold text-slate-600">{readOnly ? '关闭' : '取消'}</button>{!readOnly && <button onClick={submit} className="rounded-lg bg-blue-600 px-5 py-2 text-[13px] font-bold text-white hover:bg-blue-700">保存客户档案</button>}</div>
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4"><button onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-5 py-2 text-[13px] font-bold text-slate-600">{readOnly ? '关闭' : '取消'}</button>{!readOnly && <button disabled={!draft.name?.trim() || !contacts[0]?.name?.trim()} onClick={submit} className="rounded-lg bg-blue-600 px-5 py-2 text-[13px] font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">保存</button>}</div>
       </div>
     </div>
   );
@@ -2402,20 +2914,23 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
 const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onAudit }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [levelFilter, setLevelFilter] = useState('全部等级');
+  const [industryFilter, setIndustryFilter] = useState('全部行业');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [recordModal, setRecordModal] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const visibleCustomers = customers.filter(row => {
       const keyword = searchTerm.trim().toLowerCase();
       const matchSearch = !keyword || `${row.id} ${row.name} ${row.contact}`.toLowerCase().includes(keyword);
       const matchLevel = levelFilter === '全部等级' || row.level === levelFilter;
-      return matchSearch && matchLevel;
+      const matchIndustry = industryFilter === '全部行业' || row.industry === industryFilter;
+      return matchSearch && matchLevel && matchIndustry;
   });
   const totalPages = Math.max(1, Math.ceil(visibleCustomers.length / limit));
   const currentPage = Math.min(page, totalPages);
   const pagedCustomers = visibleCustomers.slice((currentPage - 1) * limit, currentPage * limit);
 
-  useEffect(() => setPage(1), [searchTerm, levelFilter, limit]);
+  useEffect(() => setPage(1), [searchTerm, levelFilter, industryFilter, limit]);
 
   const handleSaveCustomer = (customer) => {
       const creating = recordModal?.mode === 'create';
@@ -2423,6 +2938,13 @@ const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onA
       setRecordModal(null);
       onToast(creating ? '客户档案已创建' : '客户资料已更新', customer.name);
       onAudit(creating ? '创建客户档案' : '更新客户资料', customer.id);
+  };
+
+  const handleDeleteCustomer = () => {
+      setCustomers((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+      onToast('客户已删除', deleteTarget.name, 'warning');
+      onAudit('删除客户', deleteTarget.id);
+      setDeleteTarget(null);
   };
 
   return (
@@ -2436,6 +2958,9 @@ const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onA
                   </div>
                   <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="border border-slate-200 rounded-lg flex items-center bg-white px-3 w-40 text-[13px] text-slate-600 cursor-pointer hover:border-slate-300 transition-colors outline-none">
                       <option>全部等级</option><option>D</option><option>C</option><option>B</option><option>A</option><option>VIP</option>
+                  </select>
+                  <select value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)} className="border border-slate-200 rounded-lg bg-white px-3 w-40 text-[13px] text-slate-600 cursor-pointer outline-none focus:border-blue-500">
+                      <option>全部行业</option>{industries.filter((item) => item.status === '启用').map((item) => <option key={item.id}>{item.name}</option>)}
                   </select>
               </div>
               <button onClick={() => setRecordModal({ mode: 'create', record: null })} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white shadow-sm hover:bg-blue-700"><Plus size={14} />新增客户</button>
@@ -2462,8 +2987,8 @@ const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onA
                               <td className="px-6 py-4 text-slate-700">{row.industry}</td>
                               <td className="px-6 py-4 text-right">
                                   <div className="flex items-center justify-end space-x-2">
-                                      <button title="查看" onClick={() => setRecordModal({ mode: 'view', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Eye size={14}/></button>
                                       <button title="编辑" onClick={() => setRecordModal({ mode: 'edit', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>
+                                      <button title="删除" onClick={() => setDeleteTarget(row)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50 transition-colors"><Trash2 size={14}/></button>
                                   </div>
                               </td>
                           </tr>
@@ -2475,6 +3000,7 @@ const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onA
           <Pagination total={visibleCustomers.length} page={currentPage} limit={limit} onPageChange={setPage} onLimitChange={setLimit} />
       </div>
       {recordModal && <Sales_CustomerModal mode={recordModal.mode} record={recordModal.record} customers={customers} industries={industries} onClose={() => setRecordModal(null)} onSubmit={handleSaveCustomer} />}
+      {deleteTarget && <Sales_ConfirmModal title="确认删除" desc={`确定要删除客户 “${deleteTarget.name}” 吗？`} confirmText="删除" tone="danger" onCancel={() => setDeleteTarget(null)} onConfirm={handleDeleteCustomer} />}
   </div>
   );
 };
@@ -2485,11 +3011,11 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   const createLevel = () => {
-      setRecordModal({ type: 'level', mode: 'create', record: { level: 'N', name: '新等级', min: '0 万元', desc: '请填写等级描述', sort: levels.length + 1, status: '启用' } });
+      setRecordModal({ type: 'level', mode: 'create', record: { level: '', name: '', min: '0 万元', desc: '', sort: levels.length + 1, status: '启用', color: '#10b981' } });
   };
 
   const createIndustry = () => {
-      setRecordModal({ type: 'industry', mode: 'create', record: { id: `IND-${String(industries.length + 1).padStart(3, '0')}`, name: '新行业', parentId: '', sort: industries.length + 1, status: '启用' } });
+      setRecordModal({ type: 'industry', mode: 'create', record: { id: `IND-${String(industries.length + 1).padStart(3, '0')}`, name: '', parentId: '', sort: industries.length + 1, status: '启用', remark: '', createdAt: new Date().toLocaleString('zh-CN', { hour12: false }) } });
   };
 
   const handleSaveRecord = (record) => {
@@ -2528,11 +3054,6 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
           }
           setLevels(prev => prev.filter(item => item.level !== confirmDelete.record.level));
       } else {
-          if (customers.some((customer) => customer.industry === confirmDelete.record.name) || industries.some((industry) => industry.parentId === confirmDelete.record.id)) {
-              onToast('行业节点正在被引用', '请停用该节点，历史客户和子行业将继续正常展示', 'warning');
-              setConfirmDelete(null);
-              return;
-          }
           setIndustries(prev => prev.filter(item => item.id !== confirmDelete.record.id));
       }
       onToast('记录已删除', confirmDelete.record.name, 'danger');
@@ -2547,7 +3068,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
                   <div className="w-1 h-4 bg-blue-600 mr-2.5 rounded-sm"></div>
                   <span className="text-[13px] text-slate-600 font-medium tracking-wide">
                       {activeSubTab === 'customerLevel' ? '配置客户等级及其年采购额阈值，支持手动调整等级' : 
-                       activeSubTab === 'industryDict' ? '配置系统的行业分类字典数据' : 
+                       activeSubTab === 'industryDict' ? '维护客户所在行业字典数据' :
                        '配置销售订单超时后的系统自动提醒与推送行为'}
                   </span>
               </div>
@@ -2613,28 +3134,26 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
           {activeSubTab === 'industryDict' && (
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden w-full animate-in fade-in duration-300">
                   <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white">
-                      <div className="text-[13px] text-slate-500 font-medium">维护销售客户所属行业，可用于客户筛选和 AI 激活策略。</div>
+                      <div className="text-[13px] text-slate-500 font-medium">维护客户所在行业字典数据</div>
                       <button onClick={createIndustry} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-[13px] font-medium flex items-center shadow-sm">
                           <Plus size={14} className="mr-1.5" /> 新增行业
                       </button>
                   </div>
                   <table className="w-full text-left text-[13px] whitespace-nowrap">
                       <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-100">
-                          <tr><th className="px-6 py-3.5 font-medium">行业编码</th><th className="px-6 py-3.5 font-medium">行业名称</th><th className="px-6 py-3.5 font-medium">上级行业</th><th className="px-6 py-3.5 font-medium">排序</th><th className="px-6 py-3.5 font-medium">状态</th><th className="px-6 py-3.5 font-medium text-right">操作</th></tr>
+                          <tr><th className="px-6 py-3.5 font-medium">行业名称</th><th className="px-6 py-3.5 font-medium">排序</th><th className="px-6 py-3.5 font-medium">状态</th><th className="px-6 py-3.5 font-medium">备注</th><th className="px-6 py-3.5 font-medium">创建时间</th><th className="px-6 py-3.5 font-medium text-right">操作</th></tr>
                       </thead>
                       <tbody>
                           {industries.map(row => (
                               <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                  <td className="px-6 py-4 text-blue-500 font-mono font-bold">{row.id}</td>
-                                  <td className="px-6 py-4 text-slate-800 font-bold">{row.parentId ? <span className="inline-flex items-center gap-2"><span className="text-slate-300">└</span>{row.name}</span> : row.name}</td>
-                                  <td className="px-6 py-4 text-slate-500">{industries.find((item) => item.id === row.parentId)?.name || '顶级行业'}</td>
+                                  <td className="px-6 py-4 text-slate-800 font-bold">{row.name}</td>
                                   <td className="px-6 py-4 text-slate-600">{row.sort}</td>
                                   <td className="px-6 py-4"><span className={`inline-flex items-center text-[12px] font-medium ${row.status === '启用' ? 'text-emerald-500' : 'text-slate-400'}`}><span className="w-1.5 h-1.5 bg-current rounded-full mr-1.5"></span>{row.status}</span></td>
+                                  <td className="px-6 py-4 text-slate-500">{row.remark || '-'}</td>
+                                  <td className="px-6 py-4 font-mono text-slate-500">{row.createdAt || '-'}</td>
                                   <td className="px-6 py-4 text-right">
                                       <div className="flex items-center justify-end space-x-2">
                                           <button title="编辑" onClick={() => setRecordModal({ type: 'industry', mode: 'edit', record: row })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>
-                                          <button title="新增子行业" onClick={() => setRecordModal({ type: 'industry', mode: 'create', record: { id: `IND-${String(industries.length + 1).padStart(3, '0')}`, name: '新子行业', parentId: row.id, sort: 1, status: '启用' } })} className="p-1 border border-blue-200 text-blue-500 rounded hover:bg-blue-50 transition-colors"><Plus size={14}/></button>
-                                          <button title={row.status === '启用' ? '停用' : '启用'} onClick={() => toggleIndustryStatus(row)} className="p-1 border border-amber-200 text-amber-500 rounded hover:bg-amber-50 transition-colors"><Power size={14}/></button>
                                           <button title="删除" onClick={() => setConfirmDelete({ type: 'industry', record: row })} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50 transition-colors"><Trash2 size={14}/></button>
                                       </div>
                                   </td>
@@ -2643,6 +3162,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
                       </tbody>
                   </table>
                   <Pagination total={industries.length} page={1} limit={10} />
+                  <div className="border-t border-slate-100 px-6 py-4 text-[12px] text-slate-500">提示：删除行业不会影响已使用该行业的客户数据</div>
               </div>
           )}
 
@@ -2700,9 +3220,101 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
   );
 };
 
+const Sales_OutboundRequestModal = ({ request, onClose }) => {
+  if (!request) return null;
+  const { order, task, status } = request;
+  const productLines = order?.lines && Array.isArray(order.lines) && order.lines.length > 0
+    ? order.lines
+    : order?.productName ? [{ productName: order.productName, spec: order.spec, unit: order.unit, qty: order.qty, unitPrice: order.unitPrice }] : [];
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl shadow-2xl w-[620px] max-h-[92vh] overflow-hidden flex flex-col border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-emerald-50/50 shrink-0">
+          <div className="flex gap-3">
+            <div className="w-10 h-10 rounded-xl border bg-emerald-50 border-emerald-100 flex items-center justify-center text-emerald-600">
+              <Truck size={18} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800 text-[15px]">已通知仓库准备发货</h3>
+              <p className="text-[12px] text-slate-500 mt-1">仓库人员将处理此订单的出库事宜</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg transition-colors"><X size={16}/></button>
+        </div>
+        <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+              <div className="text-[11px] font-bold text-slate-400 mb-1">销售订单</div>
+              <div className="text-[13px] font-bold text-slate-800">{order?.id}</div>
+            </div>
+            <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+              <div className="text-[11px] font-bold text-slate-400 mb-1">客户</div>
+              <div className="text-[13px] font-bold text-slate-800">{order?.client}</div>
+            </div>
+          </div>
+          {productLines.length > 0 && (
+            <div>
+              <div className="text-[12px] font-bold text-slate-500 mb-2">产品明细</div>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium">产品</th>
+                      <th className="px-3 py-2.5 font-medium text-center">规格</th>
+                      <th className="px-3 py-2.5 font-medium text-center">数量</th>
+                      <th className="px-3 py-2.5 font-medium text-center">单价</th>
+                      <th className="px-3 py-2.5 font-medium text-right">金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productLines.map((line, idx) => {
+                      const lineQty = line.qty || line.quantity || 0;
+                      const linePrice = line.unitPrice || 0;
+                      return (
+                        <tr key={idx} className="border-b border-slate-50 last:border-b-0">
+                          <td className="px-3 py-2.5 font-bold text-slate-800">{line.productName}</td>
+                          <td className="px-3 py-2.5 text-center text-slate-600">{line.spec || '-'}</td>
+                          <td className="px-3 py-2.5 text-center font-mono text-slate-700">{lineQty} {line.unit || '件'}</td>
+                          <td className="px-3 py-2.5 text-center font-mono text-slate-700">{sales_formatMoney(linePrice)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-800">{sales_formatMoney(Number(lineQty) * Number(linePrice))}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="border-t border-slate-200 bg-slate-50">
+                    <tr>
+                      <td colSpan="4" className="px-3 py-2.5 text-right text-[11px] font-bold text-slate-500">合计</td>
+                      <td className="px-3 py-2.5 text-right font-mono font-bold text-blue-700">{order?.amount || sales_formatMoney(productLines.reduce((sum, l) => sum + Number(l.qty || l.quantity || 0) * Number(l.unitPrice || 0), 0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+          {task && <div className="bg-blue-50 border border-blue-100 text-blue-700 rounded-xl px-4 py-3 text-[12px]">
+            <span className="font-bold">出库任务号：</span>{task.id}
+          </div>}
+          <div className="bg-amber-50 border border-amber-100 text-amber-700 rounded-xl px-4 py-3 text-[12px] leading-relaxed">
+            <p className="font-bold mb-1">后续流程说明：</p>
+            <ul className="list-disc list-inside space-y-1 text-amber-600">
+              <li>库存充足：顺利出库后，订单将变为「已发货」</li>
+              <li>库存不足（部分）：仓库部分发货，订单将变为「部分发货」</li>
+              <li>库存不足（全部）：订单保持「已确认」，等待补货</li>
+              <li>去生产：订单将进入「生产中」状态</li>
+            </ul>
+          </div>
+        </div>
+        <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50 shrink-0">
+          <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors">我知道了</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
-  const persistedWorkspace = useMemo(() => sales_loadWorkspace(currentTenant?.id), [currentTenant?.id]);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const persistedWorkspace = useMemo(() => sales_loadWorkspace(currentTenant?.id), [currentTenant?.id, resetSignal]);
+  const [activeTab, setActiveTab] = useState(() => resolveSalesTab(window.location.search));
   const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(false);
   const [quotes, setQuotes] = useState(() => persistedWorkspace?.quotes || sales_quotesData);
   const [orders, setOrders] = useState(() => persistedWorkspace?.orders || sales_ordersData);
@@ -2713,14 +3325,100 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const [audits, setAudits] = useState(() => persistedWorkspace?.audits || []);
   const [reminderAt, setReminderAt] = useState(() => persistedWorkspace?.reminderAt || null);
   const [toast, setToast] = useState(null);
+  const [outboundRequestModal, setOutboundRequestModal] = useState(null);
+
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const mapFormalOrder = (order) => ({
+      id: order.orderNo,
+      aggregateId: order.id,
+      formalOrder: order,
+      client: order.customerName || order.customerId,
+      salesman: order.ownerEmployeeId,
+      product: order.lines.map((line) => `${line.productId} × ${line.orderedQty} ${line.uom}`).join('；'),
+      productName: order.lines[0]?.productId || '-',
+      productId: order.lines[0]?.productId,
+      unit: order.lines[0]?.uom || 'PCS',
+      qty: Number(order.lines[0]?.orderedQty || 0),
+      unitPrice: Number(order.lines[0]?.unitPrice || 0),
+      amount: sales_formatMoney(Number(order.totalAmount || 0)),
+      receivable: order.shipmentStatus === 'SHIPPED' ? sales_formatMoney(Number(order.totalAmount || 0)) : '待生成',
+      date: order.createdAt?.slice(0, 10),
+      deliveryDate: order.requestedDeliveryDate,
+      warehouse: order.fulfillmentWarehouseId,
+      outStatus: order.shipmentStatus === 'SHIPPED' ? '全部发货' : order.shipmentStatus === 'PARTIALLY_SHIPPED' ? '部分发货' : order.shipmentStatus === 'REQUESTED' ? '已移交仓库' : '未发货',
+      status: order.overallStatus === 'SHIPPED' ? '已发货' : order.overallStatus === 'PARTIALLY_SHIPPED' ? '部分发货' : order.overallStatus === 'REPLENISHING' ? '生产中' : order.overallStatus === 'CONFIRMED' ? '已确认' : order.overallStatus === 'CANCELED' ? '已取消' : '待发货',
+      reviewStatus: order.reviewStatus,
+      confirmationStatus: order.reviewStatus === 'APPROVED' ? '已审批' : order.reviewStatus === 'NOT_REQUIRED' ? '无需审批' : order.reviewStatus === 'PENDING' ? '待复核' : order.reviewStatus,
+      shippedQty: order.lines.reduce((total, line) => total + Number(line.shippedQty), 0),
+      remainingQty: order.lines.reduce((total, line) => total + Number(line.remainingQty), 0),
+      canRequestRemainingShipment: order.overallStatus === 'PARTIALLY_SHIPPED' && order.lines.some((line) => Number(line.remainingQty) > Number(line.activeRequestedQty)),
+      version: order.version,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+  });
+
+  const refreshFormalOrders = async () => {
+      if (!formalContext) return;
+      const response = await listFulfillmentOrders(formalContext);
+      const formal = response.items.map(mapFormalOrder);
+      setOrders((previous) => [...formal, ...previous.filter((item) => !item.aggregateId && !formal.some((serverOrder) => serverOrder.id === item.id))]);
+  };
 
   useEffect(() => {
-      setActiveTab('dashboard');
+      refreshFormalOrders().catch((error) => showToast('正式订单加载失败', error instanceof Error ? error.message : '请稍后重试', 'danger'));
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  useEffect(() => {
+      const tasks = loadSalesOutboundTasks(window.localStorage, currentTenant?.id);
+      if (tasks.length === 0) return;
+      setOrders(prev => prev.map(order => {
+          if (order.aggregateId) return order;
+          const task = tasks.find(t => t.source === order.id && t.status !== '已出库');
+          return task ? { ...order, outStatus: task.status } : order;
+      }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTenant?.id]);
+
+  useEffect(() => {
+      const tab = resolveSalesTab(window.location.search);
+      setActiveTab(tab);
   }, [resetSignal]);
+
+  // 当从其他模块切回销售管理时，从 localStorage 重新加载订单数据（同步库存模块的部分发货回写）
+  useEffect(() => {
+      if (!persistedWorkspace?.orders) return;
+      setOrders(prev => {
+          // 合并策略：以 localStorage 中的订单为基础，保留当前会话中新创建的订单
+          const localStorageOrders = persistedWorkspace.orders;
+          const localIds = new Set(localStorageOrders.map(o => o.id));
+          const newOrders = prev.filter(o => !localIds.has(o.id));
+          return [...newOrders, ...localStorageOrders];
+      });
+  }, [persistedWorkspace]);
+
+  useEffect(() => {
+      const handlePopState = () => setActiveTab(resolveSalesTab(window.location.search));
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateSalesTab = (tab, replace = false) => {
+      setActiveTab(tab);
+      const nextUrl = createSalesTabUrl(window.location, tab);
+      const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextUrl !== currentUrl) window.history[replace ? 'replaceState' : 'pushState']({}, '', nextUrl);
+  };
+
+  const openSalesOrder = (orderId) => {
+      const nextUrl = new URL(createSalesTabUrl(window.location, 'orders'), window.location.origin);
+      nextUrl.searchParams.set('focusOrder', orderId);
+      window.history.pushState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+      setActiveTab('orders');
+  };
 
   useEffect(() => {
       try {
-          localStorage.setItem(`industrial-ai-sales:v4:${currentTenant?.id || 'default'}`, JSON.stringify({ quotes, orders, customers, levels, industries, outreachSettings, audits, reminderAt }));
+          localStorage.setItem(salesWorkspaceStorageKey(currentTenant?.id), JSON.stringify({ schemaVersion: 8, quotes, orders, customers, levels, industries, outreachSettings, audits, reminderAt }));
       } catch {
           // The page remains usable when browser storage is unavailable.
       }
@@ -2736,59 +3434,173 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       setAudits(prev => [{ action, entityId, operator: currentUser?.name || currentUser?.account || '当前用户', time: new Date().toLocaleString('zh-CN', { hour12: false }) }, ...prev].slice(0, 200));
   };
 
-  const handleQuickOrderCreate = (order) => {
-      setOrders(prev => [order, ...prev]);
-      setIsQuickOrderModalOpen(false);
-      addAudit('快速创建销售订单', order.id);
-      showToast('订单创建成功', `${order.id} 已加入销售订单列表`);
-      setActiveTab('orders');
-  };
-
-  const handleQuoteToOrder = (quote) => {
-      const qty = Number(quote.qty || 1);
-      const availableStock = quote.productName?.includes('FG001') ? 12 : 40;
-      const order = {
-          id: sales_makeDocumentId('SO'),
-          sourceQuoteId: quote.id,
-          client: quote.client,
-          salesman: currentUser?.name || '当前销售人员',
-          product: quote.product || `${quote.productName || '报价产品'} × ${qty} ${quote.unit || '件'}`,
-          productName: quote.productName || '报价产品',
-          spec: quote.spec || '-',
-          unit: quote.unit || '件',
-          qty,
-          unitPrice: Number(quote.unitPrice || sales_parseMoney(quote.amount) / qty),
-          discountRate: Number(quote.discountRate ?? 100),
-          discountAmount: Number(quote.discountAmount || 0),
-          availableStock,
-          shortage: Math.max(0, qty - availableStock),
-          amount: quote.amount,
-          receivable: '待生成',
-          date: new Date().toISOString().slice(0, 10),
-          deliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-          outStatus: '未发货',
-          status: '待确认',
-          remark: `由报价单 ${quote.id} 转化生成`,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-      };
-      setQuotes(prev => prev.map(item => item.id === quote.id ? { ...item, status: '已转订单', convertedOrderId: order.id } : item));
-      setOrders(prev => [order, ...prev]);
-      addAudit('报价单转销售订单', quote.id);
-      addAudit('由报价生成销售订单', order.id);
-      showToast('销售订单已生成', `${order.id} 已进入待确认队列`);
-      setActiveTab('orders');
-  };
-
-  const getSubtitle = () => {
-      switch(activeTab) {
-        case 'dashboard': return '客户管理 · 销售监控舱';
-        case 'quotes': return '客户管理 · 产品报价';
-        case 'orders': return '客户管理 · 销售订单';
-        case 'customers': return '客户管理 · 客户管理';
-        case 'baseData': return '客户管理 · 基础数据';
-        default: return '';
+  const approveQuoteAndConvert = (quote) => {
+      const latestQuote = quotes.find((item) => item.id === quote.id);
+      if (!latestQuote) {
+          showToast('报价审批确认失败', '报价单不存在或已被移除，请刷新后重试', 'danger');
+          return null;
       }
+      const existingOrder = orders.find((order) => order.sourceQuoteId === latestQuote.id || order.id === latestQuote.convertedOrderId);
+      if (existingOrder) {
+          showToast('报价单已转订单', `${latestQuote.id} 已关联 ${existingOrder.id}`);
+          openSalesOrder(existingOrder.id);
+          return existingOrder;
+      }
+      try {
+          const approvedAt = new Date().toISOString();
+          const operator = currentUser?.name || currentUser?.account || '客户经理';
+          const order = createPendingSalesOrderFromQuote(latestQuote, {
+              orderId: sales_makeDocumentId('SO'),
+              salesman: operator,
+              approvedAt,
+          });
+          setQuotes(prev => prev.map(item => item.id === latestQuote.id ? {
+              ...item,
+              status: '已转订单',
+              convertedOrderId: order.id,
+              convertedAt: approvedAt,
+              convertedBy: operator,
+              version: Number(item.version || 1),
+          } : item));
+          setOrders(prev => [order, ...prev]);
+          addAudit('审批确认产品报价并转销售订单', latestQuote.id);
+          addAudit('由报价生成待发货销售订单', order.id);
+          showToast('销售订单已生成', `${order.id} 已进入待发货，尚未发货`);
+          openSalesOrder(order.id);
+          return order;
+      } catch (error) {
+          showToast('报价审批确认失败', error instanceof Error ? error.message : '请核对报价状态后重试', 'danger');
+          return null;
+      }
+  };
+
+  const requestOutbound = async (order) => {
+      try {
+          if (!order.aggregateId) {
+              const orderLines = Array.isArray(order.lines) && order.lines.length > 0
+                  ? order.lines.map((line) => ({
+                      productId: line.productId || String(line.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || '',
+                      productName: line.productName || '',
+                      spec: line.spec || '',
+                      qty: Number(line.quantity || line.qty || 0),
+                      unit: line.unit || '件',
+                      unitPrice: Number(line.unitPrice || 0),
+                    }))
+                  : [{
+                      productId: order.productId || String(order.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || 'FG001',
+                      productName: order.productName || order.product || '',
+                      spec: order.spec || '',
+                      qty: Number(order.qty || 0),
+                      unit: order.unit || '件',
+                      unitPrice: Number(order.unitPrice || 0),
+                    }];
+              const task = requestSalesOutbound(window.localStorage, currentTenant?.id, {
+                  orderId: order.id,
+                  customer: order.client,
+                  item: orderLines.length === 1 ? orderLines[0].productName : `${orderLines[0].productName} 等 ${orderLines.length} 项产品`,
+                  qty: orderLines.reduce((sum, l) => sum + l.qty, 0),
+                  unit: orderLines[0]?.unit || '件',
+                  amount: order.amount,
+                  warehouse: order.warehouse || '成品主仓',
+                  productId: orderLines[0]?.productId,
+                  dueDate: order.deliveryDate,
+                  availableQty: resolveOrderAvailQty(order),
+                  sourceRevision: Number(order.version || 1),
+                  operator: currentUser?.name || currentUser?.account || '当前销售人员',
+                  lines: orderLines,
+              });
+              setOrders(prev => prev.map(item => item.id === order.id ? { ...item, outStatus: task.status } : item));
+              addAudit('已通知仓库准备发货', order.id);
+              setOutboundRequestModal({ order: { ...order, outStatus: task.status }, task, status: 'submitted' });
+              return;
+          }
+          if (!formalContext) {
+              showToast('请先登录', '请先登录正式会话后再操作', 'danger');
+              return;
+          }
+          let workingOrder = order;
+          if (workingOrder.formalOrder && ['NOT_REQUESTED', 'PARTIALLY_SHIPPED'].includes(workingOrder.formalOrder.shipmentStatus)) {
+              await createFulfillmentShipmentRequest(formalContext, workingOrder.formalOrder);
+              const response = await listFulfillmentOrders(formalContext);
+              const refreshed = response.items.find((item) => item.id === workingOrder.aggregateId);
+              if (refreshed) {
+                  const mapped = mapFormalOrder(refreshed);
+                  setOrders(prev => prev.map(item => item.aggregateId === workingOrder.aggregateId ? mapped : item));
+                  workingOrder = mapped;
+              }
+              addAudit('已通知仓库准备发货', workingOrder.id);
+          }
+          setOutboundRequestModal({ order: workingOrder, status: 'submitted' });
+      } catch (error) {
+          showToast('发货申请失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
+      }
+  };
+
+  const handleQuickOrderCreate = async (order) => {
+      if (!formalContext) {
+          showToast('订单创建失败', '请先登录正式会话后重试', 'danger');
+          return;
+      }
+      try {
+          const customer = customers.find((item) => item.name === order.client) || customers[0];
+          const productId = order.productId || String(order.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || 'FG001';
+          const created = await createFulfillmentOrder(formalContext, {
+              customerId: customer?.id || order.client,
+              customerName: order.client,
+              ownerEmployeeId: currentUser?.account || 'sales-owner',
+              fulfillmentWarehouseId: 'WH-FG-01',
+              factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
+              requestedDeliveryDate: order.deliveryDate,
+              allowPartialShipment: true,
+              currency: 'CNY',
+              recipient: {
+                  name: customer?.contact || '待补充收货人',
+                  phone: customer?.phone && customer.phone !== '-' ? customer.phone : '13800000000',
+                  country: '中国', province: '上海', city: '上海', address: customer?.address || '待补充收货地址',
+              },
+              lines: [{ lineNo: 1, productId, orderedQty: String(order.qty), uom: 'PCS', unitPrice: String(order.unitPrice), taxRate: '0', promisedDate: order.deliveryDate, allowPartialShipment: true }],
+          });
+          const mapped = mapFormalOrder(created);
+          setOrders(prev => [mapped, ...prev.filter((item) => item.id !== mapped.id)]);
+          setIsQuickOrderModalOpen(false);
+          addAudit('创建销售订单', mapped.id);
+          showToast('订单创建成功', `${mapped.id} 已进入审批/复核`);
+          navigateSalesTab('orders');
+      } catch (error) {
+          showToast('订单创建失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
+      }
+  };
+
+  const reviewFormalOrder = async (row) => {
+      if (!formalContext || !row.formalOrder) return null;
+      if (row.formalOrder.reviewStatus !== 'PENDING') throw new Error('订单当前不在待复核状态');
+      return mapFormalOrder(await approveFulfillmentOrder(formalContext, row.formalOrder));
+  };
+
+  const confirmFormalOrder = async (row) => {
+      if (!formalContext || !row.formalOrder) return null;
+      if (!['APPROVED', 'NOT_REQUIRED'].includes(row.formalOrder.reviewStatus)) throw new Error('订单尚未完成复核或审批');
+      return mapFormalOrder(await confirmFulfillmentOrder(formalContext, row.formalOrder, row.deliveryDate));
+  };
+
+  const requestFormalShipment = async (row) => {
+      if (!formalContext || !row.formalOrder) return null;
+      const order = row.formalOrder;
+      if (!['APPROVED', 'NOT_REQUIRED'].includes(order.reviewStatus)) throw new Error('订单尚未完成复核或审批');
+      if (!['NOT_REQUESTED', 'PARTIALLY_SHIPPED'].includes(order.shipmentStatus)) throw new Error('订单已有未完成的发货任务，请前往出库管理继续处理');
+      await createFulfillmentShipmentRequest(formalContext, order);
+      const response = await listFulfillmentOrders(formalContext);
+      const refreshed = response.items.find((item) => item.id === order.id) || order;
+      return mapFormalOrder(refreshed);
+  };
+
+  const cancelFormal = async (row) => {
+      if (!formalContext || !row.formalOrder) return null;
+      return mapFormalOrder(await cancelFulfillmentOrder(formalContext, row.formalOrder, '销售确认取消'));
+  };
+
+  const cancelOrderOutbound = (order) => {
+      cancelSalesOutbound(window.localStorage, currentTenant?.id, order.id);
   };
 
   const tabs = [
@@ -2796,8 +3608,16 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       { id: 'quotes', icon: <MessageSquare size={14} className="mr-1.5" />, label: '产品报价' },
       { id: 'orders', icon: <FileText size={14} className="mr-1.5" />, label: '销售订单' },
       { id: 'customers', icon: <Users size={14} className="mr-1.5" />, label: '客户管理' },
-      { id: 'baseData', icon: <BookOpen size={14} className="mr-1.5" />, label: '基础数据' },
+      { id: 'basic-data', icon: <BookOpen size={14} className="mr-1.5" />, label: '基础数据' },
   ];
+  const activeTabMeta = tabs.find((tab) => tab.id === activeTab) || tabs[0];
+  const activeTabDescriptions = {
+      dashboard: '实时监控 · 数据驱动 · 预警提示',
+      quotes: '报价有效期、审批确认与订单转化',
+      orders: '订单复核、发货申请与履约状态跟踪',
+      customers: '客户档案、联系人与合作状态维护',
+      'basic-data': '销售等级、行业字典与触达规则维护',
+  };
 
   return (
       <div className="w-full h-full font-sans flex flex-col relative overflow-y-auto custom-scrollbar bg-[#F5F7FA] selection:bg-blue-100">
@@ -2808,8 +3628,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                           $
                       </div>
                       <div className="flex flex-col justify-center">
-                          <h1 className="text-[22px] font-bold text-slate-800 leading-tight mb-1.5 tracking-wide">销售管理</h1>
-                          <div className="text-[13px] text-slate-400 font-medium">{getSubtitle()}</div>
+                          <h1 className="text-[22px] font-bold text-slate-800 leading-tight mb-1.5 tracking-wide">{activeTabMeta.label}</h1>
+                          <div className="text-[13px] text-slate-400 font-medium">{activeTabDescriptions[activeTab]}</div>
                       </div>
                   </div>
                   <button onClick={() => setIsQuickOrderModalOpen(true)} className="bg-[#2563EB] hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center text-[13px] font-medium transition-colors shadow-sm">
@@ -2821,7 +3641,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                   {tabs.map(tab => (
                       <button
                           key={tab.id}
-                          onClick={() => setActiveTab(tab.id)}
+                          onClick={() => navigateSalesTab(tab.id)}
                           className={`flex shrink-0 items-center px-3 sm:px-5 py-2.5 rounded-lg text-[14px] font-medium transition-all duration-200 ${
                               activeTab === tab.id
                               ? 'bg-[#2563EB] text-white shadow-sm'
@@ -2834,18 +3654,19 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                   ))}
               </div>
 
-              <BusinessFlowDock moduleName="销售管理" flow={businessFlow} onAction={onBusinessFlowAction} onNavigate={onNavigateModule} />
+              {activeTab === 'dashboard' && <BusinessFlowDock moduleName="销售管理" flow={businessFlow} onAction={onBusinessFlowAction} onNavigate={onNavigateModule} />}
 
               <div className="w-full">
-                  {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} onCreateQuote={(quote) => setQuotes(prev => [quote, ...prev])} onOpenOrders={() => setActiveTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
-                  {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} onConvertToOrder={handleQuoteToOrder} onToast={showToast} onAudit={addAudit} />}
-                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} />}
+                  {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} onCreateQuote={(quote) => setQuotes(prev => [quote, ...prev])} onOpenOrders={() => navigateSalesTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
+                  {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
+                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} />}
                   {activeTab === 'customers' && <Sales_CustomersView customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
-                  {activeTab === 'baseData' && <Sales_BaseDataView levels={levels} setLevels={setLevels} industries={industries} setIndustries={setIndustries} customers={customers} outreachSettings={outreachSettings} setOutreachSettings={setOutreachSettings} onToast={showToast} onAudit={addAudit} />}
+                  {activeTab === 'basic-data' && <Sales_BaseDataView levels={levels} setLevels={setLevels} industries={industries} setIndustries={setIndustries} customers={customers} outreachSettings={outreachSettings} setOutreachSettings={setOutreachSettings} onToast={showToast} onAudit={addAudit} />}
               </div>
               
               {isQuickOrderModalOpen && <Sales_QuickOrderModal onClose={() => setIsQuickOrderModalOpen(false)} onCreate={handleQuickOrderCreate} />}
               <Sales_Toast toast={toast} onClose={() => setToast(null)} />
+              {outboundRequestModal && <Sales_OutboundRequestModal request={outboundRequestModal} onClose={() => setOutboundRequestModal(null)} />}
           </div>
       </div>
   );
@@ -2861,7 +3682,7 @@ const prod_dashboardMetrics = [
   { id: 4, title: '财务核算闭环', value: '5', suffix: '单完工', subtitle: '实际成本核算无偏差', tag: '成本达标', tagColor: 'emerald' }
 ];
 
-const initial_mpsData = [{ id: 'MPS-26001', source: '销售订单 (SO-2026-902)', product: 'FG001 - 工业控制器顶配版', quantity: 500, date: '2026-06-25', status: '待展算', priority: '普通' }, { id: 'MPS-26002', source: 'VIP客户紧急补货', product: 'FG001 - 工业控制器顶配版', quantity: 80, date: '2026-06-10', status: '待展算', priority: '特急VIP' }];
+const initial_mpsData = [{ id: 'MPS-26001', demandSource: '销售缺货', source: '销售订单 (SO-2026-902)', product: 'FG001 - 工业控制器顶配版', quantity: 500, date: '2026-06-25', status: '待展算', priority: '普通' }, { id: 'MPS-26002', demandSource: '订单加急', source: 'VIP客户紧急补货', product: 'FG001 - 工业控制器顶配版', quantity: 80, date: '2026-06-10', status: '待展算', priority: '特急VIP' }];
 
 const initial_productionDemandData = [
   { id: 'PD-260620-01', type: '销售缺货', source: '销售订单 SO-2026-918', customer: '上海万申工业', product: 'FG001 - 工业控制器顶配版', shortage: 320, requiredDate: '2026-06-28', priority: '紧急', status: '待生成MPS', owner: '销售主管', reason: '订单已审批，成品可用量不足' },
@@ -2932,7 +3753,7 @@ const Prod_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
     const title = `${titlePrefix}${type === 'mps' ? '主生产计划' : '生产工单'}`;
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-[680px] overflow-hidden flex flex-col transform border border-slate-100">
                 <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 text-[15px] flex items-center gap-2">
@@ -3042,16 +3863,17 @@ const RoutingTimeline = ({ operations, isEditable, onEdit, onDelete }) => {
 };
 
 // --- Modals ---
-const Prod_MpsModal = ({ defaultPriority, bomData, onClose, onSave }) => {
+const Prod_MpsModal = ({ defaultPriority, defaultDemandSource = '普通生产', bomData, onClose, onSave }) => {
     const [id, setId] = useState(`MPS-${Date.now().toString().slice(-5)}`);
-    const [source, setSource] = useState(defaultPriority === '特急VIP' ? 'VIP客户加急补货' : `销售订单 (SO-${Math.floor(Math.random() * 1000)})`);
+    const [demandSource, setDemandSource] = useState(defaultDemandSource);
+    const [source, setSource] = useState(defaultDemandSource === '订单加急' ? 'VIP客户加急补货' : `销售订单 (SO-${Math.floor(Math.random() * 1000)})`);
     const [product, setProduct] = useState(bomData.find(b => b.type === '成品')?.name || '');
     const [priority, setPriority] = useState(defaultPriority);
     const [qty, setQty] = useState(200);
     const [date, setDate] = useState('2026-06-30');
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-[480px] overflow-hidden flex flex-col transform">
                 <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 text-[15px] flex items-center gap-2">
@@ -3062,8 +3884,9 @@ const Prod_MpsModal = ({ defaultPriority, bomData, onClose, onSave }) => {
                 <div className="p-6 space-y-5">
                     <div className="grid grid-cols-2 gap-4">
                         <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">MPS 计划编号 *</label><input type="text" value={id} disabled className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-mono bg-slate-50 text-slate-400" /></div>
-                        <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">需求来源 *</label><input type="text" value={source} onChange={e=>setSource(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" /></div>
+                        <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">需求来源类型 *</label><select value={demandSource} onChange={e=>{setDemandSource(e.target.value); if(e.target.value==='订单加急'){setSource('VIP客户加急补货');setPriority('特急VIP');} else if(e.target.value==='销售缺货'){setSource(`销售订单 (SO-${Math.floor(Math.random()*1000)})`);setPriority('紧急');} else {setSource('常规生产计划');setPriority('普通');}}} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 bg-white font-bold"><option value="普通生产">普通生产</option><option value="销售缺货">销售缺货</option><option value="订单加急">订单加急</option></select></div>
                     </div>
+                    <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">来源描述</label><input type="text" value={source} onChange={e=>setSource(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" /></div>
                     <div>
                         <label className="block text-[12px] font-bold text-slate-500 mb-1.5">生产目标物料 *</label>
                         <select value={product} onChange={e=>setProduct(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 bg-white">
@@ -3083,7 +3906,7 @@ const Prod_MpsModal = ({ defaultPriority, bomData, onClose, onSave }) => {
                 </div>
                 <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
                     <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl">取消</button>
-                    <button onClick={() => onSave({id, source, product, priority, quantity: parseInt(qty), date, status: '待展算'})} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5"><Check size={16}/> 确认保存</button>
+                    <button onClick={() => onSave({id, demandSource, source, product, priority, quantity: parseInt(qty), date, status: '待展算'})} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5"><Check size={16}/> 确认保存</button>
                 </div>
             </div>
         </div>
@@ -3091,7 +3914,7 @@ const Prod_MpsModal = ({ defaultPriority, bomData, onClose, onSave }) => {
 };
 
 const Prod_PeggingModal = ({ item, onClose }) => (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in duration-200">
         <div className="bg-white rounded-2xl shadow-2xl w-[550px] overflow-hidden flex flex-col transform">
             <div className="p-5 flex justify-between items-center border-b border-slate-100 bg-slate-50/50">
                 <h3 className="font-bold text-slate-900 text-[15px] flex items-center gap-2">
@@ -3163,7 +3986,7 @@ const Prod_QcModal = ({ qc, onClose, onSave }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-[550px] overflow-hidden flex flex-col transform border border-slate-100">
                 <div className="p-5 flex justify-between items-center border-b border-slate-100 bg-slate-50/50">
                     <h3 className="font-bold text-slate-900 text-[15px] flex items-center gap-2"><Microscope className="w-4.5 h-4.5 text-blue-600"/> 品质检验实绩录入</h3>
@@ -3210,7 +4033,7 @@ const Prod_EqModal = ({ editItem, onClose, onSave, productionLines }) => {
     const [lineCode, setLineCode] = useState(editItem ? (editItem.lineCode || productionLines[0]?.code || '') : (productionLines[0]?.code || ''));
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-[450px] overflow-hidden flex flex-col transform">
                 <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 text-[15px]">{editItem ? '编辑物理生产机台' : '注册物理生产机台'}</h3>
@@ -3316,8 +4139,8 @@ const Prod_DashboardView = ({ onAutoReschedule, onTransferLine }) => (
     />
 );
 
-const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onViewSource, canCreateMps = true }) => {
-    const pendingDemands = demands.filter(item => item.status === '待生成MPS');
+const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onViewSource, onValidateDemand, onApproveDemand, canCreateMps = true }) => {
+    const pendingDemands = demands.filter(item => item.apiStatus === 'APPROVED');
     const urgentDemands = pendingDemands.filter(item => ['紧急', '特急VIP'].includes(item.priority));
     const demandTypeMeta = {
         '销售缺货': { icon: ShoppingCart, className: 'bg-blue-50 text-blue-600 border-blue-100' },
@@ -3329,6 +4152,9 @@ const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onVi
         '已生成MPS': 'bg-blue-50 text-blue-600 border-blue-100',
         '已合并': 'bg-purple-50 text-purple-600 border-purple-100',
         '已暂缓': 'bg-slate-100 text-slate-500 border-slate-200',
+        '待校验': 'bg-amber-50 text-amber-700 border-amber-200',
+        '待审批': 'bg-purple-50 text-purple-700 border-purple-200',
+        '待核验': 'bg-slate-100 text-slate-600 border-slate-200',
     };
 
     return (
@@ -3381,7 +4207,8 @@ const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onVi
                         {demands.map(row => {
                             const meta = demandTypeMeta[row.type] || demandTypeMeta['销售缺货'];
                             const TypeIcon = meta.icon;
-                            const disabled = row.status !== '待生成MPS';
+                            const displayStatus = row.apiId ? row.status : '待核验';
+                            const canPlan = row.apiStatus === 'APPROVED';
                             return (
                                 <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-5 py-4 font-mono font-bold text-blue-600">{row.id}</td>
@@ -3392,7 +4219,9 @@ const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onVi
                                     </td>
                                     <td className="px-5 py-4">
                                         <div className="font-bold text-slate-800">{row.source}</div>
-                                        <div className="text-[11px] text-slate-400 mt-1">{row.customer} / {row.owner}</div>
+                                        {row.sourceSalesOrder && <div className="text-[11px] text-blue-500 font-mono mt-0.5">SO: {row.sourceSalesOrder.slice(0, 8)}…{row.sourceOrderLine ? ` · 行 ${row.sourceOrderLine}` : ''}</div>}
+                                        {row.sourceFactVersion != null && <div className="text-[11px] text-slate-400 font-mono">事实 v{row.sourceFactVersion}{row.sourceShipment ? ` · 出库 ${row.sourceShipment.slice(0, 8)}…` : ''}</div>}
+                                        <div className="text-[11px] text-slate-400 mt-0.5">{row.customer} / {row.owner}</div>
                                     </td>
                                     <td className="px-5 py-4 font-bold text-slate-800">{row.product}</td>
                                     <td className="px-5 py-4 text-right font-mono font-black text-slate-900">{row.shortage} PCS</td>
@@ -3401,14 +4230,20 @@ const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onVi
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${row.priority === '特急VIP' ? 'bg-rose-500 text-white border-rose-500' : row.priority === '紧急' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{row.priority}</span>
                                     </td>
                                     <td className="px-5 py-4">
-                                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statusClass[row.status] || statusClass['待生成MPS']}`}>{row.status}</span>
+                                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statusClass[displayStatus] || statusClass['待核验']}`}>{displayStatus}</span>
                                     </td>
                                     <td className="px-5 py-4">
                                         <TableActionGroup>
                                             <TableActionButton icon={Eye} label="来源" tone="slate" onClick={() => onViewSource(row)} />
-	                                            <TableActionButton icon={GitMerge} label="合并" tone="purple" onClick={() => onMergePlan(row.id)} disabled={disabled || !canCreateMps} />
-	                                            <TableActionButton icon={Plus} label="生成MPS" onClick={() => onCreateMps(row.id)} disabled={disabled || !canCreateMps} />
-                                            <TableActionButton icon={Clock} label="暂缓" tone="amber" onClick={() => onHoldDemand(row.id)} disabled={disabled} />
+                                            {row.apiStatus === 'RECEIVED' || row.apiStatus === 'BLOCKED'
+                                              ? <TableActionButton icon={CheckCircle2} label="校验" onClick={() => onValidateDemand(row.id)} />
+                                              : null}
+                                            {row.apiStatus === 'PENDING_REVIEW'
+                                              ? <TableActionButton icon={ShieldCheck} label="审批" tone="purple" onClick={() => onApproveDemand(row.id)} />
+                                              : null}
+	                                            <TableActionButton icon={GitMerge} label="合并" tone="purple" onClick={() => onMergePlan(row.id)} disabled />
+	                                            <TableActionButton icon={Plus} label="生成MPS" onClick={() => onCreateMps(row.id)} disabled={!canPlan || !canCreateMps} />
+                                            <TableActionButton icon={Clock} label="暂缓" tone="amber" onClick={() => onHoldDemand(row.id)} disabled={!row.apiId || ['PLANNED', 'CANCELED'].includes(row.apiStatus)} />
                                         </TableActionGroup>
                                     </td>
                                 </tr>
@@ -3421,11 +4256,50 @@ const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onVi
     );
 };
 
-const Prod_MpsView = ({ mps, bomData, onAddMps, onUpdateMps, onDeleteMps, onCalcMrp, showToast, canCalcMrp = true }) => {
+const mpsDemandSourceMeta = {
+    '销售缺货': { icon: ShoppingCart, className: 'bg-blue-50 text-blue-600 border-blue-100' },
+    '订单加急': { icon: Zap, className: 'bg-rose-50 text-rose-600 border-rose-100' },
+    '普通生产': { icon: TrendingUp, className: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+};
+const mpsStatusClassMap = {
+    '草稿': 'bg-slate-100 text-slate-600 border-slate-200',
+    '待确认': 'bg-amber-50 text-amber-700 border-amber-200',
+    '已审批': 'bg-blue-50 text-blue-600 border-blue-100',
+    '待展算': 'bg-amber-50 text-amber-600 border-amber-100',
+    '已展算': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    '已下发': 'bg-blue-50 text-blue-600 border-blue-100',
+};
+
+const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps, onUpdateMps, onDeleteMps, onCalcMrp, onValidateDemand, onApproveDemand, onCreateMpsFromDemand, onHoldDemand, onMergeDemand, onViewDemandSource, showToast, canCalcMrp = true, canCreateMps = true }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [defaultPriority, setDefaultPriority] = useState('普通');
+    const [defaultDemandSource, setDefaultDemandSource] = useState('普通生产');
     const [recordModal, setRecordModal] = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
+
+    const existingDemandIds = new Set(mps.filter(m => m.demandId).map(m => m.demandId));
+    const draftRows = productionDemands
+        .filter(d => !existingDemandIds.has(d.apiId) && d.apiStatus !== 'CANCELED' && d.apiStatus !== 'PLANNED')
+        .map(d => ({
+            id: d.id,
+            demandSource: d.type === '销售缺货' ? '销售缺货' : d.type === '客户加急' ? '订单加急' : '普通生产',
+            source: d.source,
+            product: d.product,
+            quantity: d.shortage,
+            date: d.requiredDate,
+            status: d.apiStatus === 'APPROVED' ? '待确认' : '草稿',
+            priority: d.priority,
+            sourceSalesOrder: d.sourceSalesOrder,
+            sourceFactVersion: d.sourceFactVersion,
+            sourceCustomer: d.customer,
+            demandId: d.apiId,
+            isDraft: true,
+            apiStatus: d.apiStatus,
+            rawDemand: d,
+        }));
+    const allRows = [...draftRows, ...mps];
+    const pendingCount = draftRows.filter(r => r.status === '草稿' || r.status === '待确认').length;
+    const urgentCount = allRows.filter(r => ['紧急', '特急VIP'].includes(r.priority)).length;
 
     return (
         <div className="flex flex-col gap-5 h-full animate-in fade-in duration-300">
@@ -3434,13 +4308,13 @@ const Prod_MpsView = ({ mps, bomData, onAddMps, onUpdateMps, onDeleteMps, onCalc
                     <h3 className="font-bold text-slate-800 text-[16px] flex items-center gap-2">
                         <div className="bg-blue-50 p-1.5 rounded-lg text-blue-600"><Target size={20} /></div> MPS 管理：主生产计划
                     </h3>
-                    <p className="text-[13px] text-slate-500 mt-2 ml-10">承接生产需求池确认后的计划需求，继续下推 MRP 展算、排产与工单执行。</p>
+                    <p className="text-[13px] text-slate-500 mt-2 ml-10">统一承接销售缺货、普通生产与订单加急需求，完成需求校验、审批、合并拆分、优先级调整后下推 MRP。</p>
                 </div>
                 <div className="flex gap-3 relative z-10 shrink-0">
-                    <button onClick={() => { setDefaultPriority('普通'); setIsModalOpen(true); }} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-5 py-2.5 rounded-xl text-[13px] font-bold shadow-sm transition-colors flex items-center gap-1.5">
+                    <button onClick={() => { setDefaultPriority('普通'); setDefaultDemandSource('普通生产'); setIsModalOpen(true); }} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-5 py-2.5 rounded-xl text-[13px] font-bold shadow-sm transition-colors flex items-center gap-1.5">
                         <Plus size={16} /> 常规计划
                     </button>
-                    <button onClick={() => { setDefaultPriority('特急VIP'); setIsModalOpen(true); }} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold shadow-sm transition-colors flex items-center gap-1.5">
+                    <button onClick={() => { setDefaultPriority('特急VIP'); setDefaultDemandSource('订单加急'); setIsModalOpen(true); }} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold shadow-sm transition-colors flex items-center gap-1.5">
                         <Zap size={16} /> 紧急插单
                     </button>
                 </div>
@@ -3449,42 +4323,61 @@ const Prod_MpsView = ({ mps, bomData, onAddMps, onUpdateMps, onDeleteMps, onCalc
                 <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center shrink-0 bg-slate-50/50">
                     <div>
                         <h4 className="font-bold text-[14px] text-slate-800 flex items-center gap-2"><ListTodo size={16} className="text-blue-600"/> 主生产计划列表 (MPS)</h4>
-                        <p className="text-[12px] text-slate-500 mt-1">展示已确认进入主计划的生产需求，可继续下推 MRP 展算。</p>
+                        <p className="text-[12px] text-slate-500 mt-1">草稿与待确认条目来自销售缺货/订单加急，审批后进入计划下推。</p>
                     </div>
-                    <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-bold shrink-0">{mps.length} 个计划</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 text-[12px] font-bold">待处理 {pendingCount}</span>
+                        <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-100 text-[12px] font-bold">高优先 {urgentCount}</span>
+                        <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-bold">{allRows.length} 条</span>
+                    </div>
                 </div>
                 <div className="overflow-auto flex-1 min-h-0 custom-scrollbar">
                     <table className="w-full text-left text-[13px] whitespace-nowrap">
                         <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-100 sticky top-0">
-                            <tr><th className="px-6 py-3.5 font-medium">MPS单号</th><th className="px-6 py-3.5 font-medium">需求来源</th><th className="px-6 py-3.5 font-medium">优先级</th><th className="px-6 py-3.5 font-medium">目标物料</th><th className="px-6 py-3.5 font-medium">计划数量</th><th className="px-6 py-3.5 font-medium">交期</th><th className="px-6 py-3.5 font-medium">状态</th><th className="px-6 py-3.5 font-medium text-right">操作</th></tr>
+                            <tr><th className="px-5 py-3.5 font-medium">MPS单号/需求编号</th><th className="px-5 py-3.5 font-medium">需求来源</th><th className="px-5 py-3.5 font-medium">优先级</th><th className="px-5 py-3.5 font-medium">目标物料</th><th className="px-5 py-3.5 font-medium text-right">计划数量</th><th className="px-5 py-3.5 font-medium">交期</th><th className="px-5 py-3.5 font-medium">来源追溯</th><th className="px-5 py-3.5 font-medium">状态</th><th className="px-5 py-3.5 font-medium text-right">操作</th></tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {mps.map(r=>(
-                                <tr key={r.id} className="hover:bg-slate-50/50 transition-colors group">
-                                    <td className="px-6 py-4 font-mono font-bold text-blue-600">{r.id}</td>
-                                    <td className="px-6 py-4 text-slate-600">{r.source}</td>
-                                    <td className="px-6 py-4">
-                                        {r.priority === '特急VIP' ? <span className="bg-rose-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max"><Zap size={12}/> 特急VIP</span> : r.priority === '紧急' ? <span className="bg-orange-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max">紧急</span> : <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 w-max">普通</span>}
-                                    </td>
-                                    <td className="px-6 py-4 font-bold text-slate-800">{r.product}</td>
-                                    <td className="px-6 py-4 font-mono font-bold text-slate-800">{r.quantity} PCS</td>
-                                    <td className="px-6 py-4 text-slate-500 font-mono">{r.date}</td>
-                                    <td className="px-6 py-4">{r.status==='已下发'?<span className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full text-[11px] font-bold border border-blue-100">已推MRP</span>:<span className="bg-amber-50 text-amber-600 px-2.5 py-1 rounded-full text-[11px] font-bold border border-amber-100">待展算</span>}</td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end space-x-2">
-                                            <button onClick={() => setRecordModal({ mode: 'view', record: r })} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看计划"><Eye size={16}/></button>
-                                            <button onClick={() => setRecordModal({ mode: 'edit', record: r })} disabled={r.status === '已下发'} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="编辑计划"><Edit2 size={16}/></button>
-	                                            {r.status === '待展算' ? <button onClick={() => onCalcMrp(r.id)} disabled={!canCalcMrp} className="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 p-1.5 rounded-lg transition-colors shadow-sm disabled:opacity-30 disabled:cursor-not-allowed" title={canCalcMrp ? '下推 MRP 展算' : '无 MRP 展算权限'}><PlayCircle size={16}/></button> : <button disabled className="p-1.5 text-slate-300 cursor-not-allowed"><Check size={16}/></button>}
-                                            <button onClick={() => setDeleteTarget(r)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="删除计划"><Trash2 size={16}/></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                        <tbody className="divide-y divide-slate-100">{allRows.map(r => {
+                                const ds = r.demandSource || '普通生产';
+                                const meta = mpsDemandSourceMeta[ds] || mpsDemandSourceMeta['普通生产'];
+                                const SourceIcon = meta.icon;
+                                const isDraft = r.isDraft;
+                                const canApprove = isDraft && r.apiStatus === 'APPROVED';
+                                const canValidate = isDraft && (r.apiStatus === 'RECEIVED' || r.apiStatus === 'BLOCKED');
+                                const canReview = isDraft && r.apiStatus === 'PENDING_REVIEW';
+                                return (
+                                    <tr key={r.id} aria-current={r.id === focusMps ? 'true' : undefined} className={`transition-colors group ${r.id === focusMps ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
+                                        <td className="px-5 py-4 font-mono font-bold text-blue-600">{r.id}</td>
+                                        <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${meta.className}`}><SourceIcon size={12} /> {ds}</span></td>
+                                        <td className="px-5 py-4">{r.priority === '特急VIP' ? <span className="bg-rose-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max"><Zap size={12}/> 特急VIP</span> : r.priority === '紧急' ? <span className="bg-orange-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max">紧急</span> : r.priority === '销售联动' ? <span className="bg-purple-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max">销售联动</span> : <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 w-max">普通</span>}</td>
+                                        <td className="px-5 py-4 font-bold text-slate-800">{r.product}</td>
+                                        <td className="px-5 py-4 text-right font-mono font-bold text-slate-800">{r.quantity} {r.unit || 'PCS'}</td>
+                                        <td className="px-5 py-4 text-slate-500 font-mono">{r.date}</td>
+                                        <td className="px-5 py-4">{r.sourceSalesOrder ? <div className="text-[11px] text-blue-500 font-mono">SO: {String(r.sourceSalesOrder).slice(0, 12)}{r.sourceFactVersion != null ? ` \u00b7 v${r.sourceFactVersion}` : ''}</div> : <div className="text-[11px] text-slate-400">{r.source || '-'}</div>}{r.sourceCustomer && <div className="text-[11px] text-slate-400 mt-0.5">{r.sourceCustomer}</div>}</td>
+                                        <td className="px-5 py-4"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${mpsStatusClassMap[r.status] || mpsStatusClassMap['草稿']}`}>{r.status === '已下发' ? '已推MRP' : r.status}</span></td>
+                                        <td className="px-5 py-4 text-right">
+                                            <div className="flex items-center justify-end space-x-1.5">
+                                                {isDraft ? <>
+                                                    <button onClick={() => onViewDemandSource?.(r.rawDemand)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看来源"><Eye size={16}/></button>
+                                                    {canValidate && <button onClick={() => onValidateDemand?.(r.id)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="需求校验"><CheckCircle2 size={16}/></button>}
+                                                    {canReview && <button onClick={() => onApproveDemand?.(r.id)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="异人审批"><ShieldCheck size={16}/></button>}
+                                                    {canApprove && <button onClick={() => onCreateMpsFromDemand?.(r.id)} disabled={!canCreateMps} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canCreateMps ? '生成MPS' : '无创建权限'}><Plus size={16}/></button>}
+                                                    <button onClick={() => onHoldDemand?.(r.id)} disabled={!r.demandId} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="暂缓"><Clock size={16}/></button>
+                                                </> : <>
+                                                    <button onClick={() => setRecordModal({ mode: 'view', record: r })} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看计划"><Eye size={16}/></button>
+                                                    <button onClick={() => setRecordModal({ mode: 'edit', record: r })} disabled={r.status === '已下发'} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="编辑计划"><Edit2 size={16}/></button>
+                                                    {r.status === '待展算' ? <button onClick={() => onCalcMrp(r.id)} disabled={!canCalcMrp} className="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 p-1.5 rounded-lg transition-colors shadow-sm disabled:opacity-30 disabled:cursor-not-allowed" title={canCalcMrp ? '下推 MRP 展算' : '无 MRP 展算权限'}><PlayCircle size={16}/></button> : <button disabled className="p-1.5 text-slate-300 cursor-not-allowed"><Check size={16}/></button>}
+                                                    <button onClick={() => setDeleteTarget(r)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="删除计划"><Trash2 size={16}/></button>
+                                                </>}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
             </div>
-            {isModalOpen && <Prod_MpsModal defaultPriority={defaultPriority} bomData={bomData} onClose={() => setIsModalOpen(false)} onSave={(data) => { onAddMps(data); setIsModalOpen(false); }} />}
+            {isModalOpen && <Prod_MpsModal defaultPriority={defaultPriority} defaultDemandSource={defaultDemandSource} bomData={bomData} onClose={() => setIsModalOpen(false)} onSave={(data) => { onAddMps(data); setIsModalOpen(false); }} />}
             {recordModal && <Prod_RecordModal type="mps" mode={recordModal.mode} record={recordModal.record} onClose={() => setRecordModal(null)} onSubmit={(draft) => { onUpdateMps(draft); setRecordModal(null); }} />}
             {deleteTarget && <Sales_ConfirmModal title="删除主生产计划" desc={`确定删除 ${deleteTarget.id} 吗？删除后该演示数据将从当前列表移除。`} confirmText="删除" tone="danger" onCancel={() => setDeleteTarget(null)} onConfirm={() => { onDeleteMps(deleteTarget.id); setDeleteTarget(null); }} />}
         </div>
@@ -3642,6 +4535,7 @@ const Prod_ExecutionView = ({ jobs, onStartJob, onReportJob, onSendOutsource, on
                                 j.status==='进行中'?<span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded border border-emerald-100 text-[11px] font-bold animate-pulse">加工中</span>:
                                 j.status==='委外中'?<span className="bg-purple-50 text-purple-600 px-2 py-0.5 rounded border border-purple-100 text-[11px] font-bold animate-pulse">外发加工中</span>:
                                 j.status==='待发外'?<span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded border border-amber-100 text-[11px] font-bold">等待外发物流</span>:
+                                j.status==='领料处理中'?<span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200 text-[11px] font-bold">领料处理中</span>:
                                 j.status==='已完工'?<span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200 text-[11px] font-bold">已完结</span>:
                                 j.status==='未开工'?<span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 text-[11px] font-bold">物料就位待产</span>:
                                 <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded border border-amber-100 text-[11px] font-bold">待领料 (缺料)</span>;
@@ -3671,6 +4565,7 @@ const Prod_ExecutionView = ({ jobs, onStartJob, onReportJob, onSendOutsource, on
                                     <button disabled className="w-full bg-slate-50 text-slate-400 border border-slate-200 text-[12px] font-bold py-2 rounded-xl">委外已完结</button>
                                 ) : (
                                     j.status==='待领料' ? <button onClick={() => onMaterialReq(j.id)} className="w-full bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[12px] font-bold py-2 rounded-xl transition-colors shadow-sm flex justify-center items-center gap-1.5"><FileText size={14}/> 开具领料单</button> :
+                                    j.status==='领料处理中' ? <button disabled className="w-full bg-blue-50 text-blue-700 border border-blue-200 text-[12px] font-bold py-2 rounded-xl"><Clock size={14} className="mr-1.5 inline"/>等待仓库出库</button> :
                                     <div className="flex gap-2 w-full">
                                         <button onClick={() => onStartJob(j.id)} disabled={j.status==='进行中'||j.status==='已完工'} className="flex-1 bg-blue-600 text-white hover:bg-blue-700 text-[12px] py-2 rounded-xl font-bold disabled:opacity-40 transition-colors shadow-sm">开工作业</button>
                                         <button onClick={() => onReportJob(j.id)} disabled={j.status!=='进行中'} className="flex-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-[12px] py-2 rounded-xl font-bold disabled:opacity-40 transition-colors shadow-sm">登记报工</button>
@@ -3801,7 +4696,7 @@ const Prod_BomModal = ({ action, activeNode, onSave, onClose }) => {
     const [moq, setMoq] = useState(activeNode?.moq || 1);
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-[600px] overflow-hidden flex flex-col transform">
                 <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 text-[15px]">{isRootNode ? '产品高级属性设定' : (action === 'add' ? '添加子零部件' : '编辑零部件属性')}</h3>
@@ -3864,7 +4759,7 @@ const Prod_BomModal = ({ action, activeNode, onSave, onClose }) => {
 };
 
 const Prod_ImportBomModal = ({ onClose, onImport }) => (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
         <div className="bg-white rounded-2xl shadow-2xl w-[450px] overflow-hidden flex flex-col transform border border-slate-100">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <h3 className="font-bold text-slate-800 text-[15px] flex items-center gap-2"><FileSpreadsheet size={16} className="text-emerald-600"/> 批量导入产品 BOM</h3>
@@ -4071,7 +4966,7 @@ const Prod_RouteHeaderModal = ({ action, activeRoute, onClose, onSave }) => {
     const [targetItem, setTargetItem] = useState(activeRoute?.targetItem || '');
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-[450px] overflow-hidden flex flex-col transform">
                 <div className="p-5 border-b flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 text-[15px]">{action === 'add' ? '新增工艺路线' : '编辑工艺路线'}</h3>
@@ -4105,7 +5000,7 @@ const Prod_RouteOpModal = ({ action, activeOp, equipments, onClose, onSave }) =>
     const suppliersList = ['东莞协创五金代工厂', '顺络电子表面处理', '立讯精密(组装外协)'];
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-sm transition-opacity animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-[450px] overflow-hidden flex flex-col transform">
                 <div className="p-5 border-b flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 text-[15px]">{action === 'add' ? '新增加工工序' : '编辑加工工序'}</h3>
@@ -4259,7 +5154,8 @@ const Prod_RoutingView = ({ routingData, setRoutingData, equipments, showToast }
 
 const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant }) => {
   const productionLines = loadPlatformProductionLines(currentTenant?.id);
-  const legacyTabs = ['dashboard', 'demandPool', 'mps', 'mrp', 'aps', 'orders', 'execution', 'qc_cost', 'bom', 'routing', 'equipment'];
+  const legacyTabs = ['dashboard', 'mps', 'mrp', 'aps', 'orders', 'execution', 'qc_cost', 'bom', 'routing', 'equipment'];
+  const focusedMpsId = new URLSearchParams(window.location.search).get('focusMps');
   const legacyStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || 'TENANT-SHWS'}`;
   const savedProduction = useMemo(() => {
       try {
@@ -4287,11 +5183,133 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [actionModal, setActionModal] = useState(null);
+
+  useEffect(() => {
+      const materialIssues = loadProductionMaterialIssueTasks(window.localStorage, currentTenant?.id);
+      if (!materialIssues.length) return;
+      setJobs((previous) => previous.map((job) => {
+          const task = materialIssues.find((item) => item.jobId === job.id);
+          if (!task) return job;
+          return { ...job, materialIssueTaskId: task.id, status: task.status === '已出库' ? '未开工' : '领料处理中' };
+      }));
+  }, [currentTenant?.id]);
   
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
   };
+
+  const formalCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+
+  const mapFormalWorkOrder = (wo) => {
+    const woStatusMap = { 'PLANNED': '待检查', 'SCHEDULED': '齐套待下发', 'KITTING': '待检查', 'RELEASED': '执行中', 'IN_PROGRESS': '执行中', 'PAUSED': '已暂停', 'COMPLETED': '已完工', 'CLOSED': '已完工' };
+    const kittingMap = { 'READY': '100%', 'PARTIAL_READY': '50%', 'SHORTAGE': '0%', 'EXPIRED': '0%' };
+    return {
+      id: wo.code, apiId: wo.id, formalOrder: wo,
+      source: '正式 API',
+      product: `${wo.productId} - ${wo.productName || wo.productId}`,
+      quantity: Number(wo.plannedQty),
+      startDate: wo.dueDate, endDate: wo.dueDate,
+      status: woStatusMap[wo.status] || wo.status,
+      kitting: kittingMap[wo.kittingStatus] || (wo.kittingStatus ? '100%' : '0%'),
+      completedQty: Number(wo.reportedGoodQty),
+    };
+  };
+
+  const mapFormalInspection = (insp) => {
+    const inspStatusMap = { 'CREATED': '待检验', 'REINSPECTION': '待检验', 'PASSED': '待入库', 'FAILED': '已结案', 'DISPOSITION_PENDING': '待返修复检' };
+    return {
+      id: insp.code, apiId: insp.id, formalInspection: insp,
+      orderId: insp.workOrderId,
+      product: '正式 FQC', type: 'FQC(完工检)',
+      sampleQty: Number(insp.sampleQty),
+      status: inspStatusMap[insp.status] || insp.status,
+      okQty: Number(insp.passedQty), ngQty: Number(insp.failedQty),
+      result: insp.status === 'PASSED' ? '全良品待入库' : null,
+    };
+  };
+
+  const mapFormalDemandRow = (demand) => {
+      const trace = demand.source;
+      const sourceSalesOrder = trace?.salesOrderId || '';
+      const sourceOrderLine = trace?.salesOrderLineId || '';
+      const sourceShipment = trace?.shipmentRequestId || '';
+      const sourceFactVersion = trace?.inventoryFactVersion;
+      const sourceTraceId = trace?.traceId || '';
+      const sourceLabel = demand.sourceType === 'SALES_ORDER_SHORTAGE'
+        ? (sourceSalesOrder ? `销售订单 ${sourceSalesOrder.slice(0, 8)}` : '销售订单 / 生产服务')
+        : `${demand.sourceType} / 生产服务`;
+      return {
+      id: demand.code,
+      apiId: demand.id,
+      apiStatus: demand.status,
+      formalDemand: demand,
+      type: demand.sourceType === 'SALES_ORDER_SHORTAGE' ? '销售缺货' : '预测补货',
+      source: sourceLabel,
+      sourceTrace: trace || null,
+      sourceSalesOrder,
+      sourceOrderLine,
+      sourceShipment,
+      sourceFactVersion,
+      sourceTraceId,
+      customer: '业务来源',
+      product: `${demand.productId} - ${demand.productName || demand.productId}`,
+      shortage: Number(demand.qty),
+      requiredDate: demand.dueDate,
+      priority: '紧急',
+      status: ['RECEIVED', 'BLOCKED'].includes(demand.status)
+        ? '待校验'
+        : demand.status === 'PENDING_REVIEW'
+          ? '待审批'
+          : demand.status === 'APPROVED'
+            ? '待生成MPS'
+            : demand.status === 'PLANNED'
+              ? '已生成MPS'
+              : demand.status,
+      owner: demand.createdBy || '生产服务',
+      reason: `需求版本 v${demand.version} · ${demand.correlationId}`,
+      };
+  };
+
+  useEffect(() => {
+      let cancelled = false;
+      listProductionDemands({
+          tenantId: currentTenant?.id || 'TENANT-SHWS',
+          accessToken: currentUser?.accessToken || '',
+      }).then((result) => {
+          if (cancelled) return;
+          setProductionDemands(result.items.map(mapFormalDemandRow));
+      }).catch((error) => {
+          if (!cancelled) showToast(error instanceof Error ? `生产需求同步失败：${error.message}` : '生产需求同步失败', 'error');
+      });
+      return () => { cancelled = true; };
+  }, [currentTenant?.id, currentUser?.account]);
+
+  useEffect(() => {
+      if (!formalCtx) return;
+      let cancelled = false;
+      productionOperationsApi.listWorkOrders(formalCtx).then((result) => {
+          if (cancelled) return;
+          const formal = result.items.map(mapFormalWorkOrder);
+          setOrders(prev => [...formal, ...prev.filter(item => !item.formalOrder && !formal.some(f => f.id === item.id))]);
+      }).catch((error) => {
+          if (!cancelled) showToast(error instanceof Error ? `工单同步失败：${error.message}` : '工单同步失败', 'error');
+      });
+      return () => { cancelled = true; };
+  }, [formalCtx?.tenantId, formalCtx?.accessToken]);
+
+  useEffect(() => {
+      if (!formalCtx) return;
+      let cancelled = false;
+      productionOperationsApi.listInspections(formalCtx).then((items) => {
+          if (cancelled) return;
+          const formal = items.map(mapFormalInspection);
+          setQc(prev => [...formal, ...prev.filter(item => !item.formalInspection && !formal.some(f => f.id === item.id))]);
+      }).catch((error) => {
+          if (!cancelled) showToast(error instanceof Error ? `检验单同步失败：${error.message}` : '检验单同步失败', 'error');
+      });
+      return () => { cancelled = true; };
+  }, [formalCtx?.tenantId, formalCtx?.accessToken]);
 
   useEffect(() => {
       const url = new URL(window.location.href);
@@ -4306,9 +5324,10 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   useEffect(() => {
       if (!businessFlow) return;
-      if (isLinkedFlowAtLeast(businessFlow, 'mpsMrp')) {
+      if (isLinkedFlowAtLeast(businessFlow, 'productionDemand')) {
           const linkedDemand = {
-              id: 'PD-LINK-001',
+              id: businessFlow.productionDemandCode || businessFlow.productionDemandId || 'PD-LINK-001',
+              apiId: businessFlow.productionDemandId,
               type: '销售缺货',
               source: `销售订单 ${businessFlow.orderId}`,
               customer: businessFlow.customer || '销售客户',
@@ -4316,20 +5335,27 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               shortage: businessFlow.shortage || businessFlow.qty,
               requiredDate: '2026-06-28',
               priority: '紧急',
-              status: '已生成MPS',
-              owner: '销售联动',
-              reason: '销售订单库存不足，已进入 MPS/MRP 展算'
+              status: isLinkedFlowAtLeast(businessFlow, 'mpsMrp') ? '已生成MPS' : '待生成MPS',
+              owner: '生产服务',
+              reason: `销售订单库存不足，库存事实 v${businessFlow.inventoryFactVersion || '-'}，生产需求已持久化`
           };
+          setProductionDemands(prev => prev.some(item => item.id === linkedDemand.id || item.apiId === linkedDemand.apiId) ? prev.map(item => item.id === linkedDemand.id || item.apiId === linkedDemand.apiId ? { ...item, ...linkedDemand } : item) : [linkedDemand, ...prev]);
+          setActiveTab('mps');
+      }
+      if (isLinkedFlowAtLeast(businessFlow, 'mpsMrp')) {
           const linkedMps = {
               id: 'MPS-LINK-001',
+              demandSource: '销售缺货',
               source: `销售订单 (${businessFlow.orderId})`,
               product: businessFlow.product,
               quantity: businessFlow.shortage || businessFlow.qty,
               date: '2026-06-28',
               status: isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? '已展算' : '待展算',
-              priority: '销售联动'
+              priority: '销售联动',
+              sourceSalesOrder: businessFlow.orderId,
+              sourceFactVersion: businessFlow.inventoryFactVersion,
+              sourceCustomer: businessFlow.customer,
           };
-          setProductionDemands(prev => prev.some(item => item.id === linkedDemand.id) ? prev.map(item => item.id === linkedDemand.id ? linkedDemand : item) : [linkedDemand, ...prev]);
           setMps(prev => prev.some(item => item.id === linkedMps.id) ? prev.map(item => item.id === linkedMps.id ? linkedMps : item) : [linkedMps, ...prev]);
           setMrp(prev => prev.some(item => item.id === 'MRP-LINK-001') ? prev.map(item => item.id === 'MRP-LINK-001' ? { ...item, status: isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? '已转采购' : '待下达' } : item) : [{
               id: 'MRP-LINK-001',
@@ -4376,29 +5402,133 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   }, [businessFlow?.currentStep]);
 
   // --- 生产需求池交互 ---
-  const handleCreateMpsFromDemand = (demandId) => {
+  const handleValidateDemand = async (demandId) => {
       const targetDemand = productionDemands.find(item => item.id === demandId);
-      if (!targetDemand || targetDemand.status !== '待生成MPS') return;
-      const nextMps = {
-          id: `MPS-${Date.now().toString().slice(-5)}`,
-          source: `${targetDemand.type} (${targetDemand.source})`,
-          product: targetDemand.product,
-          quantity: targetDemand.shortage,
-          date: targetDemand.requiredDate,
-          status: '待展算',
-          priority: targetDemand.priority === '特急VIP' ? '特急VIP' : targetDemand.priority === '紧急' ? '紧急' : '普通'
-      };
-      setMps(prev => [nextMps, ...prev]);
-      setProductionDemands(prev => prev.map(item => item.id === demandId ? { ...item, status: '已生成MPS', reason: `已转入 ${nextMps.id}` } : item));
-      showToast(`生产需求 [${demandId}] 已生成 MPS 主计划`, 'success');
+      if (!targetDemand?.formalDemand) return;
+      try {
+          const updated = await productionOperationsApi.validateDemand({
+              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              accessToken: currentUser?.accessToken || '',
+          }, targetDemand.formalDemand);
+          setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
+          showToast(`生产需求 [${demandId}] 校验完成`, 'success');
+      } catch (error) {
+          showToast(error instanceof Error ? `需求校验失败：${error.message}` : '需求校验失败', 'error');
+      }
+  };
+
+  const handleApproveDemand = async (demandId) => {
+      const targetDemand = productionDemands.find(item => item.id === demandId);
+      if (!targetDemand?.formalDemand) return;
+      try {
+          const updated = await productionOperationsApi.approveDemand({
+              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              accessToken: currentUser?.accessToken || '',
+          }, targetDemand.formalDemand);
+          setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
+          showToast(`生产需求 [${demandId}] 已审批，可生成 MPS/MRP`, 'success');
+      } catch (error) {
+          showToast(error instanceof Error ? `需求审批失败：${error.message}` : '需求审批失败', 'error');
+      }
+  };
+
+  const handleCreateMpsFromDemand = async (demandId) => {
+      const targetDemand = productionDemands.find(item => item.id === demandId);
+      if (!targetDemand?.apiId || targetDemand.apiStatus !== 'APPROVED') return;
+      try {
+          const result = await productionOperationsApi.startPlanningTask({
+              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              accessToken: currentUser?.accessToken || '',
+          }, 'MRP', [targetDemand.apiId], `${targetDemand.apiId}:${targetDemand.formalDemand?.version || 1}`);
+          const mpsLine = result.result?.mpsLines?.find((line) => line.demandId === targetDemand.apiId);
+          if (result.status !== 'SUCCEEDED' || !mpsLine) throw new Error('计划任务未返回覆盖当前需求的 MPS 结果');
+          const nextMps = {
+              id: `MPS-${result.taskId.slice(0, 8)}`,
+              taskId: result.taskId,
+              demandSource: targetDemand.type === '销售缺货' ? '销售缺货' : targetDemand.type === '客户加急' ? '订单加急' : '普通生产',
+              source: `${targetDemand.type} (${targetDemand.source})`,
+              product: targetDemand.product,
+              quantity: Number(mpsLine.plannedQty),
+              date: mpsLine.dueDate,
+              status: '已展算',
+              priority: targetDemand.priority,
+              sourceSalesOrder: targetDemand.sourceSalesOrder,
+              sourceFactVersion: targetDemand.sourceFactVersion,
+              sourceCustomer: targetDemand.customer,
+              demandId: targetDemand.apiId,
+          };
+          setMps(prev => [nextMps, ...prev.filter(item => item.taskId !== result.taskId)]);
+          const shortages = result.result?.materialShortages || [];
+          if (shortages.length) {
+              const rows = shortages.map((shortage) => ({
+                  id: `MRP-${result.taskId.slice(0, 8)}-${shortage.materialId}`,
+                  mrpTaskId: result.taskId,
+                  demandId: shortage.demandId,
+                  source: nextMps.id,
+                  itemCode: shortage.materialId,
+                  itemName: shortage.materialName || shortage.materialId,
+                  type: '采购件',
+                  grossReq: Number(shortage.grossRequiredQty),
+                  stock: Number(shortage.availableQty),
+                  onWay: 0,
+                  netReq: Number(shortage.shortageQty),
+                  plannedQty: Number(shortage.shortageQty),
+                  lotRule: '按需(L4L)',
+                  status: '待转采购',
+                  pegging: [],
+              }));
+              setMrp(prev => [...rows, ...prev.filter(item => item.mrpTaskId !== result.taskId)]);
+              setActiveTab('mrp');
+          }
+          setProductionDemands(prev => prev.map(item => item.id === demandId ? {
+              ...item,
+              apiStatus: 'PLANNED',
+              status: '已生成MPS',
+              reason: `计划任务 ${result.taskId} · ${result.result?.solver || 'Reference MRP'}`,
+              formalDemand: { ...item.formalDemand, status: 'PLANNED' },
+          } : item));
+          onBusinessFlowAction?.('formalMrpCompleted', { mrpTaskId: result.taskId, demandId: targetDemand.apiId, materialShortages: shortages });
+          showToast(shortages.length ? `MPS/MRP 任务 [${result.taskId}] 已完成，发现 ${shortages.length} 项采购缺料` : `MPS/MRP 任务 [${result.taskId}] 已完成且物料齐套`, shortages.length ? 'warning' : 'success');
+      } catch (error) {
+          showToast(error instanceof Error ? `MPS/MRP 计算失败：${error.message}` : 'MPS/MRP 计算失败', 'error');
+      }
+  };
+
+  const handleProductionFlowAction = async (action) => {
+      if (action === 'runMrp') {
+          const target = productionDemands.find(item => item.apiId === businessFlow?.productionDemandId) || productionDemands.find(item => item.apiStatus === 'APPROVED');
+          if (!target || target.apiStatus !== 'APPROVED') {
+              showToast('请先在 MPS 页面完成正式校验与异人审批，再执行 MPS/MRP', 'warning');
+              setActiveTab('mps');
+              return;
+          }
+          await handleCreateMpsFromDemand(target.id);
+          return;
+      }
+      if (action === 'createPr') {
+          const shortage = businessFlow?.materialShortages?.[0];
+          if (!businessFlow?.mrpTaskId || !businessFlow?.mrpDemandId || !shortage?.materialId) {
+              showToast('当前流程缺少正式 MRP 缺料结果，不能创建采购申请', 'error');
+              return;
+          }
+          try {
+              const request = await procurementApi.createRequest({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser?.accessToken || '' }, { mrpTaskId: businessFlow.mrpTaskId, demandId: businessFlow.mrpDemandId, materialId: shortage.materialId });
+              setMrp(prev => prev.map(item => item.mrpTaskId === businessFlow.mrpTaskId && item.itemCode === shortage.materialId ? { ...item, status: '已转采购', purchaseRequestId: request.id } : item));
+              onBusinessFlowAction?.('formalPrCreated', { purchaseRequest: request });
+          } catch (error) {
+              showToast(error instanceof Error ? `采购申请创建失败：${error.message}` : '采购申请创建失败', 'error');
+          }
+          return;
+      }
+      onBusinessFlowAction?.(action);
   };
 
   const handleMergeDemandToPlan = (demandId) => {
       const targetDemand = productionDemands.find(item => item.id === demandId);
-      if (!targetDemand || targetDemand.status !== '待生成MPS') return;
+      if (!targetDemand || targetDemand.apiStatus !== 'APPROVED') return;
       const targetMps = mps.find(item => item.product === targetDemand.product && item.status !== '已下发');
       if (!targetMps) {
-          handleCreateMpsFromDemand(demandId);
+          void handleCreateMpsFromDemand(demandId);
           return;
       }
       setMps(prev => prev.map(item => item.id === targetMps.id ? {
@@ -4417,7 +5547,22 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   };
 
   const handleViewDemandSource = (demand) => {
-      showToast(`${demand.id} 来源：${demand.source}；原因：${demand.reason}`, 'warning');
+      if (demand.sourceTrace) {
+          const t = demand.sourceTrace;
+          const lines = [
+              `需求 ${demand.id}`,
+              `来源类型：${t.sourceType}`,
+              t.salesOrderId ? `销售订单：${t.salesOrderId}` : null,
+              t.salesOrderLineId ? `订单行：${t.salesOrderLineId}` : null,
+              t.shipmentRequestId ? `出库任务：${t.shipmentRequestId}` : null,
+              t.inventoryFactVersion != null ? `库存事实版本：v${t.inventoryFactVersion}` : null,
+              `Correlation：${t.correlationId}`,
+              t.traceId ? `Trace：${t.traceId}` : null,
+          ].filter(Boolean);
+          showToast(lines.join('；'), 'warning');
+      } else {
+          showToast(`${demand.id} 来源：${demand.source}；原因：${demand.reason}`, 'warning');
+      }
   };
 
   // --- MPS 交互 ---
@@ -4454,15 +5599,43 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   };
 
   // --- Orders 交互 ---
-  const handleCheckKit = (woId) => {
+  const handleCheckKit = async (woId) => {
+      const order = orders.find(x => x.id === woId);
+      if (order?.formalOrder && formalCtx) {
+          try {
+              const impact = await productionOperationsApi.releaseImpact(formalCtx, order.formalOrder.id);
+              if (!impact.canRelease) {
+                  showToast(`工单 [${woId}] 下达预检未通过：${impact.blockers.map(b => b.message).join('；')}`, 'error');
+                  return;
+              }
+              setOrders(prev => prev.map(o => o.id === woId ? { ...o, status: '齐套待下发', kitting: '100%' } : o));
+              showToast(`工单 [${woId}] 齐套预检通过，物料已锁定预留，允许下发！`, 'success');
+          } catch (error) {
+              showToast(error instanceof Error ? `齐套检查失败：${error.message}` : '齐套检查失败', 'error');
+          }
+          return;
+      }
       showToast('正在根据 BOM 层级与当前仓库进行物料可用量比对...', 'warning');
       setTimeout(() => {
           setOrders(orders.map(o => o.id === woId ? { ...o, status: '齐套待下发', kitting: '100%' } : o));
           showToast(`工单 [${woId}] 齐套率 100%，物料已锁定预留，允许下发！`, 'success');
       }, 800);
   };
-  const handleDispatch = (woId) => {
+  const handleDispatch = async (woId) => {
       let o = orders.find(x => x.id === woId);
+      if (o?.formalOrder && formalCtx) {
+          try {
+              const released = await productionOperationsApi.workOrderCommand(formalCtx, o.formalOrder, 'release', '正式下发车间');
+              setOrders(prev => prev.map(x => x.id === woId ? { ...x, status: '执行中', formalOrder: released } : x));
+              let randStr = woId.split('-')[1] || Math.floor(Math.random()*1000);
+              setJobs(prev => [...prev, { id: `JOB-${randStr}-10`, orderId: woId, opId: '10', opName: 'SMT贴片加工', targetQty: o.quantity, okQty:0, ngQty:0, status:'待领料', machineId:'贴片机-M01', operator: '待定', isRework:false, ngHandled: false, opType: '内部', formalOrder: released }]);
+              showToast(`工单 [${woId}] 已通过正式 API 下发车间`, 'success');
+              setActiveTab('execution');
+          } catch (error) {
+              showToast(error instanceof Error ? `工单下发失败：${error.message}` : '工单下发失败', 'error');
+          }
+          return;
+      }
       if (o && (o.kitting !== '100%' || o.status !== '齐套待下发')) {
           showToast(`工单 [${woId}] 尚未完成齐套与预占，禁止下发车间`, 'error');
           return;
@@ -4486,17 +5659,48 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   // --- Execution 交互 ---
   const handleMaterialReq = (jobId) => {
-      showToast('正在生成生产领料单并推送至WMS...', 'warning');
-      setTimeout(() => {
-          setJobs(jobs.map(j => j.id === jobId ? { ...j, status: '未开工' } : j));
-          showToast('领料单处理完毕，物料就位线边仓！', 'success');
-      }, 800);
+      const job = jobs.find((item) => item.id === jobId);
+      if (!job || job.status !== '待领料') {
+          showToast('只有待领料工序可以发起物料出库', 'error');
+          return;
+      }
+      const materialQty = Number(job.materialQty || job.targetQty * 2);
+      setActionModal({
+          kind: 'materialIssue',
+          record: { ...job, materialId: job.materialId || 'RM201', materialName: job.materialName || 'AI算力芯片', materialQty, unit: job.materialUnit || 'PCS' },
+          title: '发起生产物料出库',
+          desc: '确认后生成库存出库任务；仓库完成出库前，当前工序保持领料处理中。',
+          icon: ArrowUpFromLine,
+          tone: 'amber',
+          confirmText: '生成出库任务',
+          details: [
+              { label: '生产工单', value: job.orderId },
+              { label: '工序任务', value: `${job.id} / ${job.opName}` },
+              { label: '需求物料', value: `${job.materialId || 'RM201'} ${job.materialName || 'AI算力芯片'}` },
+              { label: '申请数量', value: `${materialQty} ${job.materialUnit || 'PCS'}` },
+              { label: '领料仓库', value: 'WH-RM-01 一号原材料仓' },
+              { label: '目标仓库', value: 'WH-WIP-01 线边暂存仓' },
+          ],
+          steps: ['生成生产领料出库任务', '跳转库存出库管理', '仓库确认后回写物料就位'],
+      });
   };
   const handleStartJob = (jobId) => {
       setJobs(jobs.map(j => j.id === jobId ? { ...j, status: '进行中' } : j));
       showToast(`工序任务机台已开工，开始采集 OEE 数据！`, 'success');
   };
-  const handleReportJob = (jobId) => {
+  const handleReportJob = async (jobId) => {
+      const job = jobs.find(j => j.id === jobId);
+      if (job?.formalOrder && formalCtx) {
+          try {
+              const remaining = Math.max(0, job.targetQty - job.okQty - job.ngQty);
+              if (!remaining) { showToast('该工序数量已全部报完', 'warning'); return; }
+              const reportTotal = Math.min(12, remaining);
+              await productionOperationsApi.submitReport(formalCtx, job.formalOrder, String(reportTotal));
+              showToast(`工单报工成功，本次报工 ${reportTotal} 件`, 'success');
+          } catch (error) {
+              showToast(error instanceof Error ? `正式报工失败：${error.message}` : '正式报工失败', 'error');
+          }
+      }
       setJobs(jobs.map(j => {
           if (j.id === jobId) {
               if (j.status !== '进行中') {
@@ -4553,7 +5757,23 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   };
 
   // --- QC & MRB 交互 ---
-  const handleQcComplete = (qcId, okQty, ngQty, scrapQty, reworkQty) => {
+  const handleQcComplete = async (qcId, okQty, ngQty, scrapQty, reworkQty) => {
+      const targetQcItem = qc.find(item => item.id === qcId);
+      if (targetQcItem?.formalInspection && formalCtx) {
+          try {
+              await productionOperationsApi.passInspection(formalCtx, targetQcItem.formalInspection);
+              setQc(prev => prev.map(item => item.id === qcId ? { ...item, status: '待入库', okQty, ngQty, result: ngQty > 0 ? `NG ${ngQty}件` : '全良品待入库', formalInspection: { ...item.formalInspection, status: 'PASSED', passedQty: String(okQty), failedQty: String(ngQty) } } : item));
+              showToast('FQC 检验已通过正式 API 登记合格', 'success');
+              if (ngQty > 0 && reworkQty > 0) {
+                  const rwId = `RW-${targetQcItem.orderId.split('-')[1]}-MRB`;
+                  setJobs(prev => [{ id: rwId, orderId: targetQcItem.orderId+'(MRB返修)', opId: '99', opName: '异常返修工序', targetQty: reworkQty, okQty: 0, ngQty: 0, status: '待领料', machineId: '综合返修工作台', operator: '技术员', isRework: true, ngHandled: false, opType: '内部' }, ...prev]);
+              }
+              return;
+          } catch (error) {
+              showToast(error instanceof Error ? `FQC 登记失败：${error.message}` : 'FQC 登记失败', 'error');
+              return;
+          }
+      }
       let mrbDesc = '';
       if (ngQty > 0) {
           let descArr = [];
@@ -4576,11 +5796,27 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       showToast(reworkQty > 0 ? '检验已记录，NG 已进入返修复检闭环，暂不可结案' : nextStatus === '待入库' ? 'FQC 已通过，等待库存确认后再结案' : '过程检验已通过，结果已回写车间工序', reworkQty > 0 ? 'warning' : 'success');
   };
 
-  const handleConfirmInbound = (qcId) => {
+  const handleConfirmInbound = async (qcId) => {
       const target = qc.find(item => item.id === qcId);
       if (!target || target.status !== '待入库' || !target.type.includes('FQC')) {
           showToast('只有已通过的 FQC 完工检验可以进入成品入库', 'error');
           return;
+      }
+      if (target.formalInspection && formalCtx) {
+          try {
+              const order = orders.find(o => o.apiId === target.formalInspection.workOrderId || o.id === target.orderId);
+              if (order?.formalOrder) {
+                  const inventoryWarehouseId = order.formalOrder.parameterSnapshot?.inventoryWarehouseId || 'RES-WH-FG-SH';
+                  const result = await productionOperationsApi.createCompletion(formalCtx, order.formalOrder, target.formalInspection, inventoryWarehouseId);
+                  showToast(`完工入库已提交正式 API，任务 ${result.taskId.slice(0, 8)}…，等待 WMS 确认`, 'success');
+                  setQc(prev => prev.map(item => item.id === qcId ? { ...item, status: '已结案', stockTx: result.taskId, result: '正式完工入库中' } : item));
+                  setOrders(prev => prev.map(item => item.id === target.orderId ? { ...item, status: '已完工', kitting: '100%', completedQty: target.okQty, stockTx: result.taskId } : item));
+                  return;
+              }
+          } catch (error) {
+              showToast(error instanceof Error ? `完工入库失败：${error.message}` : '完工入库失败', 'error');
+              return;
+          }
       }
       const stockTx = `STK-IN-${Date.now().toString().slice(-8)}`;
       setQc(prev => prev.map(item => item.id === qcId ? { ...item, status: '已结案', stockTx, result: item.result || '全良品' } : item));
@@ -4667,6 +5903,26 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	  const confirmProdAction = () => {
 	      if (!actionModal) return;
 	      const kind = actionModal.kind;
+	      if (kind === 'materialIssue' && actionModal.record) {
+	          const job = actionModal.record;
+	          const result = createProductionMaterialIssueTask(window.localStorage, currentTenant?.id, {
+	              jobId: job.id,
+	              orderId: job.orderId,
+	              operationName: job.opName,
+	              materialId: job.materialId,
+	              materialName: job.materialName,
+	              requestedQty: job.materialQty,
+	              unit: job.unit,
+	              warehouseId: 'WH-RM-01',
+	              targetWarehouse: 'WH-WIP-01',
+	              actor: currentUser?.name || currentUser?.account || '当前生产用户',
+	          });
+	          setJobs((previous) => previous.map((item) => item.id === job.id ? { ...item, status: '领料处理中', materialIssueTaskId: result.task.id } : item));
+	          setActionModal(null);
+	          showToast(result.created ? `物料出库任务已生成：${result.task.id}` : `已存在物料出库任务：${result.task.id}`, result.created ? 'success' : 'warning');
+	          onNavigateModule?.('库存管理', { query: { inventory: 'outbound', focusOutbound: result.task.id } });
+	          return;
+	      }
 	      setActionModal(null);
 	      if (kind === 'reschedule') handleAutoReschedule();
 	      if (kind === 'transfer') handleTransferLine();
@@ -4681,7 +5937,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
           <BusinessActionModal action={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmProdAction} />
 
-          <div className="shrink-0 px-8 py-8 pb-4 flex flex-col gap-6 max-w-[1600px] w-full mx-auto relative z-20">
+	          <div className="relative mx-auto flex w-full max-w-[1600px] shrink-0 flex-col gap-6 px-8 pb-4 pt-8">
               <div className="flex justify-between items-start">
                   <div className="flex items-center">
                       <div className="w-[52px] h-[52px] bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-sm mr-4"><Factory className="w-6 h-6" /></div>
@@ -4695,17 +5951,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-1.5 flex flex-wrap items-center gap-1 select-none relative w-max max-w-full z-50">
                   <button onClick={()=>setActiveTab('dashboard')} className={`shrink-0 px-5 py-2.5 rounded-lg text-[14px] font-medium transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-[#2563EB] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}><LayoutDashboard className="w-4 h-4" /> 生产监控舱</button>
                   <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
-                  <div className="relative group">
-                      <button type="button" onMouseDown={(event) => { event.preventDefault(); setActiveTab('demandPool'); }} onClick={() => setActiveTab('demandPool')} className={`shrink-0 px-5 py-2.5 rounded-lg text-[14px] font-medium transition-colors flex items-center gap-2 ${['demandPool', 'mps'].includes(activeTab) ? 'bg-[#2563EB] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
-                          <Target className="w-4 h-4" /> 主计划(MPS) <ChevronDown className="w-3.5 h-3.5 opacity-70 group-hover:rotate-180 transition-transform" />
-                      </button>
-                      <div className="absolute top-[100%] left-0 pt-1.5 hidden group-hover:block w-40 animate-in slide-in-from-top-2 z-[100]">
-                          <div className="bg-white border border-slate-200 shadow-lg rounded-xl p-1.5 flex flex-col gap-1">
-                              <button onClick={() => setActiveTab('demandPool')} className={`w-full text-left px-3 py-2.5 rounded-lg text-[13px] font-bold transition-colors flex items-center gap-2 ${activeTab === 'demandPool' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}><Inbox className="w-4 h-4" /> 生产需求池</button>
-                              <button onClick={() => setActiveTab('mps')} className={`w-full text-left px-3 py-2.5 rounded-lg text-[13px] font-bold transition-colors flex items-center gap-2 ${activeTab === 'mps' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}><ListTodo className="w-4 h-4" /> 主生产计划</button>
-                          </div>
-                      </div>
-                  </div>
+                  <button onClick={()=>setActiveTab('mps')} className={`shrink-0 px-5 py-2.5 rounded-lg text-[14px] font-medium transition-colors flex items-center gap-2 ${activeTab === 'mps' ? 'bg-[#2563EB] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}><Target className="w-4 h-4" /> 主计划(MPS)</button>
                   <button onClick={()=>setActiveTab('mrp')} className={`shrink-0 px-5 py-2.5 rounded-lg text-[14px] font-medium transition-colors flex items-center gap-2 ${activeTab === 'mrp' ? 'bg-[#2563EB] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}><Calculator className="w-4 h-4" /> 运算控制台</button>
                   <button onClick={()=>setActiveTab('aps')} className={`shrink-0 px-5 py-2.5 rounded-lg text-[14px] font-medium transition-colors flex items-center gap-2 ${activeTab === 'aps' ? 'bg-[#2563EB] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}><CalendarRange className="w-4 h-4" /> 排产甘特图</button>
                   <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
@@ -4729,12 +5975,10 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               </div>
           </div>
 
-	          <main className="flex-1 w-full max-w-[1600px] mx-auto px-8 pb-8 flex flex-col relative z-10 overflow-hidden">
+	          <main className="relative mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-8 pb-8">
 	              <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar relative pr-2 pb-6">
-	                  <BusinessFlowDock moduleName="生产管理" flow={businessFlow} onAction={onBusinessFlowAction} onNavigate={onNavigateModule} />
-	                  {activeTab === 'dashboard' && <Prod_DashboardView onAutoReschedule={() => openProdAction('reschedule')} onTransferLine={() => openProdAction('transfer')} />}
-	                  {activeTab === 'demandPool' && <Prod_DemandPool demands={productionDemands} onCreateMps={handleCreateMpsFromDemand} onMergePlan={handleMergeDemandToPlan} onHoldDemand={handleHoldDemand} onViewSource={handleViewDemandSource} canCreateMps={hasPermission('production.demandPool.createMps')} />}
-	                  {activeTab === 'mps' && <Prod_MpsView mps={mps} bomData={bomData} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} showToast={showToast} canCalcMrp={hasPermission('production.mps.calcMrp')} />}
+	                  <BusinessFlowDock moduleName="生产管理" flow={businessFlow} onAction={handleProductionFlowAction} onNavigate={onNavigateModule} />
+	                  {activeTab === 'dashboard' && <Prod_DashboardView onAutoReschedule={() => openProdAction('reschedule')} onTransferLine={() => openProdAction('transfer')} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mps.calcMrp')} canCreateMps={hasPermission('production.demandPool.createMps')} />}
                   {activeTab === 'mrp' && <Prod_MrpView mrp={mrp} onIssueMrp={handleIssueMrp} showToast={showToast} />}
                   {activeTab === 'aps' && <Prod_ApsView onOptimize={() => showToast('AI APS多目标排程引擎演算完成，已重新分配瓶颈工位。', 'success')} />}
                   {activeTab === 'orders' && <Prod_OrdersView orders={orders} onCheckKit={handleCheckKit} onDispatch={handleDispatch} onUpdateOrder={handleUpdateOrder} onDeleteOrder={handleDeleteOrder} showToast={showToast} />}
@@ -4760,11 +6004,31 @@ const inv_dashboardMetrics = [
 ];
 
 const inv_stockData = [
-  { id: 'RM201', name: 'AI算力芯片', category: '原材料', warehouse: '一号原材料仓', location: 'A-01-01', stockQty: 1500, lockQty: 500, availQty: 1000, unit: 'PCS', status: '正常' },
-  { id: 'RM202', name: '12层空PCB板', category: '原材料', warehouse: '一号原材料仓', location: 'A-01-02', stockQty: 80, lockQty: 0, availQty: 80, unit: 'PCS', status: '低库存' },
-  { id: 'FG001', name: '工业控制器顶配版', category: '成品', warehouse: '成品主仓', location: 'F-02-05', stockQty: 3500, lockQty: 1200, availQty: 2300, unit: '台', status: '积压呆滞' },
-  { id: 'SA101', name: '核心主板组件', category: '半成品', warehouse: '线边暂存仓', location: 'W-01', stockQty: 420, lockQty: 420, availQty: 0, unit: '套', status: '正常' },
+  { id: 'RM201', name: 'AI算力芯片', kind: '物料', category: '原材料', warehouseId: 'WH-RM-01', warehouse: '一号原材料仓', location: 'A-01-01', stockQty: 1500, lockQty: 500, availQty: 1000, unit: 'PCS', status: '正常' },
+  { id: 'RM202', name: '12层空PCB板', kind: '物料', category: '原材料', warehouseId: 'WH-RM-01', warehouse: '一号原材料仓', location: 'A-01-02', stockQty: 80, lockQty: 0, availQty: 80, unit: 'PCS', status: '低库存' },
+  { id: 'RM203', name: 'DDR5内存模组32GB', kind: '物料', category: '原材料', warehouseId: 'WH-RM-01', warehouse: '一号原材料仓', location: 'A-02-03', stockQty: 600, lockQty: 100, availQty: 500, unit: 'PCS', status: '正常' },
+  { id: 'RM204', name: 'NVMe SSD 1TB', kind: '物料', category: '原材料', warehouseId: 'WH-RM-02', warehouse: '二号原材料仓', location: 'B-01-05', stockQty: 45, lockQty: 0, availQty: 45, unit: 'PCS', status: '低库存' },
+  { id: 'FG001', name: '工业控制器顶配版', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-02-05', stockQty: 3500, lockQty: 1200, availQty: 2300, unit: '台', unitPrice: 500, status: '积压呆滞' },
+  { id: 'FG002', name: '边缘计算网关Pro', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-03-01', stockQty: 820, lockQty: 200, availQty: 620, unit: '台', unitPrice: 1200, status: '正常' },
+  { id: 'FG003', name: '智能视觉检测终端', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-03-02', stockQty: 150, lockQty: 30, availQty: 120, unit: '台', unitPrice: 3500, status: '正常' },
+  { id: 'FG004', name: '工业数据采集模块', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-04-01', stockQty: 30, lockQty: 0, availQty: 30, unit: '套', unitPrice: 800, status: '低库存' },
+  { id: 'SA101', name: '核心主板组件', kind: '物料', category: '半成品', warehouseId: 'WH-WIP-01', warehouse: '线边暂存仓', location: 'W-01', stockQty: 420, lockQty: 420, availQty: 0, unit: '套', status: '正常' },
+  { id: 'SA102', name: '电源管理模组', kind: '物料', category: '半成品', warehouseId: 'WH-WIP-01', warehouse: '线边暂存仓', location: 'W-02', stockQty: 280, lockQty: 80, availQty: 200, unit: '套', status: '正常' },
+  { id: 'SA103', name: '散热模组总成', kind: '物料', category: '半成品', warehouseId: 'WH-WIP-02', warehouse: '组装线边仓', location: 'W-03', stockQty: 65, lockQty: 20, availQty: 45, unit: '套', status: '低库存' },
 ];
+
+// 辅助函数：从库存管理-产品中查找"实际可用"(availQty)，作为销售订单可用量的唯一数据源
+function resolveOrderAvailQty(order) {
+  if (!order) return 0;
+  const pn = order.productName || '';
+  const pid = order.productId || '';
+  const extracted = !pid && pn ? (pn.split(/\s+/)[0] || '').trim() : '';
+  const eff = pid || extracted;
+  const prods = inv_stockData.filter(p => p.kind === '产品');
+  let m = eff ? prods.find(p => p.id === eff) : null;
+  if (!m && pn) m = prods.find(p => pn.indexOf(p.name) >= 0 || p.name === pn);
+  return m ? Number(m.availQty ?? 0) : Number(order.availableStock ?? 0);
+}
 
 const inv_inboundData = [
   { id: 'IN-260701-01', type: '采购入库', source: 'PO-260688', item: 'AI算力芯片', qty: 2000, date: '2026-07-01 10:30', status: '已入库', operator: '王仓管' },
@@ -4772,8 +6036,17 @@ const inv_inboundData = [
 ];
 
 const inv_outboundData = [
-  { id: 'OUT-260702-01', type: '生产领料', source: 'WO-260101', item: 'AI算力芯片', qty: 300, date: '2026-07-02 08:30', status: '已出库', operator: '王仓管' },
-  { id: 'OUT-260702-02', type: '销售发货', source: 'SO-260615', item: '工业控制器顶配版', qty: 50, date: '2026-07-02 11:15', status: '拣货中', operator: '张调度' },
+  { id: 'OUT-260702-01', type: '销售发货', source: 'SO-20260615-001', item: '工业控制器顶配版', productId: 'FG001', qty: 1, date: '2026-07-02 11:15', status: '拣货中', operator: '张调度' },
+  { id: 'OUT-260702-02', type: '销售发货', source: 'SO-20260620-003', item: '边缘计算网关Pro', productId: 'FG002', qty: 50, date: '2026-07-03 09:20', status: '已出库', operator: '王仓管' },
+  // 测试：全部不足 → 去生产（FG004 availQty=30, 需求100, 缺口70）
+  { id: 'OUT-260703-01', type: '销售发货', source: 'SO-20260710-005', item: '工业数据采集模块', productId: 'FG004', qty: 100, date: '2026-07-10 10:00', status: '待发货', operator: '张调度' },
+  // 测试：部分充足部分不足 → 部分发货 + 去生产（FG001 充足, FG004 不足）
+  { id: 'OUT-260703-02', type: '销售发货', source: 'SO-20260712-008', item: '工业控制器顶配版+工业数据采集模块', productId: 'FG001', qty: 110, date: '2026-07-12 14:30', status: '待发货', operator: '张调度',
+    lines: [
+      { productId: 'FG001', productName: '工业控制器顶配版', spec: '旗舰配置', qty: 10, unit: '台', unitPrice: 500 },
+      { productId: 'FG004', productName: '工业数据采集模块', spec: '标准版', qty: 100, unit: '套', unitPrice: 800 },
+    ],
+  },
 ];
 
 const invEntityLabels = {
@@ -4799,7 +6072,7 @@ const invRecordFields = {
     { key: 'id', label: '入库流水号' },
     { key: 'type', label: '业务类型' },
     { key: 'source', label: '来源单据' },
-    { key: 'item', label: '核心物料' },
+    { key: 'item', label: '产品明细' },
     { key: 'qty', label: '发生数量', type: 'number' },
     { key: 'date', label: '操作日期' },
     { key: 'status', label: '单据状态' },
@@ -4809,7 +6082,7 @@ const invRecordFields = {
     { key: 'id', label: '出库流水号' },
     { key: 'type', label: '业务类型' },
     { key: 'source', label: '来源单据' },
-    { key: 'item', label: '核心物料' },
+    { key: 'item', label: '产品明细' },
     { key: 'qty', label: '发生数量', type: 'number' },
     { key: 'date', label: '操作日期' },
     { key: 'status', label: '单据状态' },
@@ -4833,19 +6106,89 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg transition-colors"><X size={16}/></button>
         </div>
-        <div className="p-6 grid grid-cols-2 gap-5">
-          {fields.map(field => (
-            <div key={field.key}>
-              <label className="block text-[12px] font-bold text-slate-500 mb-1.5">{field.label}</label>
-              <input
-                type={field.type || 'text'}
-                value={draft[field.key] || ''}
-                readOnly={readOnly || (field.key === 'id' && mode !== 'create')}
-                onChange={(e) => setDraft(prev => ({ ...prev, [field.key]: field.type === 'number' ? Number(e.target.value) : e.target.value }))}
-                className={`w-full border rounded-lg px-3 py-2 text-[13px] outline-none transition-colors ${readOnly || (field.key === 'id' && mode !== 'create') ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-800'}`}
-              />
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-2 gap-5">
+            {fields.map(field => (
+              <div key={field.key}>
+                <label className="block text-[12px] font-bold text-slate-500 mb-1.5">{field.label}</label>
+                <input
+                  type={field.type || 'text'}
+                  value={draft[field.key] || ''}
+                  readOnly={readOnly || (field.key === 'id' && mode !== 'create')}
+                  onChange={(e) => setDraft(prev => ({ ...prev, [field.key]: field.type === 'number' ? Number(e.target.value) : e.target.value }))}
+                  className={`w-full border rounded-lg px-3 py-2 text-[13px] outline-none transition-colors ${readOnly || (field.key === 'id' && mode !== 'create') ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-800'}`}
+                />
+              </div>
+            ))}
+          </div>
+          {type === 'outbound' && readOnly && draft.lines && draft.lines.length > 0 && (
+            <div>
+              <div className="text-[12px] font-bold text-slate-500 mb-2">出库产品明细</div>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium">产品编码</th>
+                      <th className="px-3 py-2.5 font-medium">产品名称</th>
+                      <th className="px-3 py-2.5 font-medium text-center">规格</th>
+                      <th className="px-3 py-2.5 font-medium text-center">订单数量</th>
+                      <th className="px-3 py-2.5 font-medium text-center">已发货</th>
+                      <th className="px-3 py-2.5 font-medium text-center">剩余待发</th>
+                      <th className="px-3 py-2.5 font-medium text-center">单位</th>
+                      <th className="px-3 py-2.5 font-medium text-right">单价</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draft.lines.map((line, idx) => {
+                      const shipped = Number(line.shippedQty || 0);
+                      const remaining = Math.max(0, Number(line.qty || 0) - shipped);
+                      return <tr key={idx} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 text-slate-800">{line.productName}</td>
+                        <td className="px-3 py-2.5 text-center text-slate-500">{line.spec || '-'}</td>
+                        <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.qty}</td>
+                        <td className="px-3 py-2.5 text-center font-mono font-bold text-emerald-600">{shipped > 0 ? shipped : '-'}</td>
+                        <td className="px-3 py-2.5 text-center font-mono font-bold {remaining > 0 ? 'text-rose-500' : 'text-slate-400'}">{remaining > 0 ? remaining : <CheckCircle2 size={12} className="inline text-emerald-500"/>}</td>
+                        <td className="px-3 py-2.5 text-center text-slate-500">{line.unit}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-slate-600">{line.unitPrice ? '¥' + Number(line.unitPrice).toFixed(2) : '-'}</td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {draft.shipmentDetails && draft.shipmentDetails.length > 0 && <div className="mt-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg">
+                <div className="text-[11px] font-bold text-emerald-700 mb-1">出库记录</div>
+                {draft.shipmentDetails.map((s, i) => <div key={i} className="text-[12px] text-emerald-600 font-mono">{s.productId} {s.productName} × {s.shipQty} {s.unit}</div>)}
+              </div>}
             </div>
-          ))}
+          )}
+          {type === 'outbound' && readOnly && draft.formalTask?.lines && draft.formalTask.lines.length > 0 && (
+            <div>
+              <div className="text-[12px] font-bold text-slate-500 mb-2">销售订单产品明细</div>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium">产品编码</th>
+                      <th className="px-3 py-2.5 font-medium text-center">申请数量</th>
+                      <th className="px-3 py-2.5 font-medium text-center">预留数量</th>
+                      <th className="px-3 py-2.5 font-medium text-center">单位</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draft.formalTask.lines.map((line, idx) => (
+                      <tr key={idx} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.requestedQty}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-slate-600">{line.reservedQty}</td>
+                        <td className="px-3 py-2.5 text-center text-slate-500">{line.uom || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
         <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
           <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl">{readOnly ? '关闭' : '取消'}</button>
@@ -4856,7 +6199,11 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
   );
 };
 
-const Inv_ActionReviewModal = ({ action, onCancel, onConfirm }) => {
+const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false }) => {
+  const [values, setValues] = useState(() => Object.fromEntries([
+    ...(action.quantityFields || []).map((field) => [field.id, String(field.value)]),
+    ...(action.dateFields || []).map((field) => [field.id, String(field.value)]),
+  ]));
   const toneMap = {
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
@@ -4872,9 +6219,32 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm }) => {
   const tone = action.tone || 'blue';
   const Icon = action.icon || ClipboardCheck;
 
+  // 部分发货：计算所有可发货产品的数量是否都有效（>0 且 <= 实际可用）
+  const partialShipmentValid = ['partialShipment', 'processOutbound'].includes(action.kind) && action.lineStockInfo
+    ? action.lineStockInfo.filter(ls => ls.availQty > 0).every(ls => {
+        const fieldId = `shipQty_${ls.productId}`;
+        const maxQty = Math.min(ls.remainingQty ?? ls.qty, ls.availQty);
+        const raw = values[fieldId];
+        if (raw == null || raw === '') return false;
+        const v = Number(raw);
+        return !isNaN(v) && v > 0 && v <= maxQty;
+      })
+    : true;
+
+  // 去生产：计算所有缺口产品的生产数量是否都有效（>= 缺口数）
+  const productionRequestValid = action.kind === 'productionRequest' && action.lineStockInfo
+    ? action.lineStockInfo.filter(ls => ls.shortage > 0).every(ls => {
+        const fieldId = `prodQty_${ls.productId}`;
+        const v = Number(values[fieldId] ?? ls.shortage);
+        return v >= ls.shortage && !isNaN(v);
+      })
+    : true;
+
+  const confirmDisabled = submitting || !partialShipmentValid || !productionRequestValid;
+
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-[640px] overflow-hidden flex flex-col border border-slate-100">
+      <div className="bg-white rounded-2xl shadow-2xl w-[860px] overflow-hidden flex flex-col border border-slate-100">
         <div className="p-5 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
           <div className="flex gap-3">
             <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${toneMap[tone] || toneMap.blue}`}>
@@ -4896,26 +6266,354 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm }) => {
               </div>
             ))}
           </div>
+          {action.record?.lines && action.record.lines.length > 0 && action.kind !== 'partialShipment' && action.kind !== 'productionRequest' && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="text-[12px] font-bold text-slate-500 mb-2">销售订单产品明细</div>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium">产品编码</th>
+                      <th className="px-3 py-2.5 font-medium">产品名称</th>
+                      <th className="px-3 py-2.5 font-medium text-center">规格</th>
+                      <th className="px-3 py-2.5 font-medium text-center">数量</th>
+                      <th className="px-3 py-2.5 font-medium text-center">单位</th>
+                      <th className="px-3 py-2.5 font-medium text-right">单价</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {action.record.lines.map((line, idx) => (
+                      <tr key={idx} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 text-slate-800">{line.productName}</td>
+                        <td className="px-3 py-2.5 text-center text-slate-500">{line.spec || '-'}</td>
+                        <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.qty}</td>
+                        <td className="px-3 py-2.5 text-center text-slate-500">{line.unit}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-slate-600">{line.unitPrice ? '¥' + Number(line.unitPrice).toFixed(2) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {action.record?.formalTask?.lines && action.record.lines == null && action.record.formalTask.lines.length > 0 && action.kind !== 'partialShipment' && action.kind !== 'productionRequest' && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="text-[12px] font-bold text-slate-500 mb-2">销售订单产品明细</div>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
+                    <tr>
+                      <th className="px-3 py-2.5 font-medium">产品编码</th>
+                      <th className="px-3 py-2.5 font-medium text-center">申请数量</th>
+                      <th className="px-3 py-2.5 font-medium text-center">预留数量</th>
+                      <th className="px-3 py-2.5 font-medium text-center">单位</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {action.record.formalTask.lines.map((line, idx) => (
+                      <tr key={idx} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.requestedQty}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-slate-600">{line.reservedQty}</td>
+                        <td className="px-3 py-2.5 text-center text-slate-500">{line.uom || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {['partialShipment', 'processOutbound'].includes(action.kind) && action.lineStockInfo?.length > 0 && <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="text-[12px] font-bold text-slate-700 mb-2">{action.kind === 'partialShipment' ? '部分发货产品明细' : '发货产品明细'} <span className="text-slate-400 font-normal">（availQty 大于0 时可编辑发货数量，不可为0或超过 min(剩余待发, 实际可用)）</span></div>
+            <div className="border border-slate-200 rounded-lg overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-[12px]">
+                <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
+                  <tr>
+                    <th className="px-3 py-2.5 font-medium">产品编码</th>
+                    <th className="px-3 py-2.5 font-medium">产品名称</th>
+                    <th className="px-3 py-2.5 font-medium">规格</th>
+                    <th className="px-3 py-2.5 font-medium text-center">订单数量</th>
+                    <th className="px-3 py-2.5 font-medium text-center">已发货</th>
+                    <th className="px-3 py-2.5 font-medium text-center">剩余待发</th>
+                    <th className="px-3 py-2.5 font-medium text-center">实际可用</th>
+                    <th className="px-3 py-2.5 font-medium text-center">单位</th>
+                    <th className="px-3 py-2.5 font-medium text-center">本次发货</th>
+                    <th className="px-3 py-2.5 font-medium text-right">单价</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {action.lineStockInfo.map((ls, idx) => {
+                    const isShippable = ls.availQty > 0;
+                    const fieldId = `shipQty_${ls.productId}`;
+                    const maxQty = Math.min(ls.remainingQty ?? ls.qty, ls.availQty);
+                    const rawVal = values[fieldId];
+                    const currentVal = (rawVal == null || rawVal === '') ? NaN : Number(rawVal);
+                    const isValid = isShippable && !isNaN(currentVal) && currentVal > 0 && currentVal <= maxQty;
+                    return <tr key={idx} className={`border-b border-slate-100 last:border-0 ${!isShippable ? 'bg-slate-50/50' : ''}`}>
+                      <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{ls.productId}</td>
+                      <td className="px-3 py-2.5 text-slate-800">{ls.productName || '-'}</td>
+                      <td className="px-3 py-2.5 text-slate-500">{(() => { const line = action.record?.lines?.find(l => l.productId === ls.productId); return line?.spec || '-'; })()}</td>
+                      <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{ls.qty}</td>
+                      <td className="px-3 py-2.5 text-center font-mono text-slate-500">{ls.shippedQty ?? 0}</td>
+                      <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-700">{ls.remainingQty ?? ls.qty}</td>
+                      <td className="px-3 py-2.5 text-center font-mono text-slate-500">{ls.availQty}{ls.shortage > 0 && <span className="text-rose-500 ml-1">(缺口{ls.shortage})</span>}</td>
+                      <td className="px-3 py-2.5 text-center text-slate-500">{(() => { const si = action.record?.lines?.find(l => l.productId === ls.productId); return si?.unit || '件'; })()}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        {isShippable
+                          ? <div className="flex flex-col items-center">
+                              <input type="number" min={1} max={maxQty} step={1} value={values[fieldId] ?? maxQty} onChange={(event) => { const raw = event.target.value; if (raw === '') { setValues((current) => ({ ...current, [fieldId]: '' })); return; } let v = Number(raw); if (isNaN(v)) return; if (v < 0) v = 0; if (v > maxQty) v = maxQty; setValues((current) => ({ ...current, [fieldId]: String(v) })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
+                              {!isValid && <span className="text-[10px] text-rose-500 mt-0.5 whitespace-nowrap">1~{maxQty}</span>}
+                            </div>
+                          : <span className="text-slate-400">-</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-slate-600">{(() => { const line = action.record?.lines?.find(l => l.productId === ls.productId); return line?.unitPrice ? '¥' + Number(line.unitPrice).toFixed(2) : '-'; })()}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>}
+          {action.kind === 'productionRequest' && action.lineStockInfo?.length > 0 && <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="text-[12px] font-bold text-slate-700 mb-2">缺口产品生产数量 <span className="text-slate-400 font-normal">（默认为缺口数，如需更多可手动调整，不可少于缺口数）</span></div>
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <table className="w-full text-left text-[12px]">
+                <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
+                  <tr>
+                    <th className="px-3 py-2.5 font-medium">产品编码</th>
+                    <th className="px-3 py-2.5 font-medium">产品名称</th>
+                    <th className="px-3 py-2.5 font-medium">规格</th>
+                    <th className="px-3 py-2.5 font-medium text-center">订单数量</th>
+                    <th className="px-3 py-2.5 font-medium text-center">实际可用</th>
+                    <th className="px-3 py-2.5 font-medium text-center">缺口</th>
+                    <th className="px-3 py-2.5 font-medium text-center">单位</th>
+                    <th className="px-3 py-2.5 font-medium text-center">需生产</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {action.lineStockInfo.filter(ls => ls.shortage > 0).map((ls, idx) => {
+                    const fieldId = `prodQty_${ls.productId}`;
+                    const defaultVal = ls.shortage;
+                    const currentVal = Number(values[fieldId] ?? defaultVal);
+                    const isValid = currentVal >= ls.shortage;
+                    return <tr key={idx} className="border-b border-slate-100 last:border-0">
+                      <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{ls.productId}</td>
+                      <td className="px-3 py-2.5 text-slate-800">{ls.productName || '-'}</td>
+                      <td className="px-3 py-2.5 text-slate-500">{(() => { const line = action.record?.lines?.find(l => l.productId === ls.productId); return line?.spec || '-'; })()}</td>
+                      <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{ls.qty}</td>
+                      <td className="px-3 py-2.5 text-center font-mono text-slate-500">{ls.availQty}</td>
+                      <td className="px-3 py-2.5 text-center font-mono font-bold text-rose-600">{ls.shortage}</td>
+                      <td className="px-3 py-2.5 text-center text-slate-500">{(() => { const si = action.record?.lines?.find(l => l.productId === ls.productId); return si?.unit || '件'; })()}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        <input type="number" min={ls.shortage} step={1} value={values[fieldId] ?? defaultVal} onChange={(event) => { let v = Number(event.target.value); setValues((current) => ({ ...current, [fieldId]: String(v) })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
+                        {!isValid && <div className="text-[10px] text-rose-500 mt-0.5">不可少于{ls.shortage}</div>}
+                      </td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>}
+          {action.quantityFields?.length > 0 && !["partialShipment","processOutbound"].includes(action.kind) && <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+            <div className="text-[12px] font-bold text-slate-700">{action.quantityTitle || '本次发货数量'}</div>
+            {action.quantityFields.map((field) => <label key={field.id} className="grid grid-cols-[1fr_150px] items-center gap-4 text-[12px]">
+              <span className="min-w-0 text-slate-600">{field.label}{field.max != null && <span className="ml-2 text-[11px] text-slate-400">最多 {field.max} {field.uom}</span>}</span>
+              <input type="number" min="0.000001" max={field.max} step="any" value={values[field.id] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} className="h-9 rounded-lg border border-slate-200 px-3 text-right font-mono text-[13px] outline-none focus:border-blue-500" />
+            </label>)}
+          </div>}
+          {action.dateFields?.length > 0 && <div className="mt-3 space-y-3">
+            {action.dateFields.map((field) => <label key={field.id} className="grid grid-cols-[1fr_150px] items-center gap-4 text-[12px]">
+              <span className="text-slate-600">{field.label}</span>
+              <input type="date" min={field.min} value={values[field.id] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} className="h-9 rounded-lg border border-slate-200 px-3 font-mono text-[12px] outline-none focus:border-blue-500" />
+            </label>)}
+          </div>}
           {action.note && <div className="mt-4 bg-amber-50 border border-amber-100 text-amber-700 rounded-xl px-4 py-3 text-[12px] leading-relaxed font-medium">{action.note}</div>}
         </div>
         <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
-          <button onClick={onCancel} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl">取消</button>
-          <button onClick={onConfirm} className={`px-5 py-2 text-[13px] font-bold text-white rounded-xl flex items-center gap-1.5 ${buttonMap[tone] || buttonMap.blue}`}><Check size={16}/> {action.confirmText || '确认执行'}</button>
+          <button disabled={submitting} onClick={onCancel} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl disabled:cursor-not-allowed disabled:opacity-50">{action.readOnly ? '关闭' : '取消'}</button>
+          {!action.readOnly && <button disabled={confirmDisabled} onClick={() => onConfirm(values)} className={`px-5 py-2 text-[13px] font-bold text-white rounded-xl flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-60 ${buttonMap[tone] || buttonMap.blue}`}><Check size={16}/> {submitting ? '提交中...' : action.confirmText || '确认执行'}</button>}
         </div>
       </div>
     </div>
   );
 };
 
-const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule }) => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+const formatOutboundProductSummary = (row) => {
+  const formalLines = row?.formalTask?.lines;
+  if (formalLines && formalLines.length > 0) {
+    return formalLines.map((line) => {
+      const stockItem = inv_stockData.find(s => s.id === line.productId);
+      const name = stockItem?.name || '';
+      return name ? `${line.productId} ${name}` : line.productId;
+    }).join('；');
+  }
+  const localLines = row?.lines;
+  if (localLines && localLines.length > 1) {
+    return localLines.map((line) => {
+      const stockItem = inv_stockData.find(s => s.id === line.productId);
+      const name = stockItem?.name || line.productName || '';
+      return name ? `${line.productId} ${name}` : line.productId;
+    }).join('；');
+  }
+  if (localLines && localLines.length === 1) {
+    const line = localLines[0];
+    const stockItem = inv_stockData.find(s => s.id === line.productId);
+    const name = stockItem?.name || line.productName || '';
+    return name ? `${line.productId} ${name}` : (line.productId || line.productName || '-');
+  }
+  const productId = row?.productId;
+  const item = row?.item;
+  if (item && productId && item.startsWith(productId)) {
+    return item;
+  }
+  if (productId && item && productId !== item) {
+    return `${productId} ${item}`;
+  }
+  return item || productId || '-';
+};
+
+const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
+  const [activeTab, setActiveTab] = useState(() => resolveInventoryTab(window.location.search));
+  const [requestedSalesOrderId, setRequestedSalesOrderId] = useState(() => resolveSalesOutboundOrderId(window.location.search));
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState(() => resolveInventoryWarehouseId(window.location.search));
   const [stockData, setStockData] = useState(inv_stockData);
   const [inboundData, setInboundData] = useState(inv_inboundData);
-  const [outboundData, setOutboundData] = useState(inv_outboundData);
-  const [stockFilter, setStockFilter] = useState('全部');
+
+  // 出库管理的可用量统一取库存管理-产品中的"实际可用"(availQty)
+  const resolveOutboundAvailQty = (row) => {
+    if (!row) return 0;
+    const itemId = row.productId || '';
+    const itemName = row.item || '';
+    const extracted = !itemId && itemName ? (itemName.split(/\s+/)[0] || '').trim() : '';
+    const effId = itemId || extracted;
+    let m = effId ? stockData.find(s => s.id === effId) : null;
+    if (!m && itemName) m = stockData.find(s => itemName.indexOf(s.name) >= 0 || s.name === itemName);
+    return m ? Number(m.availQty ?? 0) : Number(row.availableQty ?? 0);
+  };
+  // 按产品明细逐行判断库存，返回每个产品的库存状态
+  const resolveOutboundLineStockStatus = (row) => {
+    const lines = row?.lines || [];
+    if (lines.length === 0 && !row?.formalTask?.lines) {
+      const availQty = resolveOutboundAvailQty(row);
+      const qty = Number(row?.qty || 0);
+      const shippedQty = Number(row?.shippedQty || 0);
+      const remainingQty = Math.max(0, qty - shippedQty);
+      const shortage = Math.max(0, remainingQty - availQty);
+      return {
+        lineStatuses: [{ productId: row?.productId, productName: row?.item, qty, availQty, shortage, shippedQty, remainingQty }],
+        totalShortage: shortage,
+        allSufficient: shortage === 0,
+        allInsufficient: shortage > 0,
+        partialSufficient: false,
+      };
+    }
+    const checkLines = lines.length > 0 ? lines : (row?.formalTask?.lines || []);
+    const lineStatuses = checkLines.map(line => {
+      const pid = line.productId || '';
+      const stockItem = stockData.find(s => s.id === pid);
+      const availQty = Number(stockItem?.availQty ?? 0);
+      const needQty = Number(line.qty || line.requestedQty || 0);
+      const shippedQty = Number(line.shippedQty || 0);
+      const remainingQty = Math.max(0, needQty - shippedQty);
+      const shortage = Math.max(0, remainingQty - availQty);
+      return { productId: pid, productName: line.productName || '', qty: needQty, availQty, shortage, shippedQty, remainingQty };
+    });
+    // 只统计仍需发货的行（remainingQty > 0）来判断库存状态
+    const activeStatuses = lineStatuses.filter(l => l.remainingQty > 0);
+    const totalShortage = activeStatuses.reduce((sum, l) => sum + l.shortage, 0);
+    const sufficientCount = activeStatuses.filter(l => l.shortage === 0).length;
+    const hasShippable = activeStatuses.some(l => l.availQty > 0);
+    return {
+      lineStatuses,
+      totalShortage,
+      allSufficient: activeStatuses.length === 0 || (totalShortage === 0 && hasShippable),
+      allInsufficient: activeStatuses.length > 0 && (sufficientCount === 0 || !hasShippable),
+      partialSufficient: hasShippable && sufficientCount > 0 && sufficientCount < activeStatuses.length,
+      hasRemaining: activeStatuses.length > 0,
+    };
+  };
+
+  const readLocalOutboundRows = () => {
+    const localTasks = [
+      ...loadSalesOutboundTasks(window.localStorage, currentTenant?.id),
+    ];
+    return [...localTasks, ...inv_outboundData.filter((seed) => !localTasks.some((task) => task.id === seed.id))];
+  };
+  const [outboundData, setOutboundData] = useState(() => readLocalOutboundRows());
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const mapFormalTask = (task) => {
+    const requestedQty = task.lines.reduce((total, line) => total + Number(line.requestedQty), 0);
+    const reservedQty = task.lines.reduce((total, line) => total + Number(line.reservedQty), 0);
+    const shortageQty = task.lines.reduce((total, line) => total + Number(line.shortageQty), 0);
+    const status = task.workflowStatus === 'COMPLETED' || task.postingStatus === 'POSTED'
+      ? '已出库'
+      : task.postingStatus === 'PARTIALLY_POSTED'
+        ? '部分发货'
+      : task.replenishmentStatus === 'IN_PROGRESS'
+        ? '生产申请中'
+        : task.replenishmentStatus === 'REQUIRED'
+          ? '库存不足'
+          : task.availabilityStatus === 'RESERVED'
+            ? '待出库'
+            : '待校验';
+    return {
+      id: task.id,
+      taskId: task.id,
+      outboundId: task.outboundId,
+      formalTask: task,
+      type: '销售发货',
+      source: task.salesOrderNo,
+      salesOrderId: task.salesOrderId,
+      item: task.lines.map((line) => line.productId).join('、'),
+      productId: task.lines[0]?.productId,
+      qty: requestedQty,
+      unit: task.lines[0]?.uom || 'PCS',
+      warehouse: task.warehouseId,
+      availableQty: (() => { const si = stockData.find(s => s.id === (task.lines[0]?.productId || '')); return si ? Number(si.availQty ?? 0) : reservedQty; })(),
+      shortageQty,
+      inventoryFactVersion: task.inventoryFactVersion,
+      productionDemandId: task.lines.find((line) => line.productionDemandId)?.productionDemandId,
+      date: task.updatedAt?.slice(0, 16).replace('T', ' '),
+      status,
+      operator: '正式履约服务',
+    };
+  };
+
+  const refreshFormalTasks = async () => {
+    if (!formalContext) return;
+    const formalSalesOrderId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedSalesOrderId || '')
+      ? requestedSalesOrderId
+      : undefined;
+    const response = await listFulfillmentShipmentTasks(formalContext, formalSalesOrderId);
+    const formal = response.items.map(mapFormalTask);
+    setOutboundData((previous) => [...formal, ...previous.filter((item) => !item.formalTask && !formal.some((serverTask) => serverTask.id === item.id))]);
+    return response.items;
+  };
+
+  useEffect(() => {
+    refreshFormalTasks().catch((error) => showToast('正式发货任务加载失败：' + (error instanceof Error ? error.message : '请稍后重试'), 'error'));
+  }, [formalContext?.tenantId, formalContext?.accessToken, requestedSalesOrderId]);
+
+  useEffect(() => {
+    const syncInventoryTab = () => {
+      setActiveTab(resolveInventoryTab(window.location.search));
+      setRequestedSalesOrderId(resolveSalesOutboundOrderId(window.location.search));
+      setSelectedWarehouseId(resolveInventoryWarehouseId(window.location.search));
+    };
+    window.addEventListener('popstate', syncInventoryTab);
+    return () => window.removeEventListener('popstate', syncInventoryTab);
+  }, []);
+
+  useEffect(() => {
+    setOutboundData((previous) => [
+      ...readLocalOutboundRows(),
+      ...previous.filter((item) => item.formalTask),
+    ]);
+  }, [currentTenant?.id]);
   const [recordModal, setRecordModal] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [actionReview, setActionReview] = useState(null);
+  const [isActionSubmitting, setIsActionSubmitting] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
   const showToast = (msg, type = 'success') => {
@@ -4933,22 +6631,22 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         availQty: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? businessFlow.qty : 0,
         status: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '正常' : '低库存'
       } : item));
-      setActiveTab('stock');
+      if (!requestedSalesOrderId) setActiveTab('stock');
     }
     if (isLinkedFlowAtLeast(businessFlow, 'materialInbound')) {
       const materialInbound = {
-        id: 'IN-LINK-MAT-001',
+        id: businessFlow.purchaseReceipt?.receiptNo || 'IN-LINK-MAT-001',
         type: '采购入库',
-        source: 'PO-LINK-001',
-        item: 'AI算力芯片',
-        qty: businessFlow.qty * 2,
-        date: '2026-06-23 10:30',
+        source: businessFlow.purchaseOrder?.orderNo || 'PO-LINK-001',
+        item: businessFlow.purchaseReceipt?.materialId || 'AI算力芯片',
+        qty: Number(businessFlow.purchaseReceipt?.receivedQty || businessFlow.qty * 2),
+        date: businessFlow.purchaseReceipt?.receivedAt?.slice(0, 16).replace('T', ' ') || '2026-06-23 10:30',
         status: '已入库',
-        operator: '系统联动'
+        operator: businessFlow.purchaseReceipt ? '正式采购入库服务' : '系统联动'
       };
       setInboundData(prev => prev.some(item => item.id === materialInbound.id) ? prev.map(item => item.id === materialInbound.id ? materialInbound : item) : [materialInbound, ...prev]);
       setStockData(prev => prev.map(item => item.id === 'RM201' ? { ...item, stockQty: Math.max(item.stockQty, 1500 + materialInbound.qty), availQty: Math.max(item.availQty, 1000 + materialInbound.qty), status: '正常' } : item));
-      setActiveTab('inbound');
+      if (!requestedSalesOrderId) setActiveTab('inbound');
     }
     if (isLinkedFlowAtLeast(businessFlow, 'finishedInbound')) {
       const finishedInbound = {
@@ -4962,7 +6660,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         operator: '系统联动'
       };
       setInboundData(prev => prev.some(item => item.id === finishedInbound.id) ? prev.map(item => item.id === finishedInbound.id ? finishedInbound : item) : [finishedInbound, ...prev]);
-      setActiveTab('inbound');
+      if (!requestedSalesOrderId) setActiveTab('inbound');
     }
     if (isLinkedFlowAtLeast(businessFlow, 'delivery')) {
       const linkedOutbound = {
@@ -4977,11 +6675,63 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       };
       setOutboundData(prev => prev.some(item => item.id === linkedOutbound.id) ? prev.map(item => item.id === linkedOutbound.id ? linkedOutbound : item) : [linkedOutbound, ...prev]);
       setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, lockQty: 0, availQty: 0, status: '正常' } : item));
-      setActiveTab('outbound');
+      if (!requestedSalesOrderId) setActiveTab('outbound');
     }
-  }, [businessFlow?.currentStep]);
+  }, [businessFlow?.currentStep, requestedSalesOrderId]);
 
-  const filteredStockData = stockFilter === '全部' ? stockData : stockData.filter(row => row.status === stockFilter);
+  const requestedOutbound = requestedSalesOrderId
+    ? outboundData.find((row) => row.source === requestedSalesOrderId || row.salesOrderId === requestedSalesOrderId)
+    : null;
+
+  const handleInventoryFlowAction = async (action) => {
+    if (action === 'shipSales' && businessFlow?.orderId) {
+      if (!formalContext) {
+        showToast('请先登录正式会话', 'error');
+        return;
+      }
+      try {
+        const response = await listFulfillmentShipmentTasks(formalContext, businessFlow.orderId);
+        let task = response.items[0];
+        if (!task) throw new Error('未找到原销售发货任务');
+        let outboundId = task.outboundId;
+        if (task.availabilityStatus !== 'RESERVED') {
+          const reserved = await checkAndReserveShipmentTask(formalContext, task);
+          task = reserved.task;
+          outboundId = reserved.outbound?.id || task.outboundId;
+          if (task.availabilityStatus !== 'RESERVED') throw new Error('成品库存重新校验后仍未完全预留');
+        }
+        if (!outboundId) throw new Error('重新校验通过但未生成销售出库单');
+        const outbound = await getFulfillmentOutbound(formalContext, outboundId);
+        await postFulfillmentOutbound(formalContext, outbound);
+        await refreshFormalTasks();
+        onBusinessFlowAction?.('formalSalesShipped');
+        showToast(`销售出库单 [${outbound.id}] 已正式过账`, 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? `销售出库失败：${error.message}` : '销售出库失败', 'error');
+      }
+      return;
+    }
+    onBusinessFlowAction?.(action);
+  };
+
+  const navigateInventoryTab = (tab) => {
+    setActiveTab(tab);
+    if (tab !== 'outbound') setRequestedSalesOrderId('');
+    setSelectedWarehouseId('');
+    const nextUrl = createInventoryTabUrl(window.location, tab);
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) window.history.pushState({}, '', nextUrl);
+  };
+
+  const selectInventoryWarehouse = (warehouseId) => {
+    setActiveTab('warehouses');
+    setSelectedWarehouseId(warehouseId);
+    const nextUrl = warehouseId
+      ? createInventoryWarehouseUrl(window.location, warehouseId)
+      : createInventoryTabUrl(window.location, 'warehouses');
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) window.history.pushState({}, '', nextUrl);
+  };
 
   const handleManualInbound = () => {
     setRecordModal({
@@ -5000,8 +6750,11 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     });
   };
 
+  const isSameStockRecord = (left, right) => left.id === right.id
+    && (right.warehouseId ? left.warehouseId === right.warehouseId : left.warehouse === right.warehouse);
+
   const saveStock = (data) => {
-    setStockData(prev => prev.map(row => row.id === data.id ? { ...row, ...data } : row));
+    setStockData(prev => prev.map(row => isSameStockRecord(row, data) ? { ...row, ...data } : row));
     showToast(`库存台账 [${data.id}] 已更新`, 'success');
   };
 
@@ -5020,7 +6773,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     if (!deleteTarget) return;
     const { type, record } = deleteTarget;
     if (type === 'stock') {
-      setStockData(prev => prev.filter(row => row.id !== record.id));
+      setStockData(prev => prev.filter(row => !isSameStockRecord(row, record)));
       showToast(`物料 [${record.id}] 已从台账移除`, 'success');
     }
     if (type === 'inbound') {
@@ -5062,7 +6815,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       confirmText: '确认入库',
       details: [
         { label: '入库单号', value: row.id },
-        { label: '物料', value: row.item },
+        { label: '产品', value: row.item },
         { label: '数量', value: `+${row.qty}` },
         { label: '来源', value: row.source }
       ],
@@ -5071,21 +6824,212 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   };
 
   const processOutbound = (row) => {
+    const isSalesShipment = row.type === '销售发货';
+    if (row.formalTask && row.formalTask.replenishmentStatus !== 'REQUIRED') {
+      const quantityFields = row.formalTask.availabilityStatus === 'RESERVED'
+        ? row.formalTask.lines.map((line) => ({ id: line.orderLineId, label: line.productId, max: Number(line.reservedQty) - Number(line.postedQty), value: Number(line.reservedQty) - Number(line.postedQty), uom: line.uom })).filter((line) => line.max > 0)
+        : [];
+      const hasShortage = row.formalTask.availabilityStatus === 'RESERVED' && quantityFields.length === 0 && row.formalTask.lines?.length > 0;
+      if (hasShortage) {
+        const shortageLines = row.formalTask.lines.map((line) => ({
+          product: line.productId,
+          requested: Number(line.requestedQty || 0),
+          reserved: Number(line.reservedQty || 0),
+          shortage: Number(line.requestedQty || 0) - Number(line.reservedQty || 0),
+        }));
+        const totalShortage = shortageLines.reduce((sum, l) => sum + l.shortage, 0);
+        setActionReview({
+          kind: 'stockShortage', record: row,
+          title: '库存不足，无法发货',
+          desc: '当前产品可用库存不足，请先完成生产补货，库存充足后再发起发货。',
+          icon: AlertTriangle, tone: 'rose', readOnly: true,
+          details: [
+            { label: '发货任务', value: row.taskId },
+            { label: '来源订单', value: row.source },
+            { label: '产品', value: row.item },
+            { label: '申请数量', value: `${row.qty} ${row.unit}` },
+            { label: '可用库存', value: `${resolveOutboundAvailQty(row)}` },
+            { label: '库存缺口', value: `${totalShortage} ${row.unit}` },
+          ],
+          note: '请前往生产管理发起生产需求，待产品入库后再继续发货流程。',
+        });
+        return;
+      }
+      setActionReview({
+        kind: 'processOutbound', record: row,
+        title: row.formalTask.availabilityStatus === 'RESERVED' ? '确认销售发货' : '校验库存并继续发货',
+        desc: '服务端将通过库存权威适配器原子校验与预留；只有结果确定后才允许出库。',
+        icon: ArrowUpFromLine, tone: 'rose', confirmText: row.formalTask.availabilityStatus === 'RESERVED' ? '确认发货' : '校验并处理',
+        details: [
+          { label: '发货任务', value: row.taskId }, { label: '来源订单', value: row.source },
+          { label: '产品', value: row.item }, { label: '申请数量', value: `${row.qty} ${row.unit}` },
+        ],
+        quantityFields,
+        note: 'WMS 超时会保持结果未知并允许按原业务键重查，不会被当作成功。',
+      });
+      // record (row) already contains formalTask.lines for formal tasks
+      return;
+    }
+    if (isSalesShipment && !row.formalTask && !/^SO-\d{8}-\d{3,4}$/.test(row.source || '')) {
+      showToast(`销售出库单 [${row.id}] 未关联正式销售订单，只能查看历史数据`, 'warning');
+      return;
+    }
+    const stockItem = stockData.find((item) => item.name === row.item || item.id === row.productId);
+    const availableQty = Number(stockItem?.availQty ?? row.availableQty ?? 0);
+    const shortageQty = Math.max(0, Number(row.qty || 0) - availableQty);
+    if (isSalesShipment && shortageQty > 0) {
+      setActionReview({
+        kind: 'productionRequest',
+        record: { ...row, availableQty: resolveOutboundAvailQty(row), shortageQty: Math.max(0, Number(row.qty || 0) - resolveOutboundAvailQty(row)) },
+        title: '库存不足，去生产',
+        desc: '仓库无法完成本次销售出库，需要向生产管理发起缺口生产申请。',
+        icon: Factory,
+        tone: 'amber',
+        confirmText: '去生产',
+        details: [
+          { label: '销售订单', value: row.source },
+          { label: '产品', value: row.item },
+          { label: '本次发货', value: `${row.qty} ${row.unit || '件'}` },
+          { label: '可用库存', value: `${resolveOutboundAvailQty(row)} ${row.unit || '件'}` },
+          { label: '生产缺口', value: `${shortageQty} ${row.unit || '件'}` },
+          { label: '需求日期', value: row.dueDate || '按订单交期' },
+        ],
+        note: '提交后服务端会重新读取版本化库存事实；只有仍存在缺口时才会幂等创建生产需求。'
+      });
+      return;
+    }
+    const stockStatusForOutbound = resolveOutboundLineStockStatus(row);
+    const shippableLinesForOutbound = stockStatusForOutbound.lineStatuses.filter(l => l.availQty > 0);
+    const quantityFieldsForOutbound = isSalesShipment ? shippableLinesForOutbound.map(ls => ({
+      id: `shipQty_${ls.productId}`,
+      label: `${ls.productId} ${ls.productName}`,
+      uom: (() => { const si = stockData.find(s => s.id === ls.productId); return si?.unit || '件'; })(),
+      max: Math.min(ls.remainingQty ?? ls.qty, ls.availQty),
+      value: Math.min(ls.remainingQty ?? ls.qty, ls.availQty),
+    })) : [];
     setActionReview({
       kind: 'processOutbound',
-      record: row,
-      title: '确认完成拣货出库',
-      desc: '完成后会扣减对应物料的现有总量和实际可用量。',
+      record: { ...row, lines: row.lines || (row.formalTask?.lines ? undefined : undefined) },
+      title: isSalesShipment ? '确认销售发货' : '确认完成拣货出库',
+      desc: isSalesShipment
+        ? '确认后完成销售出库，并将结果回写到来源销售订单。'
+        : '完成后会扣减对应产品的现有总量和实际可用量。',
       icon: ArrowUpFromLine,
       tone: 'rose',
-      confirmText: '扣减并出库',
+      confirmText: isSalesShipment ? '确认发货' : '扣减并出库',
       details: [
         { label: '出库单号', value: row.id },
-        { label: '物料', value: row.item },
+        { label: '产品', value: row.item },
         { label: '数量', value: `-${row.qty}` },
         { label: '来源', value: row.source }
       ],
-      note: '这是库存扣减动作，请确认拣货复核无误。'
+      quantityFields: quantityFieldsForOutbound,
+      lineStockInfo: isSalesShipment ? stockStatusForOutbound.lineStatuses : undefined,
+      note: isSalesShipment
+        ? '确认前请核对客户、销售订单、产品、数量和承运信息。'
+        : '这是库存扣减动作，请确认拣货复核无误。'
+    });
+  };
+
+  // 部分发货：完成可发货产品的出库，回写销售订单为"部分发货"
+  const partialShipment = (row) => {
+    const stockStatus = resolveOutboundLineStockStatus(row);
+    // 可发货产品：有可用库存的产品（包括充足和部分充足）
+    const shippableLines = stockStatus.lineStatuses.filter(l => l.availQty > 0);
+    // 缺口产品：库存不足以满足剩余待发数量（包括部分缺口和完全缺货）
+    const shortageLines = stockStatus.lineStatuses.filter(l => l.shortage > 0);
+    // 完全缺货产品：可用库存为0
+    const outOfStockLines = stockStatus.lineStatuses.filter(l => l.availQty === 0);
+    // 部分可发产品：有库存但不足以满足全部待发数量
+    const partialAvailLines = stockStatus.lineStatuses.filter(l => l.availQty > 0 && l.shortage > 0);
+    // 构建可编辑发货数量字段：有可用库存的产品均可编辑，默认回显最大可发货数量
+    const quantityFields = shippableLines.map(ls => ({
+      id: `shipQty_${ls.productId}`,
+      label: `${ls.productId} ${ls.productName}`,
+      uom: (() => { const si = stockData.find(s => s.id === ls.productId); return si?.unit || '件'; })(),
+      max: Math.min(ls.remainingQty ?? ls.qty, ls.availQty),
+      value: Math.min(ls.remainingQty ?? ls.qty, ls.availQty),
+    }));
+    const descParts = [`本次可发货 ${shippableLines.length} 项产品`];
+    if (partialAvailLines.length > 0) {
+      descParts.push(`其中 ${partialAvailLines.length} 项仅可部分发货`);
+    }
+    if (outOfStockLines.length > 0) {
+      descParts.push(`${outOfStockLines.length} 项产品完全缺货需去生产`);
+    } else if (shortageLines.length > 0) {
+      descParts.push(`${shortageLines.length} 项产品有缺口需去生产`);
+    }
+    setActionReview({
+      kind: 'partialShipment',
+      record: row,
+      title: '部分发货确认',
+      desc: descParts.join('，') + '。',
+      icon: ArrowUpFromLine,
+      tone: 'amber',
+      confirmText: '确认部分发货',
+      details: [
+        { label: '出库单号', value: row.id },
+        { label: '来源订单', value: row.source },
+        { label: '可发货产品', value: shippableLines.map(l => `${l.productId}(最多${Math.min(l.remainingQty ?? l.qty, l.availQty)})`).join('、') || '无' },
+        { label: '缺口产品', value: shortageLines.map(l => `${l.productId}(缺口${l.shortage})`).join('、') || '无' },
+      ],
+      quantityFields,
+      lineStockInfo: stockStatus.lineStatuses,
+      note: '部分发货后，销售订单状态将更新为"部分发货"，缺口产品需前往生产管理发起 MPS 生产计划。',
+    });
+  };
+
+  // 去生产：跳转到生产管理 MPS 主计划，展示缺口产品并允许调整生产数量
+  const navigateToProductionMPS = (row) => {
+    const stockStatus = resolveOutboundLineStockStatus(row);
+    const shortageLines = stockStatus.lineStatuses.filter(l => l.shortage > 0);
+    // 构建缺口产品可编辑生产数量字段：默认值为缺口数，用户可调大
+    const productionFields = shortageLines.map(ls => ({
+      id: `prodQty_${ls.productId}`,
+      label: `${ls.productId} ${ls.productName}`,
+      uom: (() => { const si = stockData.find(s => s.id === ls.productId); return si?.unit || '件'; })(),
+      min: ls.shortage,
+      value: ls.shortage,
+    }));
+    setActionReview({
+      kind: 'productionRequest',
+      record: { ...row, availableQty: resolveOutboundAvailQty(row), shortageQty: stockStatus.totalShortage },
+      title: '库存不足，去生产',
+      desc: `共 ${shortageLines.length} 项产品库存不足，需向生产管理发起缺口生产申请，联动 MPS 主计划。`,
+      icon: Factory,
+      tone: 'amber',
+      confirmText: '去生产',
+      details: [
+        { label: '销售订单', value: row.source },
+        { label: '产品', value: row.item },
+        { label: '本次发货', value: `${row.qty} ${row.unit || '件'}` },
+        { label: '可用库存', value: `${resolveOutboundAvailQty(row)} ${row.unit || '件'}` },
+        { label: '生产缺口', value: `${stockStatus.totalShortage} ${row.unit || '件'}` },
+        { label: '需求日期', value: row.dueDate || '按订单交期' },
+      ],
+      productionFields,
+      lineStockInfo: stockStatus.lineStatuses,
+      note: '提交后将跳转到生产管理 MPS 主计划页面，创建缺口产品的生产计划。需生产数量默认为缺口数，如需更多可手动调整。'
+    });
+  };
+
+  const viewProductionRequest = (row) => {
+    setActionReview({
+      kind: 'viewProductionRequest',
+      readOnly: true,
+      title: '生产申请详情',
+      desc: '该生产申请由仓库在销售出库缺货时发起，来源订单和库存事实保持关联。',
+      icon: Factory,
+      tone: 'amber',
+      details: [
+        { label: '生产需求编号', value: row.productionDemandCode || row.productionDemandId || '-' },
+        { label: '销售订单', value: row.source },
+        { label: '产品', value: row.item },
+        { label: '生产缺口', value: `${row.shortageQty || 0} ${row.unit || '件'}` },
+        { label: '库存事实版本', value: row.inventoryFactVersion ? `v${row.inventoryFactVersion}` : '-' },
+        { label: '接入记录', value: row.intakeId || '-' },
+      ],
+      note: '生产需求已通过正式生产接入 API 幂等创建；进入生产模块仍受应用开关、岗位权限和工厂数据范围控制。',
     });
   };
 
@@ -5098,7 +7042,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       tone: 'amber',
       confirmText: '生成调拨单',
       details: [
-        { label: '物料', value: 'FG001 工业控制器顶配版' },
+        { label: '产品', value: 'FG001 工业控制器顶配版' },
         { label: '建议数量', value: '120 台' },
         { label: '调出仓', value: '成品主仓' },
         { label: '目标流程', value: '去化中转 / 销售协同' }
@@ -5111,16 +7055,71 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       kind: 'transferStock',
       record: row,
       title: '确认库存调拨',
-      desc: '调拨后会更新该物料的仓库与库位信息。',
+      desc: '调拨后会更新该产品的仓库与库位信息。',
       icon: ArrowRightLeft,
       tone: 'amber',
       confirmText: '确认调拨',
       details: [
-        { label: '物料', value: `${row.id} ${row.name}` },
+        { label: '产品', value: `${row.id} ${row.name}` },
         { label: '当前仓库', value: row.warehouse },
         { label: '当前库位', value: row.location },
         { label: '调入位置', value: '去化中转仓 / T-01-01' }
       ]
+    });
+  };
+
+  const openInventoryProductionRequest = (row) => {
+    const suggestedQty = suggestInventoryReplenishmentQty(row.availQty, row.safetyStock);
+    const requiredDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    setActionReview({
+      kind: 'inventoryProductionPlan',
+      record: row,
+      title: '产品补货申请',
+      desc: '确认后生成库存补货来源的 MPS 待展算计划，并流转到生产主计划。',
+      icon: Factory,
+      tone: 'blue',
+      confirmText: '提交补货申请',
+      details: [
+        { label: '产品', value: `${row.id} ${row.name}` },
+        { label: '默认仓库', value: `${row.warehouse} (${row.warehouseId})` },
+        { label: '实际可用', value: `${row.availQty} ${row.unit}` },
+        { label: '安全库存', value: `${row.safetyStock} ${row.unit}` },
+      ],
+      quantityTitle: '补货信息',
+      quantityFields: [{ id: 'requestedQty', label: '申请补货数量', value: suggestedQty, uom: row.unit }],
+      dateFields: [{ id: 'requiredDate', label: '需求日期', value: requiredDate, min: new Date().toISOString().slice(0, 10) }],
+      note: '相同产品、仓库和库存快照存在活动计划时，将定位原 MPS，不重复创建。',
+    });
+  };
+
+  const openInventoryPurchaseRequest = (row) => {
+    const material = loadInventoryMasterData(window.localStorage, currentTenant?.id).materials.find((item) => item.id === row.id);
+    const procurementType = row.procurementType || material?.procurementType || '外购';
+    if (procurementType === '自制') {
+      showToast('自制物料不能发起采购，请改为发起生产申请', 'warning');
+      return;
+    }
+    const actionRow = { ...row, procurementType };
+    const suggestedQty = suggestInventoryReplenishmentQty(row.availQty, row.safetyStock);
+    const requiredDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    setActionReview({
+      kind: 'inventoryPurchaseRequest',
+      record: actionRow,
+      title: '物料补货申请',
+      desc: '确认后生成库存补货来源的采购申请，流转到采购管理等待审批。',
+      icon: FilePlus,
+      tone: 'amber',
+      confirmText: '生成采购申请',
+      details: [
+        { label: '物料', value: `${row.id} ${row.name}` },
+        { label: '采购策略', value: procurementType },
+        { label: '实际可用', value: `${row.availQty} ${row.unit}` },
+        { label: '安全库存', value: `${row.safetyStock} ${row.unit}` },
+      ],
+      quantityTitle: '采购补货信息',
+      quantityFields: [{ id: 'requestedQty', label: '申请采购数量', value: suggestedQty, uom: row.unit }],
+      dateFields: [{ id: 'requiredDate', label: '需求日期', value: requiredDate, min: new Date().toISOString().slice(0, 10) }],
+      note: '相同物料、仓库和库存快照存在未终结采购申请时，将定位原 PR。',
     });
   };
 
@@ -5158,9 +7157,154 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     });
   };
 
-  const confirmInventoryAction = () => {
+  const confirmInventoryAction = async (shipmentQuantities: Record<string, string> = {}) => {
     if (!actionReview) return;
     const row = actionReview.record;
+    if ((actionReview.kind === 'inventoryProductionPlan' || actionReview.kind === 'inventoryPurchaseRequest') && row) {
+      const requestedQty = Number(shipmentQuantities.requestedQty);
+      const requiredDate = String(shipmentQuantities.requiredDate || '');
+      if (!(requestedQty > 0)) {
+        showToast('请输入大于 0 的申请数量', 'error');
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(requiredDate) || requiredDate < new Date().toISOString().slice(0, 10)) {
+        showToast('请选择今天或之后的需求日期', 'error');
+        return;
+      }
+      const actor = currentUser?.name || currentUser?.account || '当前库存用户';
+      try {
+        if (actionReview.kind === 'inventoryProductionPlan') {
+          const result = createInventoryProductionPlan(window.localStorage, currentTenant?.id, row, {
+            requestedQty, requiredDate, priority: row.status === '低库存' ? '紧急' : '普通', actor,
+          });
+          setActionReview(null);
+          showToast(result.created ? `补货申请已流转到生产主计划：${result.request.mpsId}` : `该库存快照已有补货计划：${result.request.mpsId}`, result.created ? 'success' : 'warning');
+          onNavigateModule?.('生产管理', { query: { production: 'mps', focusMps: result.request.mpsId } });
+          return;
+        }
+        const result = createInventoryPurchaseRequest(window.localStorage, currentTenant?.id, row, { requestedQty, requiredDate, actor });
+        setActionReview(null);
+        showToast(result.created ? `采购申请已生成：${result.request.id}` : `已存在活动采购申请：${result.request.id}`, result.created ? 'success' : 'warning');
+        onNavigateModule?.('采购管理', { query: { procurement: 'pr', focusPr: result.request.id } });
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '业务申请创建失败', 'error');
+      }
+      return;
+    }
+    if (actionReview.kind === 'productionRequest' && row) {
+      // 非正式任务（种子数据）直接跳转到生产管理MPS主计划
+      if (!row.formalTask) {
+        const ss = resolveOutboundLineStockStatus(row);
+        const shortageLines = ss.lineStatuses.filter(l => l.shortage > 0);
+        // 读取用户输入的生产数量，默认为缺口数
+        const productionLines = shortageLines.map(ls => {
+          const fieldId = `prodQty_${ls.productId}`;
+          const inputVal = Number(shipmentQuantities[fieldId] ?? ls.shortage);
+          return { productId: ls.productId, productName: ls.productName, shortage: ls.shortage, prodQty: inputVal };
+        });
+        const prodSummary = productionLines.map(l => `${l.productId}:${l.prodQty}`).join('、');
+        onNavigateModule?.('生产管理', { query: { production: 'mps', focusOrder: row.source, productionLines: JSON.stringify(productionLines) } });
+        showToast(`已跳转到生产管理 MPS 主计划，需生产：${prodSummary}`, 'warning');
+        setActionReview(null);
+        return;
+      }
+      setIsActionSubmitting(true);
+      try {
+        if (row.formalTask) {
+          if (!formalContext) throw new Error('请先登录正式会话');
+          const result = await createProductionRequestForTask(
+            formalContext,
+            row.formalTask,
+            currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
+          );
+          const mapped = mapFormalTask(result.task);
+          setOutboundData((previous) => previous.map((item) => item.taskId === row.taskId ? mapped : item));
+          showToast(`生产申请已提交：${result.demands.map((item) => item.code || item.id).join('、')}`, 'warning');
+          setActionReview(null);
+          return;
+        }
+        const productId = row.productId || String(row.item || '').match(/[A-Z]{2,}\d+/)?.[0];
+        if (!productId) throw new Error('出库任务缺少可识别的产品编码');
+        const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(row.dueDate || '')
+          ? row.dueDate
+          : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+        const result = await createSalesOrderIntake({
+          tenantId: currentTenant.id,
+          accessToken: currentUser?.accessToken || '',
+        }, {
+          salesOrderId: row.source,
+          sourceLineId: '1',
+          sourceRevision: Number(row.sourceRevision || 1),
+          productId,
+          productName: row.item,
+          orderedQty: String(row.qty),
+          uom: 'PCS',
+          dueDate,
+          factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
+          inventoryWarehouseId: 'WH-FG-01',
+        });
+        const availableQty = Number(result.intake.availableQty);
+        const shortageQty = Number(result.intake.shortageQty);
+        const requestedAt = new Date().toISOString();
+        const operator = currentUser?.name || currentUser?.account || '当前仓库用户';
+        setOutboundData((previous) => previous.map((item) => item.id === row.id ? {
+          ...item,
+          availableQty,
+          shortageQty,
+          inventoryFactVersion: result.intake.inventoryFactVersion,
+          intakeId: result.intake.id,
+          productionDemandId: result.demand?.id,
+          productionDemandCode: result.demand?.code,
+          status: shortageQty > 0 ? '生产申请中' : '待出库',
+        } : item));
+        recordWarehouseProductionResult(window.localStorage, currentTenant.id, row.id, {
+          availableQty,
+          shortageQty,
+          inventoryFactVersion: result.intake.inventoryFactVersion,
+          intakeId: result.intake.id,
+          productionDemandId: result.demand?.id,
+          productionDemandCode: result.demand?.code,
+        });
+        recordSalesOrderProductionRequested(window.localStorage, currentTenant.id, {
+          orderId: row.source,
+          availableQty,
+          shortageQty,
+          inventoryFactVersion: result.intake.inventoryFactVersion,
+          intakeId: result.intake.id,
+          productionDemandId: result.demand?.id,
+          productionDemandCode: result.demand?.code,
+          requestedAt,
+          operator,
+        });
+        onBusinessFlowAction?.('approveOrder', {
+          id: row.source,
+          client: row.customer,
+          productName: row.item,
+          qty: row.qty,
+          amount: row.amount || businessFlow?.amount || '待回写',
+          availableStock: availableQty,
+          shortage: shortageQty,
+          intake: result.intake,
+          productionDemand: result.demand,
+        });
+        showToast(
+          shortageQty > 0
+            ? `生产申请已提交：${result.demand?.code || result.demand?.id}`
+            : `库存事实已更新，${row.source} 可以继续出库`,
+          shortageQty > 0 ? 'warning' : 'success',
+        );
+        setActionReview(null);
+      } catch (error) {
+        const apiError = error instanceof ProductionApiError ? error : null;
+        showToast(
+          '生产申请提交失败：' + (apiError?.suggestion || (error instanceof Error ? error.message : '请稍后重试')),
+          'error',
+        );
+      } finally {
+        setIsActionSubmitting(false);
+      }
+      return;
+    }
     if (actionReview.kind === 'quickInventory') {
       setStockData(prev => prev.map(item => item.id === 'RM202' ? { ...item, status: '低库存' } : item));
       showToast('盘点任务已分发，低库存项已重新标记预警', 'success');
@@ -5175,14 +7319,217 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       } : item));
       showToast(`入库单 [${row.id}] 已验收，库存数量已同步增加`, 'success');
     }
+    if (actionReview.kind === 'partialShipment' && row) {
+      try {
+      const completedAt = new Date();
+      const operator = currentUser?.name || currentUser?.account || row.operator || '当前用户';
+      const ss = resolveOutboundLineStockStatus(row);
+      const shippableLines = ss.lineStatuses.filter(l => l.availQty > 0);
+      // 读取用户输入的发货数量，校验不可为0或超过 min(剩余待发, 实际可用)
+      const actualShipLines = shippableLines.map(ls => {
+        const fieldId = `shipQty_${ls.productId}`;
+        const maxQty = Math.min(ls.remainingQty ?? ls.qty, ls.availQty);
+        const rawInput = shipmentQuantities[fieldId];
+        const inputVal = (rawInput == null || rawInput === '') ? maxQty : Number(rawInput);
+        // 上限截断到 min(剩余待发, 实际可用)
+        const clampedVal = Math.min(inputVal, maxQty);
+        return { ...ls, shipQty: clampedVal };
+      });
+      // 校验：所有可发货产品的发货数量必须 > 0（不可为0）
+      const hasInvalid = actualShipLines.some(l => l.shipQty <= 0 || isNaN(l.shipQty));
+      if (hasInvalid) {
+        showToast('发货数量不可为0，请检查后重试', 'error');
+        return;
+      }
+      const shippedQty = actualShipLines.reduce((sum, l) => sum + l.shipQty, 0);
+      const lineShipments = actualShipLines.map(ls => ({ productId: ls.productId, shipQty: ls.shipQty }));
+      // 判断是否全量完成：所有订单行累计 shippedQty >= 订单数量
+      const allFullyShipped = ss.lineStatuses.every(ls => {
+        const ship = actualShipLines.find(a => a.productId === ls.productId);
+        const totalShipped = (ls.shippedQty ?? 0) + (ship ? ship.shipQty : 0);
+        return totalShipped >= ls.qty;
+      });
+      const newOutboundStatus = allFullyShipped ? '已出库' : '部分发货';
+      // 更新出库单lines中每行的已发货数量
+      const updatedLines = (row.lines || []).map(line => {
+        const ship = actualShipLines.find(a => a.productId === line.productId);
+        return ship ? { ...line, shippedQty: (Number(line.shippedQty) || 0) + ship.shipQty } : line;
+      });
+      // 构建出库明细记录
+      const shipmentDetails = actualShipLines.map(ls => ({ productId: ls.productId, productName: ls.productName, shipQty: ls.shipQty, unit: ls.unit || '件' }));
+      setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: newOutboundStatus, operator, shippedAt: completedAt.toISOString(), shippedQty: (Number(item.shippedQty) || 0) + shippedQty, lines: updatedLines.length > 0 ? updatedLines : item.lines, shipmentDetails: [...(item.shipmentDetails || []), ...shipmentDetails] } : item));
+      actualShipLines.forEach(ls => {
+        setStockData(prev => prev.map(item => item.id === ls.productId ? {
+          ...item,
+          stockQty: Math.max(0, item.stockQty - ls.shipQty),
+          availQty: Math.max(0, item.availQty - ls.shipQty)
+        } : item));
+      });
+      const salesUpdated = recordSalesOrderShipped(window.localStorage, currentTenant.id, {
+        orderId: row.source,
+        outboundId: row.id,
+        shippedAt: completedAt.toISOString(),
+        operator,
+        shippedQty,
+        lineShipments,
+      });
+      // 如果销售订单不在 localStorage 中（如通过出库管理直接创建的订单），则创建一个简化订单记录
+      if (!salesUpdated) {
+        try {
+          const wsKey = salesWorkspaceStorageKey(currentTenant.id);
+          const ws = JSON.parse(window.localStorage.getItem(wsKey) || '{}');
+          if (!Array.isArray(ws.orders)) ws.orders = [];
+          const existIdx = ws.orders.findIndex(o => o.id === row.source);
+          const simplifiedOrder = {
+            id: row.source,
+            client: '仓库出库同步',
+            salesman: operator,
+            product: (row.lines || []).map(l => `${l.productId} ${l.productName || ''} × ${l.qty} ${l.unit || '件'}`).join('；') || row.item,
+            productName: row.item,
+            qty: row.qty,
+            amount: '待生成',
+            receivable: '待生成',
+            date: new Date().toISOString().slice(0, 10),
+            deliveryDate: row.dueDate || '按订单交期',
+            outStatus: allFullyShipped ? '全部发货' : '部分发货',
+            status: allFullyShipped ? '已发货' : '部分发货',
+            shippedQty: shippedQty,
+            lines: updatedLines,
+            createdAt: completedAt.toISOString(),
+            updatedAt: completedAt.toISOString(),
+          };
+          if (existIdx >= 0) {
+            ws.orders[existIdx] = { ...ws.orders[existIdx], ...simplifiedOrder };
+          } else {
+            ws.orders.unshift(simplifiedOrder);
+          }
+          window.localStorage.setItem(wsKey, JSON.stringify({ ...ws, schemaVersion: 8 }));
+        } catch (e2) {
+          // 忽略 localStorage 写入异常
+        }
+      }
+      const shipSummary = actualShipLines.map(l => `${l.productId}:${l.shipQty}`).join('、');
+      showToast(`出库单 [${row.id}] 已${allFullyShipped ? '全量' : '部分'}发货（${shipSummary}），销售订单已回写`, 'success');
+      setActionReview(null);
+      return;
+      } catch (e) {
+        showToast('部分发货失败：' + (e instanceof Error ? e.message : String(e)), 'error');
+      }
+    }
+    if (actionReview.kind === 'productionRequest' && row) {
+      onNavigateModule?.('生产管理', { query: { production: 'mps', focusOrder: row.source } });
+      showToast(`已跳转到生产管理 MPS 主计划，请为缺口产品创建生产计划`, 'warning');
+      setActionReview(null);
+      return;
+    }
     if (actionReview.kind === 'processOutbound' && row) {
-      setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '已出库' } : item));
-      setStockData(prev => prev.map(item => item.name === row.item ? {
-        ...item,
-        stockQty: Math.max(0, item.stockQty - row.qty),
-        availQty: Math.max(0, item.availQty - row.qty)
-      } : item));
-      showToast(`出库单 [${row.id}] 已完成拣货并扣减库存`, 'success');
+      if (row.formalTask) {
+        setIsActionSubmitting(true);
+        try {
+          if (!formalContext) throw new Error('请先登录正式会话');
+          let task = row.formalTask;
+          let outboundId = task.outboundId;
+          if (task.availabilityStatus !== 'RESERVED') {
+            const reserved = await checkAndReserveShipmentTask(formalContext, task);
+            task = reserved.task;
+            outboundId = reserved.outbound?.id || task.outboundId;
+            const mapped = mapFormalTask(task);
+            setOutboundData((previous) => previous.map((item) => item.taskId === row.taskId ? mapped : item));
+            if (task.replenishmentStatus === 'REQUIRED') {
+              showToast('库存校验完成，存在缺口，请点击去生产', 'warning');
+              setActionReview(null);
+              return;
+            }
+            showToast('库存校验通过，预留和出库单已生成，请继续确认本次发货数量', 'success');
+            setActionReview(null);
+            return;
+          }
+          if (!outboundId) throw new Error('库存预留完成但未生成出库单');
+          const outbound = await getFulfillmentOutbound(formalContext, outboundId);
+          await postFulfillmentOutbound(formalContext, outbound, shipmentQuantities);
+          await refreshFormalTasks();
+          showToast(`销售出库单 [${outbound.id}] 已完成并回写销售订单`, 'success');
+          setActionReview(null);
+        } catch (error) {
+          showToast('销售出库失败：' + (error instanceof Error ? error.message : '请稍后重试'), 'error');
+        } finally {
+          setIsActionSubmitting(false);
+        }
+        return;
+      }
+      const completedAt = new Date();
+      const operator = currentUser?.name || currentUser?.account || row.operator || '当前用户';
+      const salesUpdated = row.type === '销售发货'
+        ? recordSalesOrderShipped(window.localStorage, currentTenant.id, {
+            orderId: row.source,
+            outboundId: row.id,
+            shippedAt: completedAt.toISOString(),
+            operator,
+            shippedQty: row.qty,
+          })
+        : false;
+      // 如果销售订单不在 localStorage 中，创建简化订单记录
+      if (row.type === '销售发货' && !salesUpdated) {
+        try {
+          const wsKey = salesWorkspaceStorageKey(currentTenant.id);
+          const ws = JSON.parse(window.localStorage.getItem(wsKey) || '{}');
+          if (!Array.isArray(ws.orders)) ws.orders = [];
+          const existIdx = ws.orders.findIndex(o => o.id === row.source);
+          const simplifiedOrder = {
+            id: row.source,
+            client: '仓库出库同步',
+            salesman: operator,
+            product: (row.lines || []).map(l => `${l.productId} ${l.productName || ''} × ${l.qty} ${l.unit || '件'}`).join('；') || row.item,
+            productName: row.item,
+            qty: row.qty,
+            amount: '待生成',
+            receivable: '待生成',
+            date: new Date().toISOString().slice(0, 10),
+            deliveryDate: row.dueDate || '按订单交期',
+            outStatus: '全部发货',
+            status: '已发货',
+            shippedQty: row.qty,
+            lines: (row.lines || []).map(l => ({ ...l, shippedQty: l.qty })),
+            createdAt: completedAt.toISOString(),
+            updatedAt: completedAt.toISOString(),
+          };
+          if (existIdx >= 0) {
+            ws.orders[existIdx] = { ...ws.orders[existIdx], ...simplifiedOrder };
+          } else {
+            ws.orders.unshift(simplifiedOrder);
+          }
+          window.localStorage.setItem(wsKey, JSON.stringify({ ...ws, schemaVersion: 8 }));
+        } catch (e2) {
+          // 忽略 localStorage 写入异常
+        }
+      }
+      setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '已出库', operator, shippedAt: completedAt.toISOString() } : item));
+      // 按产品明细逐行扣减库存（stockQty 和 availQty）；无明细行时回退到单产品匹配
+      const shipLines = (row.lines && row.lines.length > 0)
+        ? row.lines.map(line => ({ productId: line.productId, shipQty: Number(line.qty || 0) }))
+        : (() => {
+          const pid = row.productId || String(row.item || '').match(/[A-Z]{2,}\d+/)?.[0] || '';
+          return pid ? [{ productId: pid, shipQty: Number(row.qty || 0) }] : [];
+        })();
+      shipLines.forEach(ls => {
+        if (!ls.productId) return;
+        setStockData(prev => prev.map(item => item.id === ls.productId ? {
+          ...item,
+          stockQty: Math.max(0, item.stockQty - ls.shipQty),
+          availQty: Math.max(0, item.availQty - ls.shipQty)
+        } : item));
+      });
+      if (row.type === '销售发货') {
+        if (businessFlow?.orderId === row.source) onBusinessFlowAction?.('shipSales');
+        showToast(
+          salesUpdated
+            ? `出库单 [${row.id}] 已完成，销售订单已同步为已发货`
+            : `出库单 [${row.id}] 已完成；来源订单不在当前租户工作区，请在正式订单列表核对事件回写`,
+          salesUpdated ? 'success' : 'warning',
+        );
+      } else {
+        showToast(`出库单 [${row.id}] 已完成拣货并扣减库存`, 'success');
+      }
     }
     if (actionReview.kind === 'deadStock') {
       setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, status: '去化中' } : item));
@@ -5199,7 +7546,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       showToast('呆滞物料调拨单已生成，FG001 已进入去化流程', 'success');
     }
     if (actionReview.kind === 'transferStock' && row) {
-      setStockData(prev => prev.map(item => item.id === row.id ? { ...item, warehouse: '去化中转仓', location: 'T-01-01', status: '正常' } : item));
+      setStockData(prev => prev.map(item => isSameStockRecord(item, row) ? { ...item, warehouseId: 'WH-TR-01', warehouse: '去化中转仓', location: 'T-01-01', status: '正常' } : item));
       showToast(`物料 [${row.id}] 已调拨至去化中转仓`, 'success');
     }
     if (actionReview.kind === 'createPurchaseRequest') {
@@ -5238,7 +7585,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
       {recordModal && <Inv_RecordModal type={recordModal.type} mode={recordModal.mode} record={recordModal.record} onClose={() => setRecordModal(null)} onSubmit={(draft) => { recordModal.type === 'stock' ? saveStock(draft) : recordModal.type === 'inbound' ? saveInbound(draft) : saveOutbound(draft); setRecordModal(null); }} />}
       {deleteTarget && <Sales_ConfirmModal title={`删除${invEntityLabels[deleteTarget.type]}`} desc={`确定删除 ${deleteTarget.record.id} 吗？该操作仅影响当前演示数据。`} confirmText="删除" tone="danger" onCancel={() => setDeleteTarget(null)} onConfirm={deleteRecord} />}
-      {actionReview && <Inv_ActionReviewModal action={actionReview} onCancel={() => setActionReview(null)} onConfirm={confirmInventoryAction} />}
+      {actionReview && <Inv_ActionReviewModal action={actionReview} submitting={isActionSubmitting} onCancel={() => setActionReview(null)} onConfirm={confirmInventoryAction} />}
       <main className="px-8 py-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
         <div className="flex justify-between items-start mb-6 shrink-0">
           <div className="flex items-center">
@@ -5248,16 +7595,20 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
               <div className="text-[13px] text-slate-500 mt-1 font-medium">全域仓库物资流转中心</div>
             </div>
           </div>
-          <button onClick={handleManualInbound} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl flex items-center text-[13px] font-bold transition-colors shadow-sm"><Import size={16} className="mr-2"/> 手工入库</button>
+          {!['warehouses', 'products', 'materials'].includes(activeTab) && <button onClick={handleManualInbound} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl flex items-center text-[13px] font-bold transition-colors shadow-sm"><Import size={16} className="mr-2"/> 手工入库</button>}
         </div>
         <div className="bg-white border border-slate-200 rounded-xl inline-flex p-1.5 shadow-sm mb-6 shrink-0 w-max relative z-10">
-          <button onClick={() => setActiveTab('dashboard')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><LayoutDashboard size={14} className="mr-1.5" /> 库存监控舱</button>
-          <button onClick={() => setActiveTab('stock')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'stock' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Database size={14} className="mr-1.5" /> 现存量台账</button>
+          <button onClick={() => navigateInventoryTab('dashboard')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><LayoutDashboard size={14} className="mr-1.5" /> 库存监控舱</button>
+          <button onClick={() => navigateInventoryTab('stock')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'stock' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Database size={14} className="mr-1.5" /> 现存量台账</button>
           <div className="w-px h-5 bg-slate-200 mx-1 self-center"></div>
-          <button onClick={() => setActiveTab('inbound')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'inbound' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><ArrowDownToLine size={14} className="mr-1.5" /> 入库流水</button>
-          <button onClick={() => setActiveTab('outbound')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'outbound' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><ArrowUpFromLine size={14} className="mr-1.5" /> 出库流水</button>
+          <button onClick={() => navigateInventoryTab('inbound')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'inbound' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><ArrowDownToLine size={14} className="mr-1.5" /> 入库流水</button>
+          <button onClick={() => navigateInventoryTab('outbound')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'outbound' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><ArrowUpFromLine size={14} className="mr-1.5" /> 出库管理</button>
+          <div className="w-px h-5 bg-slate-200 mx-1 self-center"></div>
+          <button onClick={() => navigateInventoryTab('warehouses')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'warehouses' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Warehouse size={14} className="mr-1.5" /> 仓库</button>
+          <button onClick={() => navigateInventoryTab('products')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'products' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Package size={14} className="mr-1.5" /> 产品</button>
+          <button onClick={() => navigateInventoryTab('materials')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'materials' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Box size={14} className="mr-1.5" /> 物料</button>
         </div>
-        <BusinessFlowDock moduleName="库存管理" flow={businessFlow} onAction={onBusinessFlowAction} onNavigate={onNavigateModule} />
+        <BusinessFlowDock moduleName="库存管理" flow={businessFlow} onAction={handleInventoryFlowAction} onNavigate={onNavigateModule} />
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
@@ -5324,56 +7675,17 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                 />
             )}
             {activeTab === 'stock' && (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
-                    <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                        <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Database className="w-4.5 h-4.5 text-blue-600" /> 现存量台账明细</h4>
-                        <div className="flex gap-2">
-                            <select value={stockFilter} onChange={(e) => setStockFilter(e.target.value)} className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-xl text-[13px] font-bold outline-none focus:border-blue-500 shadow-sm">
-                              <option value="全部">全部状态</option>
-                              <option value="正常">正常</option>
-                              <option value="低库存">低库存</option>
-                              <option value="积压呆滞">积压呆滞</option>
-                              <option value="去化中">去化中</option>
-                            </select>
-                            <button onClick={handleQuickInventory} className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-2 hover:bg-slate-50 shadow-sm"><ScanLine size={14}/> 快速盘点</button>
-                        </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[13px] whitespace-nowrap">
-                            <thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase">
-                                <tr><th className="px-6 py-4 font-bold">物料编码 / 名称</th><th className="px-6 py-4 font-bold">类别</th><th className="px-6 py-4 font-bold">所在仓库 / 库位</th><th className="px-6 py-4 font-bold text-right">现有总量</th><th className="px-6 py-4 font-bold text-right text-rose-500">冻结/预留</th><th className="px-6 py-4 font-bold text-right text-emerald-600">实际可用</th><th className="px-6 py-4 font-bold">库存健康度</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {filteredStockData.map((row) => (
-                                    <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4">
-                                          <div className="font-bold text-slate-800">{row.name}</div>
-                                          <div className="text-[11px] text-slate-500 font-mono mt-0.5">{row.id}</div>
-                                        </td>
-                                        <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded font-bold text-[11px] border ${row.category==='成品'||row.category==='半成品'?'bg-blue-50 text-blue-600 border-blue-100':'bg-slate-100 text-slate-600 border-slate-200'}`}>{row.category}</span></td>
-                                        <td className="px-6 py-4">
-                                          <div className="font-bold text-slate-700 flex items-center gap-1.5"><Warehouse size={12} className="text-blue-500"/> {row.warehouse}</div>
-                                          <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1"><MapPin size={10}/> 库位: {row.location}</div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right font-mono font-bold text-slate-800 text-[14px]">{row.stockQty} <span className="text-[11px] text-slate-400 font-sans">{row.unit}</span></td>
-                                        <td className="px-6 py-4 text-right font-mono font-bold text-rose-500 text-[14px]">{row.lockQty}</td>
-                                        <td className="px-6 py-4 text-right font-mono font-bold text-emerald-600 text-[14px]">{row.availQty}</td>
-                                        <td className="px-6 py-4">{getStockStatusBadge(row.status)}</td>
-                                        <td className="px-6 py-4 text-right">
-                                          <div className="flex items-center justify-end gap-2">
-                                            <button title="查看库存" onClick={() => setRecordModal({ type: 'stock', mode: 'view', record: row })} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Eye size={14}/></button>
-                                            <button title="编辑库存" onClick={() => setRecordModal({ type: 'stock', mode: 'edit', record: row })} className="p-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>
-                                            <button title="调拨库存" onClick={() => handleTransferStock(row)} className="p-1.5 border border-amber-200 text-amber-600 rounded-lg hover:bg-amber-50 transition-colors"><ArrowRightLeft size={14}/></button>
-                                            <button title="删除库存" onClick={() => setDeleteTarget({ type: 'stock', record: row })} className="p-1.5 border border-rose-200 text-rose-500 rounded-lg hover:bg-rose-50 transition-colors"><Trash2 size={14}/></button>
-                                          </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    <Pagination total={filteredStockData.length} page={1} limit={10} />
-                </div>
+              <InventoryStockQueryPanel
+                tenantId={currentTenant?.id}
+                stockData={stockData}
+                onQuickInventory={handleQuickInventory}
+                onView={(row) => setRecordModal({ type: 'stock', mode: 'view', record: row })}
+                onEdit={(row) => setRecordModal({ type: 'stock', mode: 'edit', record: row })}
+                onTransfer={handleTransferStock}
+                onDelete={(row) => setDeleteTarget({ type: 'stock', record: row })}
+                onCreateProductionRequest={openInventoryProductionRequest}
+                onCreatePurchaseRequest={openInventoryPurchaseRequest}
+              />
             )}
             {activeTab === 'inbound' && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
@@ -5381,14 +7693,17 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                         <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><ArrowDownToLine className="w-4.5 h-4.5 text-emerald-600" /> 入库流水明细</h4>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[13px] whitespace-nowrap">
+                        <table className="w-full text-left text-[13px]">
                             <thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase">
                                 <tr><th className="px-6 py-4 font-bold">单据流水号</th><th className="px-6 py-4 font-bold">业务类型</th><th className="px-6 py-4 font-bold">来源 / 目标单据</th><th className="px-6 py-4 font-bold">核心物料</th><th className="px-6 py-4 font-bold text-right">发生数量</th><th className="px-6 py-4 font-bold">操作日期</th><th className="px-6 py-4 font-bold">单据状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {inboundData.map((row) => (
                                     <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4 font-mono font-bold text-blue-600">{row.id}</td>
+                                        <td className="px-6 py-4 font-mono font-bold text-blue-600">
+                                            <div>{row.id}</div>
+                                            {row.outboundId && row.outboundId !== row.id && <div className="text-[10px] text-emerald-600 font-normal mt-0.5">出库单 {row.outboundId.slice(0, 8)}…</div>}
+                                        </td>
                                         <td className="px-6 py-4"><span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-bold text-[11px] border border-slate-200">{row.type}</span></td>
                                         <td className="px-6 py-4 text-slate-600 font-mono font-bold text-[12px]">{row.source}</td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{row.item}</td>
@@ -5415,32 +7730,94 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             )}
             {activeTab === 'outbound' && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
+                    {requestedSalesOrderId && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-100 bg-blue-50 px-6 py-3" role="status">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white"><Link size={15}/></div>
+                          <div className="min-w-0">
+                            <div className="text-[12px] font-bold text-blue-800">来自销售订单 {requestedSalesOrderId}</div>
+                            <div className="mt-0.5 text-[11px] text-blue-600">{requestedOutbound ? `已定位出库任务 ${requestedOutbound.id}` : '出库任务尚未生成，请返回销售订单重新发起'}</div>
+                          </div>
+                        </div>
+                        <button onClick={() => onNavigateModule?.('销售管理', { query: { tab: 'orders', focusOrder: requestedSalesOrderId } })} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 text-[12px] font-bold text-blue-700 hover:bg-blue-100"><ArrowRight size={14} className="rotate-180"/>返回销售订单</button>
+                      </div>
+                    )}
                     <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                        <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><ArrowUpFromLine className="w-4.5 h-4.5 text-rose-500" /> 出库流水明细</h4>
+                        <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><ArrowUpFromLine className="w-4.5 h-4.5 text-rose-500" /> 出库管理</h4>
+                        <span className="text-[12px] text-slate-500">销售发货出库任务</span>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap">
                             <thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase">
-                                <tr><th className="px-6 py-4 font-bold">单据流水号</th><th className="px-6 py-4 font-bold">业务类型</th><th className="px-6 py-4 font-bold">来源 / 目标单据</th><th className="px-6 py-4 font-bold">核心物料</th><th className="px-6 py-4 font-bold text-right">发生数量</th><th className="px-6 py-4 font-bold">操作日期</th><th className="px-6 py-4 font-bold">单据状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
+                                <tr><th className="px-4 py-3 font-bold">单据流水号</th><th className="px-4 py-3 font-bold">业务类型</th><th className="px-4 py-3 font-bold">来源 / 目标单据</th><th className="px-4 py-3 font-bold">产品明细</th><th className="px-4 py-3 font-bold text-right">发生数量</th><th className="px-4 py-3 font-bold">操作日期</th><th className="px-4 py-3 font-bold">单据状态</th><th className="px-4 py-3 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {outboundData.map((row) => (
-                                    <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4 font-mono font-bold text-blue-600">{row.id}</td>
-                                        <td className="px-6 py-4"><span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-bold text-[11px] border border-slate-200">{row.type}</span></td>
-                                        <td className="px-6 py-4 text-slate-600 font-mono font-bold text-[12px]">{row.source}</td>
-                                        <td className="px-6 py-4 font-bold text-slate-800">{row.item}</td>
-                                        <td className="px-6 py-4 text-right font-mono font-bold text-[14px] text-rose-500">-{row.qty}</td>
-                                        <td className="px-6 py-4 text-slate-500 font-mono text-[12px]">{row.date}</td>
-                                        <td className="px-6 py-4">
-                                            {row.status === '已出库' ? <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><CheckCircle2 size={12}/> 已完成</span> : <span className="bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max animate-pulse"><Box size={12}/> 拣货中</span>}
+                                    <tr key={row.id} className={`transition-colors ${row.source === requestedSalesOrderId ? 'bg-blue-50/70 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
+                                        <td className="px-4 py-3 font-mono font-bold text-blue-600">{row.id}</td>
+                                        <td className="px-4 py-3"><span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-bold text-[11px] border border-slate-200">{row.type}</span></td>
+                                        <td className="px-4 py-3 text-slate-600 font-mono font-bold text-[12px]">{row.source}</td>
+                                        <td className="px-4 py-3 font-bold text-slate-800 max-w-[200px] truncate">
+                                            <div title={formatOutboundProductSummary(row)} className="truncate">{formatOutboundProductSummary(row)}</div>
+                                            {row.shipmentDetails && row.shipmentDetails.length > 0 && <div className="mt-0.5 text-[10px] text-emerald-600 font-mono font-bold">已发: {row.shipmentDetails.map(s => `${s.productId}×${s.shipQty}`).join('、')}</div>}
                                         </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
+                                        <td className="px-4 py-3 text-right font-mono font-bold text-[14px] text-rose-500">
+                                            {row.shippedQty && Number(row.shippedQty) > 0
+                                              ? <div className="flex flex-col items-end"><span className="text-rose-500">-{row.shippedQty}</span>{Number(row.shippedQty) < Number(row.qty) && <span className="text-[10px] text-slate-400 font-normal">/ {row.qty}</span>}</div>
+                                              : <span>-{row.qty}</span>}
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500 font-mono text-[12px]">{row.date}</td>
+                                        <td className="px-4 py-3">
+                                            {row.status === '已出库'
+                                              ? <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><CheckCircle2 size={12}/> 已完成</span>
+                                              : row.status === '已取消'
+                                                ? <span className="bg-rose-50 text-rose-600 border border-rose-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><X size={12}/> 已取消</span>
+                                              : row.status === '库存不足'
+                                                ? <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><AlertTriangle size={12}/> 库存不足</span>
+                                                : row.status === '生产申请中'
+                                                  ? <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><Factory size={12}/> 生产申请中</span>
+                                                  : <span className="bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><Box size={12}/> {row.status}</span>}
+                                            {row.status === '部分发货' && Number(row.shippedQty) > 0 && <div className="mt-1 text-[10px] font-mono text-emerald-600 font-bold">已发 {row.shippedQty} / {row.qty}</div>}
+                                            {row.type === '销售发货' && row.formalTask && row.inventoryFactVersion == null && <div className="mt-1 text-[10px] font-mono text-slate-400">待计算</div>}
+                                            {row.type === '销售发货' && ((row.formalTask && row.inventoryFactVersion != null) || !row.formalTask) && (() => {
+                                              const ss = resolveOutboundLineStockStatus(row);
+                                              return <div className="mt-1 space-y-0.5">
+                                                {ss.lineStatuses.map((ls, i) => (
+                                                  <div key={i} className={`text-[10px] font-mono ${ls.shortage > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>
+                                                    {ls.productId}: 可用 {ls.availQty}{ls.shortage > 0 ? <span className="text-rose-600"> · 缺口 {ls.shortage}</span> : ''}
+                                                  </div>
+                                                ))}
+                                              </div>;
+                                            })()}
+                                        </td>
+                                        <td className="px-4 py-3 text-right">
+                                            <div className="flex items-center justify-end gap-1.5">
                                               <button title="查看出库单" onClick={() => setRecordModal({ type: 'outbound', mode: 'view', record: row })} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Eye size={14}/></button>
-                                              <button title="编辑出库单" onClick={() => setRecordModal({ type: 'outbound', mode: 'edit', record: row })} className="p-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>
-                                              {row.status === '拣货中' ? <button title="完成拣货出库" onClick={() => processOutbound(row)} className="p-1.5 border border-emerald-200 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"><CheckCircle2 size={14}/></button> : <button title="下载出库凭证" onClick={() => showToast(`出库单 [${row.id}] 凭证已生成`, 'success')} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Download size={14}/></button>}
-                                              <button title="删除出库单" onClick={() => setDeleteTarget({ type: 'outbound', record: row })} className="p-1.5 border border-rose-200 text-rose-500 rounded-lg hover:bg-rose-50 transition-colors"><Trash2 size={14}/></button>
+                                              {row.type !== '销售发货' && <button title="编辑出库单" onClick={() => setRecordModal({ type: 'outbound', mode: 'edit', record: row })} className="p-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>}
+                                              {row.type === '销售发货' && !row.formalTask && !/^SO-\d{8}-\d{3,4}$/.test(row.source || '')
+                                                ? <button disabled title="请先关联正式销售订单后再发货" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 text-[12px] font-bold text-slate-400 cursor-not-allowed"><Truck size={14}/>去发货</button>
+                                                : row.status === '已取消' ? <span title="来源订单已取消" className="inline-flex h-8 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-bold text-rose-500">订单已取消</span>
+                                                : row.status === '生产申请中' ? <button title="查看生产申请" onClick={() => viewProductionRequest(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>查看生产申请</button>
+                                                : row.status === '已出库' ? <button title="下载出库凭证" onClick={() => showToast(`出库单 [${row.id}] 凭证已生成`, 'success')} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Download size={14}/></button>
+                                                : row.type === '销售发货' && row.status !== '已出库' ? (() => {
+                                                    const ss = resolveOutboundLineStockStatus(row);
+                                                    const hasPartialShipped = Number(row.shippedQty) > 0;
+                                                    const shipLabel = hasPartialShipped ? '继续发货' : '去发货';
+                                                    if (ss.allSufficient) {
+                                                      return <button title="库存充足，继续发货" onClick={() => processOutbound(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100"><Truck size={14}/>{shipLabel}</button>;
+                                                    }
+                                                    if (ss.allInsufficient) {
+                                                      return <button title="全部缺货，去生产" onClick={() => navigateToProductionMPS(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>去生产</button>;
+                                                    }
+                                                    return <div className="flex items-center gap-1.5">
+                                                      <button title="部分产品可发货" onClick={() => partialShipment(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100"><Truck size={14}/>{hasPartialShipped ? '继续发货' : '部分发货'}</button>
+                                                      <button title="缺货产品去生产" onClick={() => navigateToProductionMPS(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>去生产</button>
+                                                    </div>;
+                                                  })()
+                                                : row.status !== '已出库' && row.type !== '销售发货' && !/^SO-\d{8}-\d{3,4}$/.test(row.source || '')
+                                                ? <span title="该手工调拨出库单未关联销售订单" className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-[11px] font-bold text-slate-400">未关联正式订单</span>
+                                                : row.status !== '已出库' ? <button title="完成拣货出库" onClick={() => processOutbound(row)} className="p-1.5 border border-emerald-200 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"><CheckCircle2 size={14}/></button> : <button title="下载出库凭证" onClick={() => showToast(`出库单 [${row.id}] 凭证已生成`, 'success')} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Download size={14}/></button>}
+                                              {row.type !== '销售发货' && <button title="删除出库单" onClick={() => setDeleteTarget({ type: 'outbound', record: row })} className="p-1.5 border border-rose-200 text-rose-500 rounded-lg hover:bg-rose-50 transition-colors"><Trash2 size={14}/></button>}
                                             </div>
                                         </td>
                                     </tr>
@@ -5450,6 +7827,18 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                     </div>
                     <Pagination total={outboundData.length} page={1} limit={10} />
                 </div>
+            )}
+            {['warehouses', 'products', 'materials'].includes(activeTab) && (
+              <InventoryMasterDataPanel
+                activeTab={activeTab}
+                tenantId={currentTenant?.id}
+                stockData={stockData}
+                selectedWarehouseId={selectedWarehouseId}
+                onSelectWarehouse={selectInventoryWarehouse}
+                onToast={showToast}
+                onCreateProductionRequest={openInventoryProductionRequest}
+                onCreatePurchaseRequest={openInventoryPurchaseRequest}
+              />
             )}
         </div>
       </main>
@@ -5464,15 +7853,38 @@ const proc_prData = [{ id: 'PR-260705-01', source: 'MRP运算自动生成', item
 const proc_poData = [{ id: 'PO-260706-001', supplier: '深圳华芯科技', item: 'AI算力芯片 (RM201)', amount: '¥ 125,000.00', deliveryDate: '2026-07-14', status: '供应商确认', creator: '李采购' }];
 const proc_suppliersData = [{ id: 'SUP-001', name: '深圳华芯科技有限公司', level: 'A', onTimeRate: '98.5%', qualityRate: '99.2%', leadTime: '7天', status: '合格供应商' }];
 
-const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule }) => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('procurement');
+    return ['dashboard', 'pr', 'order', 'supplier'].includes(requested || '') ? requested : 'dashboard';
+  });
+  const focusedPrId = new URLSearchParams(window.location.search).get('focusPr');
   const [actionModal, setActionModal] = useState(null);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+  const [formalRequests, setFormalRequests] = useState([]);
+  const [formalOrders, setFormalOrders] = useState([]);
+  const [localRequests, setLocalRequests] = useState(() => loadInventoryPurchaseRequests(window.localStorage, currentTenant?.id));
+  const formalContext = currentUser?.accessToken ? { tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken } : null;
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 2600);
   };
+
+  const refreshProcurement = async () => {
+    if (!formalContext) return;
+    const [requests, orders] = await Promise.all([procurementApi.listRequests(formalContext), procurementApi.listOrders(formalContext)]);
+    setFormalRequests(requests.items);
+    setFormalOrders(orders.items);
+  };
+
+  useEffect(() => {
+    refreshProcurement().catch((error) => showCenterToast(error instanceof Error ? `正式采购数据加载失败：${error.message}` : '正式采购数据加载失败', 'error'));
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  useEffect(() => {
+    setLocalRequests(loadInventoryPurchaseRequests(window.localStorage, currentTenant?.id));
+  }, [currentTenant?.id]);
 
   const linkedPrRow = businessFlow && isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? {
     id: 'PR-LINK-001',
@@ -5492,8 +7904,11 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     status: isLinkedFlowAtLeast(businessFlow, 'materialInbound') ? '已送货入库' : '供应商确认',
     creator: '系统联动'
   } : null;
-  const prRows = linkedPrRow ? [linkedPrRow, ...proc_prData.filter(row => row.id !== linkedPrRow.id)] : proc_prData;
-  const poRows = linkedPoRow ? [linkedPoRow, ...proc_poData.filter(row => row.id !== linkedPoRow.id)] : proc_poData;
+  const formalPrRows = formalRequests.map(request => ({ ...request, id: request.requestNo, apiId: request.id, source: `MRP ${request.mrpTaskId.slice(0, 8)} / ${request.demandId.slice(0, 8)}`, item: `${request.materialName || request.materialId} (${request.materialId})`, qty: Number(request.requiredQty), reqDate: request.requiredDate, status: request.status === 'PENDING_APPROVAL' ? '待审批' : request.status === 'CONVERTED' ? '已转订单' : '已审批', applicant: '正式采购服务', formalRequest: request }));
+  const formalPoRows = formalOrders.map(order => ({ ...order, id: order.orderNo, apiId: order.id, supplier: order.supplierName, item: `${order.materialName || order.materialId} (${order.materialId})`, amount: `${order.orderedQty} ${order.uom}`, deliveryDate: order.promisedDate, status: order.status === 'RECEIVED' ? '已送货入库' : '供应商确认', creator: '正式采购服务', formalOrder: order }));
+  const prRows = [...formalPrRows, ...localRequests, ...(linkedPrRow ? [linkedPrRow] : []), ...proc_prData]
+    .filter((row, index, rows) => rows.findIndex((item) => item.id === row.id) === index);
+  const poRows = formalPoRows.length ? [...formalPoRows, ...proc_poData] : linkedPoRow ? [linkedPoRow, ...proc_poData.filter(row => row.id !== linkedPoRow.id)] : proc_poData;
 
   const openProcAction = (kind) => {
     const configs = {
@@ -5564,6 +7979,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
       },
       prApprove: {
         kind,
+        record: row,
         title: '审批采购申请并转 PO',
         desc: `确认后会把 ${row.id} 标记为审批通过，并跳转到采购订单台账。`,
         icon: CheckCircle2,
@@ -5593,6 +8009,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
       },
       poDelivery: {
         kind,
+        record: row,
         title: '登记供应商送货',
         desc: `确认 ${row.id} 的供应商送货信息，并推送库存入库。`,
         icon: Truck,
@@ -5638,7 +8055,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     setActionModal(configs[kind]);
   };
 
-  const confirmProcAction = () => {
+  const confirmProcAction = async () => {
     if (!actionModal) return;
     if (actionModal.kind === 'adopt') {
       if (businessFlow?.currentStep === 'purchaseRequest') onBusinessFlowAction?.('approvePr');
@@ -5657,13 +8074,45 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
       showCenterToast('单据详情已打开', 'success');
     }
     if (actionModal.kind === 'prApprove') {
-      if (businessFlow?.currentStep === 'purchaseRequest') onBusinessFlowAction?.('approvePr');
-      setActiveTab('order');
-      showCenterToast('采购申请已审批通过，已跳转采购订单台账', 'success');
+      if (actionModal.record?.formalRequest) {
+        try {
+          if (!formalContext) throw new Error('请先登录正式会话');
+          const result = await procurementApi.approveRequest(formalContext, actionModal.record.formalRequest);
+          await refreshProcurement();
+          onBusinessFlowAction?.('formalPoCreated', { purchaseOrder: result.order });
+          setActiveTab('order');
+          showCenterToast(`采购申请已审批，正式 PO ${result.order.orderNo} 已生成`, 'success');
+        } catch (error) {
+          showCenterToast(error instanceof Error ? `采购审批失败：${error.message}` : '采购审批失败', 'error');
+          return;
+        }
+      } else if (actionModal.record?.localRequest) {
+        const updated = updateInventoryPurchaseRequestStatus(window.localStorage, currentTenant?.id, actionModal.record.id, '已转订单');
+        if (updated) setLocalRequests((previous) => previous.map((item) => item.id === updated.id ? updated : item));
+        setActiveTab('order');
+        showCenterToast(`采购申请 ${actionModal.record.id} 已审批，等待生成正式采购订单`, 'success');
+      } else {
+        if (businessFlow?.currentStep === 'purchaseRequest') onBusinessFlowAction?.('approvePr');
+        setActiveTab('order');
+        showCenterToast('采购申请已审批通过，已跳转采购订单台账', 'success');
+      }
     }
     if (actionModal.kind === 'poDelivery') {
-      if (businessFlow?.currentStep === 'purchaseOrder') onBusinessFlowAction?.('receiveMaterial');
-      showCenterToast('供应商送货已登记，库存收货任务已生成', 'success');
+      if (actionModal.record?.formalOrder) {
+        try {
+          if (!formalContext) throw new Error('请先登录正式会话');
+          const result = await procurementApi.receiveOrder(formalContext, actionModal.record.formalOrder);
+          await refreshProcurement();
+          onBusinessFlowAction?.('formalMaterialInbound', { receipt: result.receipt, availability: result.availability });
+          showCenterToast(`采购入库 ${result.receipt.receiptNo} 已正式过账`, 'success');
+        } catch (error) {
+          showCenterToast(error instanceof Error ? `采购入库失败：${error.message}` : '采购入库失败', 'error');
+          return;
+        }
+      } else {
+        if (businessFlow?.currentStep === 'purchaseOrder') onBusinessFlowAction?.('receiveMaterial');
+        showCenterToast('供应商送货已登记，库存收货任务已生成', 'success');
+      }
     }
     if (actionModal.kind === 'supplierScore') {
       showCenterToast('供应商绩效评分已刷新', 'success');
@@ -5674,6 +8123,30 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   const getPOStatusBadge = (status) => {
     if(status.includes('确认')) return <span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/> {status}</span>;
     return <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-lg text-[11px] font-bold">{status}</span>;
+  };
+
+  const handleProcurementFlowAction = (action) => {
+    if (action === 'approvePr' && businessFlow?.purchaseRequest) {
+      const row = formalPrRows.find(item => item.apiId === businessFlow.purchaseRequest.id);
+      if (!row) {
+        showCenterToast('正式采购申请尚未加载，请刷新后重试', 'warning');
+        return;
+      }
+      setActiveTab('pr');
+      openProcRowAction('prApprove', row);
+      return;
+    }
+    if (action === 'receiveMaterial' && businessFlow?.purchaseOrder) {
+      const row = formalPoRows.find(item => item.apiId === businessFlow.purchaseOrder.id);
+      if (!row) {
+        showCenterToast('正式采购订单尚未加载，请刷新后重试', 'warning');
+        return;
+      }
+      setActiveTab('order');
+      openProcRowAction('poDelivery', row);
+      return;
+    }
+    onBusinessFlowAction?.(action);
   };
 
   return (
@@ -5696,7 +8169,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
           <button onClick={() => setActiveTab('order')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'order' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><FileText size={14} className="mr-1.5" /> 采购订单(PO)</button>
           <button onClick={() => setActiveTab('supplier')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'supplier' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Store size={14} className="mr-1.5" /> 供应商管理</button>
         </div>
-        <BusinessFlowDock moduleName="采购管理" flow={businessFlow} onAction={onBusinessFlowAction} onNavigate={onNavigateModule} />
+        <BusinessFlowDock moduleName="采购管理" flow={businessFlow} onAction={handleProcurementFlowAction} onNavigate={onNavigateModule} />
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
             {activeTab === 'dashboard' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
@@ -5917,10 +8390,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                 <tr><th className="px-6 py-4 font-bold">申请单号</th><th className="px-6 py-4 font-bold">需求来源</th><th className="px-6 py-4 font-bold">请购物料</th><th className="px-6 py-4 font-bold text-right">需求数量</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {prRows.map((row) => (
-                                    <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
+                {prRows.map((row) => (
+                                    <tr key={row.id} aria-current={row.id === focusedPrId ? 'true' : undefined} className={`transition-colors ${row.id === focusedPrId ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
                                         <td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td>
-                                        <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold text-[11px] border border-slate-200">{row.source}</span></td>
+                                        <td className="px-6 py-4"><div className="flex items-center gap-2"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold text-[11px] border border-slate-200">{row.source}</span>{row.id === focusedPrId && <span className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-blue-700">本次补货</span>}</div></td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{row.item}</td>
                                         <td className="px-6 py-4 text-right font-mono font-bold text-slate-800 text-[14px]">{row.qty}</td>
                                         <td className="px-6 py-4"><span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-lg text-[11px] font-bold">{row.status}</span></td>
@@ -6015,11 +8488,46 @@ const fin_arData = [{ id: 'AR-2607-001', customer: '商洛墨翠宝石开发有�
 const fin_apData = [{ id: 'AP-2607-001', supplier: '深圳华芯科技有限公司', poId: 'PO-260706-001', amount: 125000.00, paid: 50000.00, unpaid: 75000.00, dueDate: '2026-08-14', status: '部分付款' }];
 const fin_costData = [{ id: 'CST-WO-260101', woId: 'WO-260101', product: '工业控制器顶配版', materialCost: 28500.00, mfgCost: 4500.00, laborCost: 7200.00, totalCost: 40200.00, unitCost: 268.00, standardUnitCost: 250.00, variance: '+7.2%', status: '核算中' }];
 
-const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule }) => {
+const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [actionModal, setActionModal] = useState(null);
     const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+    const [apiArData, setApiArData] = useState([]);
+    const [apiApData, setApiApData] = useState([]);
+    const [apiCostData, setApiCostData] = useState([]);
+    const [apiDashboard, setApiDashboard] = useState(null);
     const formatCurrency = (val) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(val);
+
+    const finCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+
+    const mapApiAr = (item) => ({
+      id: item.docNo, customer: item.customerName, soId: item.sourceDocNo || item.sourceId,
+      amount: parseFloat(item.totalAmount), received: parseFloat(item.receivedAmount),
+      unreceived: parseFloat(item.outstandingAmount), dueDate: item.dueDate || '',
+      status: item.status === 'done' ? '已结清' : item.status === 'processing' ? '部分收款' : item.status === 'void' ? '已作废' : '待收款'
+    });
+    const mapApiAp = (item) => ({
+      id: item.docNo, supplier: item.supplierName, poId: item.sourceDocNo || item.sourceId,
+      amount: parseFloat(item.totalAmount), paid: parseFloat(item.paidAmount),
+      unpaid: parseFloat(item.outstandingAmount), dueDate: item.dueDate || '',
+      status: item.status === 'done' ? '已结清' : item.status === 'processing' ? '部分付款' : item.status === 'void' ? '已作废' : '待付款'
+    });
+    const mapApiCost = (item) => ({
+      id: item.docNo, woId: item.workOrderNo || item.workOrderId || '', product: item.productName,
+      materialCost: parseFloat(item.materialCost), mfgCost: parseFloat(item.manufacturingCost),
+      laborCost: parseFloat(item.laborCost), totalCost: parseFloat(item.totalCost),
+      unitCost: parseFloat(item.unitCost), standardUnitCost: parseFloat(item.standardUnitCost),
+      variance: (parseFloat(item.variancePct) >= 0 ? '+' : '') + parseFloat(item.variancePct).toFixed(1) + '%',
+      status: item.status === 'done' ? '已核算' : item.status === 'void' ? '已作废' : '核算中'
+    });
+
+    useEffect(() => {
+      if (!finCtx) return;
+      financeApi.listReceivables(finCtx, { page: 1, pageSize: 50 }).then((res) => setApiArData(res.items.map(mapApiAr))).catch(() => {});
+      financeApi.listPayables(finCtx, { page: 1, pageSize: 50 }).then((res) => setApiApData(res.items.map(mapApiAp))).catch(() => {});
+      financeApi.listCostAccounting(finCtx, { page: 1, pageSize: 50 }).then((res) => setApiCostData(res.items.map(mapApiCost))).catch(() => {});
+      financeApi.getFinanceDashboard(finCtx).then(setApiDashboard).catch(() => {});
+    }, [finCtx?.tenantId, finCtx?.accessToken]);
 
     const showCenterToast = (msg, type = 'success') => {
       setToast({ show: true, msg, type });
@@ -6046,8 +8554,11 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       dueDate: '2026-08-14',
       status: isLinkedFlowAtLeast(businessFlow, 'settlement') ? '已结清' : '待付款'
     } : null;
-    const arRows = linkedArRow ? [linkedArRow, ...fin_arData.filter(row => row.id !== linkedArRow.id)] : fin_arData;
-    const apRows = linkedApRow ? [linkedApRow, ...fin_apData.filter(row => row.id !== linkedApRow.id)] : fin_apData;
+    const baseArRows = apiArData.length > 0 ? apiArData : fin_arData;
+    const baseApRows = apiApData.length > 0 ? apiApData : fin_apData;
+    const baseCostRows = apiCostData.length > 0 ? apiCostData : fin_costData;
+    const arRows = linkedArRow ? [linkedArRow, ...baseArRows.filter(row => row.id !== linkedArRow.id)] : baseArRows;
+    const apRows = linkedApRow ? [linkedApRow, ...baseApRows.filter(row => row.id !== linkedApRow.id)] : baseApRows;
 
     const openFinanceAction = (kind) => {
       const configs = {
@@ -6433,7 +8944,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                       <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><PieChart className="w-4.5 h-4.5 text-blue-600" /> 生产成本核算</h4></div>
                       <div className="overflow-x-auto">
                           <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">核算单号</th><th className="px-6 py-4 font-bold">产出归集物料</th><th className="px-6 py-4 font-bold text-right bg-slate-50">实际核算总价</th><th className="px-6 py-4 font-bold text-center">差异率</th><th className="px-6 py-4 font-bold">结账状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                          <tbody className="divide-y divide-slate-100">{fin_costData.map(row => (
+                          <tbody className="divide-y divide-slate-100">{baseCostRows.map(row => (
                               <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.product}</td><td className="px-6 py-4 text-right font-mono font-bold text-slate-900 bg-slate-50/50">{formatCurrency(row.totalCost)}</td><td className="px-6 py-4 text-center font-mono font-bold"><span className={`px-2.5 py-0.5 rounded text-[11px] bg-rose-50 text-rose-600`}>{row.variance}</span></td><td className="px-6 py-4"><span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><RefreshCw size={12} className="animate-spin-slow"/>核算中</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openFinanceRowAction('costView', row)} /><TableActionButton icon={CheckCircle2} label="复核" tone="emerald" onClick={() => openFinanceRowAction('costClose', row)} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
                       </div><Pagination total={1} page={1} limit={10} />
@@ -7433,7 +9944,7 @@ const AIHubManagement = ({ onOpenAssistant }) => {
                         <div className="text-[12px] text-blue-100 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse"></span>在线 · 实时分析中</div>
                       </div>
                     </div>
-                    <button onClick={() => setIsIndustrialAssistantOpen(false)} className="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"><X size={18}/></button>
+                    <button type="button" aria-label="关闭 AI 助手" onClick={() => setIsIndustrialAssistantOpen(false)} className="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"><X size={18}/></button>
                   </div>
 
                   <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#FBFCFF] p-5">
@@ -7462,17 +9973,18 @@ const AIHubManagement = ({ onOpenAssistant }) => {
                       ))}
                     </div>
                     <div className="p-4 flex items-center gap-3">
-                      <button className="w-11 h-11 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border border-blue-100"><UploadCloud size={18}/></button>
+                      <button type="button" aria-label="上传附件" className="w-11 h-11 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border border-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><UploadCloud size={18}/></button>
                       <div className="flex-1 h-11 border border-slate-200 bg-slate-50 rounded-xl px-4 flex items-center focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400 transition-all">
                         <input
                           value={assistantInput}
                           onChange={(event) => setAssistantInput(event.target.value)}
                           onKeyDown={(event) => event.key === 'Enter' && sendIndustrialAssistantMessage()}
+                          aria-label="向 AI 助手提问"
                           placeholder="输入问题，回车发送..."
                           className="w-full bg-transparent outline-none text-[13px] text-slate-700"
                         />
                       </div>
-                      <button onClick={() => sendIndustrialAssistantMessage()} className="w-11 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors shadow-sm"><Send size={18}/></button>
+                      <button type="button" aria-label="发送问题" onClick={() => sendIndustrialAssistantMessage()} className="w-11 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"><Send size={18}/></button>
                     </div>
                   </div>
                 </div>
@@ -8439,25 +10951,6 @@ const MessageManagement = ({ onNavigateModule, msgs, setMsgs, focusMsgId, focusT
 // 平台主应用 Component (App Routing)
 // ==========================================
 
-const tenantOptions = [
-  { id: 'TENANT-SHWS', name: '上海万申工业集团', code: 'SHWS', plan: '工业旗舰版', scope: '2 工厂 · 4 仓库' },
-  { id: 'TENANT-HDJG', name: '华东精工制造', code: 'HDJG', plan: '工业专业版', scope: '1 工厂 · 2 仓库' },
-];
-
-const roleWorkbenchOptions = ['老板', '销售', '计划员', '采购', '仓管', '车间', '财务', '人事', '超级管理员'];
-
-const roleModuleAccess = {
-  老板: ['工作台', 'AI智能中枢', 'AI数据分析', '销售管理', '生产管理', '库存管理', '采购管理', '财务管理', '人员管理', '产业链管理', '消息管理', '问题反馈'],
-  销售: ['工作台', 'AI智能中枢', 'AI数据分析', '销售管理', '库存管理', '财务管理', '产业链管理', '消息管理', '问题反馈'],
-  计划员: ['工作台', 'AI智能中枢', 'AI数据分析', '销售管理', '生产管理', '库存管理', '采购管理', '产业链管理', '消息管理', '问题反馈'],
-  采购: ['工作台', 'AI智能中枢', 'AI数据分析', '生产管理', '库存管理', '采购管理', '财务管理', '产业链管理', '消息管理', '问题反馈'],
-  仓管: ['工作台', 'AI智能中枢', '生产管理', '库存管理', '采购管理', '消息管理', '问题反馈'],
-  车间: ['工作台', 'AI智能中枢', '生产管理', '库存管理', '人员管理', '消息管理', '问题反馈'],
-  财务: ['工作台', 'AI智能中枢', 'AI数据分析', '销售管理', '采购管理', '财务管理', '消息管理', '问题反馈'],
-  人事: ['工作台', 'AI智能中枢', 'AI数据分析', '人员管理', '消息管理', '问题反馈'],
-  超级管理员: ['工作台', 'AI智能中枢', 'AI数据分析', '销售管理', '生产管理', '库存管理', '采购管理', '财务管理', '人员管理', '产业链管理', '消息管理', '平台管理', '问题反馈'],
-};
-
 const roleWorkbenchMeta = {
   老板: { title: '经营驾驶舱', summary: '聚焦交付、现金、产能与风险，所有指标均可追溯到业务单据。' },
   销售: { title: '销售作战台', summary: '集中处理商机、报价、订单、交付承诺与客户回款风险。' },
@@ -8520,10 +11013,10 @@ const roleMetricSets = {
     { title: '关键人才风险', value: '3', unit: '人', trend: '需干预', trendTone: 'rose', icon: ShieldAlert, iconTone: 'emerald' },
   ],
   超级管理员: [
-    { title: '活跃租户', value: '18', unit: '家', trend: '+2家', trendTone: 'emerald', icon: Building, iconTone: 'blue' },
-    { title: '在线用户', value: '1,284', unit: '人', trend: '峰值68%', trendTone: 'emerald', icon: Users, iconTone: 'purple' },
-    { title: '待审批高危操作', value: '6', unit: '项', trend: '2超时', trendTone: 'rose', icon: ShieldAlert, iconTone: 'amber' },
-    { title: '核心服务可用性', value: '99.98', unit: '%', trend: '正常', trendTone: 'emerald', icon: Server, iconTone: 'emerald' },
+    { title: '本月全盘营收（预估）', value: '1,850', unit: '万', trend: '+12.5%', trendTone: 'emerald', icon: BadgeDollarSign, iconTone: 'blue' },
+    { title: '排产达成率', value: '96.8', unit: '%', trend: '+2.4%', trendTone: 'emerald', icon: CalendarCheck, iconTone: 'purple' },
+    { title: '低水位预警物料', value: '12', unit: '项', trend: '+3项', trendTone: 'rose', icon: AlertTriangle, iconTone: 'amber' },
+    { title: '核心岗出勤率', value: '98.5', unit: '%', trend: '+1.2%', trendTone: 'emerald', icon: UserCheck, iconTone: 'emerald' },
   ],
 };
 
@@ -8611,26 +11104,23 @@ const FeedbackManagement = ({ currentTenant, currentUser, onToast }) => {
 };
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('industrial-ai-session');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [activeModule, setActiveModule] = useState(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    if (searchParams.has('production')) return '生产管理';
-    if (searchParams.has('platform')) return '平台管理';
-    return '工作台';
-  });
+  const {
+    activeModule,
+    activeRole,
+    currentTenant,
+    currentTenantId,
+    currentUser,
+    navigateModule: setActiveModule,
+    setActiveRole,
+    setCurrentTenantId,
+    setCurrentUser,
+  } = useAppRuntime();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [messages, setMessages] = useState(msg_mockData);
   const [focusedMessageId, setFocusedMessageId] = useState(msg_mockData[0]?.id);
   const [messageFocusTick, setMessageFocusTick] = useState(0);
   const [salesResetSignal, setSalesResetSignal] = useState(0);
-  const [businessFlow, setBusinessFlow] = useState(createInitialBusinessFlow);
+  const [businessFlow, setBusinessFlow] = useState(null);
   const [flowToast, setFlowToast] = useState({ show: false, msg: '', type: 'success' });
   const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
   const [globalAssistantWidth, setGlobalAssistantWidth] = useState(520);
@@ -8640,13 +11130,23 @@ export default function App() {
     { role: 'assistant', text: '你好，我是工业 AI 助手。你可以直接问经营、销售、生产、库存和采购数据；涉及生成单据或改变 ERP 数据时，我会先给出依据、影响范围和审批要求。', time: '刚刚' }
   ]);
   const [profileModal, setProfileModal] = useState(null);
-  const [currentTenantId, setCurrentTenantId] = useState('TENANT-SHWS');
-  const [activeRole, setActiveRole] = useState(() => roleWorkbenchOptions.includes(currentUser?.role) ? currentUser.role : '老板');
-  const currentTenant = tenantOptions.find(item => item.id === currentTenantId) || tenantOptions[0];
   const [platformState, setPlatformState] = useState(() => loadPlatformState(currentTenant));
   const roleMeta = roleWorkbenchMeta[activeRole] || roleWorkbenchMeta.老板;
-  const workbenchMetrics = roleMetricSets[activeRole] || roleMetricSets.老板;
+  const workbenchMetrics = useMemo(() => {
+    const baseMetrics = roleMetricSets[activeRole] || roleMetricSets.老板;
+    if (currentTenant.id === 'TENANT-SHWS') return baseMetrics;
+    const tenantValues = ['726', '93.4', '7', '96.2'];
+    const tenantTrends = ['+6.8%', '+1.1%', '1项', '+0.5%'];
+    return baseMetrics.map((metric, index) => ({
+      ...metric,
+      value: tenantValues[index] || metric.value,
+      trend: tenantTrends[index] || metric.trend,
+    }));
+  }, [activeRole, currentTenant.id]);
   const todayLabel = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
+  const authorizedTenantOptions = tenantOptions.filter((tenant) =>
+    !currentUser?.tenantIds?.length || currentUser.tenantIds.includes(tenant.id),
+  );
 
   useEffect(() => {
     setPlatformState(loadPlatformState(currentTenant));
@@ -8664,21 +11164,17 @@ export default function App() {
     };
   }, [currentTenantId]);
 
-	  const handleLogin = (user) => {
-	    const session = {
-	      ...user,
-	      loginAt: new Date().toISOString(),
-	      permissionSource: 'erp.wanshen.top 旧权限底座',
-	      permissions: platformGrantedPermissionCodes
-	    };
-	    localStorage.setItem('industrial-ai-session', JSON.stringify(session));
+	  const handleLogin = async ({ account, password }) => {
+	    const session = await loginWithPassword(account, password);
+	    saveAuthenticatedSession(session);
     setCurrentUser(session);
+    if (isRoleName(session.role)) setActiveRole(session.role);
     setActiveModule('工作台');
     showFlowToast('登录成功，欢迎进入工业AI平台', 'success');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('industrial-ai-session');
+    clearAuthenticatedSession();
     setCurrentUser(null);
     setProfileModal(null);
     setActiveModule('工作台');
@@ -8714,26 +11210,49 @@ export default function App() {
   };
 
   const switchTenant = (tenantId) => {
-    const nextTenant = tenantOptions.find(item => item.id === tenantId);
+    const nextTenant = authorizedTenantOptions.find(item => item.id === tenantId);
     if (!nextTenant) return;
     setCurrentTenantId(tenantId);
     setActiveModule('工作台');
-    setBusinessFlow(createInitialBusinessFlow());
+    setBusinessFlow(null);
     showFlowToast(`已切换到 ${nextTenant.name}，业务上下文与数据权限已刷新`, 'success');
   };
 
   const switchRole = (role) => {
-    if (!roleWorkbenchOptions.includes(role)) return;
+    if (!isRoleName(role)) return;
     setActiveRole(role);
     setActiveModule('工作台');
     showFlowToast(`已进入${roleWorkbenchMeta[role]?.title || role + '工作台'}`, 'success');
   };
 
-  const handleBusinessFlowAction = (action, payload = null) => {
+  const handleBusinessFlowAction = async (action, payload = null) => {
     if (action === 'resetFlow') {
       setBusinessFlow(createInitialBusinessFlow());
       setActiveModule('销售管理');
       showFlowToast('已重新开启商机到收款演示流程');
+      return;
+    }
+
+    if (action === 'confirmSalesOrder' && payload) {
+      setBusinessFlow({
+        ...createInitialBusinessFlow(),
+        id: `FLOW-${payload.id}`,
+        orderId: payload.id,
+        customer: payload.client,
+        product: payload.productName || payload.product,
+        qty: payload.qty,
+        amount: payload.amount,
+        availableStock: payload.availableStock,
+        shortage: null,
+        stockEnough: null,
+        currentStep: 'approval',
+        completed: ['opportunity', 'approval'],
+        ledger: [
+          { module: '销售管理', text: `销售订单 ${payload.id} 已确认` },
+          { module: '销售管理', text: '销售发货内容已确认，等待发起发货' },
+        ],
+      });
+      showFlowToast('订单已确认，可在已确认列表继续去发货');
       return;
     }
 
@@ -8749,21 +11268,123 @@ export default function App() {
         availableStock: payload.availableStock,
         shortage: payload.shortage,
         stockEnough: Number(payload.shortage || 0) === 0,
-        currentStep: 'approval',
-        completed: ['opportunity'],
+        productionDemandId: payload.productionDemand?.id,
+        productionDemandCode: payload.productionDemand?.code,
+        productionDemandStatus: payload.productionDemand?.status,
+        inventoryFactVersion: payload.intake?.inventoryFactVersion,
+        intakeId: payload.intake?.id,
+        correlationId: payload.intake?.correlationId,
+        currentStep: 'stockCheck',
+        completed: ['opportunity', 'approval'],
         ledger: [
           { module: '销售管理', text: `已创建销售订单 ${payload.id}` },
-          { module: '销售管理', text: `订单已提交审批，需求数量 ${payload.qty}，库存缺口 ${payload.shortage || 0}` }
+          { module: '销售管理', text: `订单已审批，需求数量 ${payload.qty}` },
+          { module: '库存管理', text: `库存事实 v${payload.intake?.inventoryFactVersion || '-'} 校验完成，可用 ${payload.availableStock}，缺口 ${payload.shortage || 0}` },
+          ...(payload.productionDemand ? [{ module: '生产管理', text: `已创建生产需求 ${payload.productionDemand.code}` }] : [])
         ]
       });
-      setActiveModule('销售管理');
-      showFlowToast('销售订单已提交审批，真实订单上下文已写入业务链路');
+      showFlowToast(payload.productionDemand ? '库存事实不足，生产需求已事务化创建' : '库存事实充足，可跳过生产与采购');
+      return;
+    }
+
+    if (action === 'formalMrpCompleted' && payload) {
+      setBusinessFlow(prev => ({
+        ...prev,
+        currentStep: 'mpsMrp',
+        mrpTaskId: payload.mrpTaskId,
+        mrpDemandId: payload.demandId,
+        materialShortages: payload.materialShortages || [],
+        completed: Array.from(new Set([...prev.completed, 'productionDemand'])),
+        ledger: [...prev.ledger, { module: '生产管理', text: `正式 MRP ${payload.mrpTaskId} 已完成，采购缺料 ${payload.materialShortages?.length || 0} 项` }],
+      }));
+      return;
+    }
+
+    if (action === 'formalPrCreated' && payload?.purchaseRequest) {
+      setBusinessFlow(prev => ({ ...prev, currentStep: 'purchaseRequest', purchaseRequest: payload.purchaseRequest, completed: Array.from(new Set([...prev.completed, 'mpsMrp'])), ledger: [...prev.ledger, { module: '采购管理', text: `采购申请 ${payload.purchaseRequest.requestNo} 已创建并等待审批` }] }));
+      setActiveModule('采购管理');
+      showFlowToast(`正式采购申请 ${payload.purchaseRequest.requestNo} 已创建`);
+      return;
+    }
+
+    if (action === 'formalPoCreated' && payload?.purchaseOrder) {
+      setBusinessFlow(prev => ({ ...prev, currentStep: 'purchaseOrder', purchaseOrder: payload.purchaseOrder, completed: Array.from(new Set([...prev.completed, 'purchaseRequest'])), ledger: [...prev.ledger, { module: '采购管理', text: `采购申请已审批，采购订单 ${payload.purchaseOrder.orderNo} 已生成` }] }));
+      showFlowToast(`正式采购订单 ${payload.purchaseOrder.orderNo} 已生成`);
+      return;
+    }
+
+    if (action === 'formalMaterialInbound' && payload?.receipt) {
+      setBusinessFlow(prev => ({ ...prev, currentStep: 'materialInbound', purchaseReceipt: payload.receipt, materialAvailability: payload.availability, completed: Array.from(new Set([...prev.completed, 'purchaseOrder'])), ledger: [...prev.ledger, { module: '库存管理', text: `采购入库 ${payload.receipt.receiptNo} 已过账，物料库存事实 v${payload.receipt.inventoryFactVersion}` }] }));
+      setActiveModule('库存管理');
+      showFlowToast(`采购入库 ${payload.receipt.receiptNo} 已完成，等待生产齐套`);
+      return;
+    }
+
+    if (action === 'startProduction') {
+      if (!businessFlow?.mrpDemandId) {
+        showFlowToast('缺少正式生产需求，不能创建工单', 'error');
+        return;
+      }
+      try {
+        const context = { tenantId: currentTenant.id, accessToken: currentUser?.accessToken || '' };
+        const aps = await productionOperationsApi.startPlanningTask(context, 'APS', [businessFlow.mrpDemandId], `${businessFlow.mrpDemandId}:after-purchase:${businessFlow.purchaseReceipt?.id || 'none'}`);
+        const candidate = aps.result?.scheduleCandidates?.[0];
+        if (aps.status !== 'SUCCEEDED' || !candidate) throw new Error('APS 未返回覆盖当前需求的正式候选');
+        const plannedQty = String(businessFlow.shortage || businessFlow.qty);
+        const workOrder = await productionOperationsApi.createWorkOrder(context, {
+          productId: 'FG001', productName: businessFlow.product, factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
+          workCenterResourceId: 'WC-01', plannedQty, inputQty: plannedQty, uom: 'PCS', dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+          bomSnapshotId: crypto.randomUUID(), routingSnapshotId: crypto.randomUUID(), scheduleCandidateId: candidate.id,
+          kittingStatus: 'SHORTAGE', correlationId: businessFlow.correlationId,
+          demandLinks: [{ demandId: businessFlow.mrpDemandId, allocatedQty: plannedQty, customerLocked: true }],
+        }, `work-order:${businessFlow.mrpDemandId}:${candidate.id}`);
+        const released = await productionOperationsApi.workOrderCommand(context, workOrder, 'release');
+        const started = await productionOperationsApi.workOrderCommand(context, released, 'start');
+        setBusinessFlow(prev => ({ ...prev, currentStep: 'production', workOrder: started, completed: Array.from(new Set([...prev.completed, 'materialInbound'])), ledger: [...prev.ledger, { module: '生产管理', text: `物料齐套校验通过，工单 ${started.code} 已下达并开工` }] }));
+        setActiveModule('生产管理');
+        showFlowToast(`正式工单 ${started.code} 已开工`);
+      } catch (error) {
+        showFlowToast(error instanceof Error ? `生产下达失败：${error.message}` : '生产下达失败', 'error');
+      }
+      return;
+    }
+
+    if (action === 'finishProduction') {
+      if (!businessFlow?.workOrder) {
+        showFlowToast('缺少正式生产工单，不能执行完工入库', 'error');
+        return;
+      }
+      try {
+        const context = { tenantId: currentTenant.id, accessToken: currentUser?.accessToken || '' };
+        const report = await productionOperationsApi.submitReport(context, businessFlow.workOrder, businessFlow.workOrder.plannedQty);
+        const inspection = await productionOperationsApi.createInspection(context, report.workOrder, report.workOrder.plannedQty);
+        const passed = await productionOperationsApi.passInspection(context, inspection);
+        const completion = await productionOperationsApi.createCompletion(context, report.workOrder, passed, 'WH-FG-01');
+        await productionOperationsApi.inventoryResult(context, completion.completionId, 'POSTED');
+        setBusinessFlow(prev => ({ ...prev, currentStep: 'finishedInbound', completionId: completion.completionId, completed: Array.from(new Set([...prev.completed, 'production'])), ledger: [...prev.ledger, { module: '库存管理', text: `生产完工 ${completion.completionId} 已入库，原销售发货任务进入重新校验` }] }));
+        setActiveModule('库存管理');
+        showFlowToast('生产完工已形成成品库存事实，正在重新校验原销售发货任务');
+      } catch (error) {
+        showFlowToast(error instanceof Error ? `生产完工失败：${error.message}` : '生产完工失败', 'error');
+      }
+      return;
+    }
+
+    if (action === 'formalSalesShipped') {
+      setBusinessFlow(prev => ({ ...prev, currentStep: 'delivery', completed: Array.from(new Set([...prev.completed, 'finishedInbound'])), ledger: [...prev.ledger, { module: '库存管理', text: '原销售出库单已正式过账，销售订单更新为已发货' }] }));
+      showFlowToast('销售出库已完成，订单履约闭环');
+      return;
+    }
+
+    if (action === 'confirmReceipt') {
+      setBusinessFlow(prev => ({ ...prev, currentStep: 'settlement', completed: Array.from(new Set([...prev.completed, 'delivery', 'financeDocs'])), ledger: [...prev.ledger, { module: '销售管理', text: '客户已确认收货，销售订单已完成' }] }));
       return;
     }
 
     const flowActionConfig = {
       approveOrder: { next: 'approval', module: '销售管理', msg: '销售订单已提交审批，保留同一业务单号继续流转' },
       checkStock: { next: 'stockCheck', module: '库存管理', msg: '订单审批通过，已进入库存自动校验' },
+      openProductionDemand: { next: 'productionDemand', module: '生产管理', msg: '已打开持久化生产需求，来源销售订单保持关联' },
       runMrp: { next: 'mpsMrp', module: '生产管理', msg: '可用库存不足，已生成 MPS/MRP 展算任务', type: 'warning' },
       createPr: { next: 'purchaseRequest', module: '采购管理', msg: 'MRP 缺料已转采购申请' },
       approvePr: { next: 'purchaseOrder', module: '采购管理', msg: '采购申请已审批通过，已生成采购订单' },
@@ -8876,154 +11497,41 @@ export default function App() {
     showFlowToast('AI 操作已提交审批；系统已记录模型、依据、操作者和影响范围', 'success');
   };
 
-  const menuItems = [
-    { icon: LayoutDashboard, label: '工作台' },
-    { icon: Sparkles, label: 'AI智能中枢' },
-    { icon: BrainCircuit, label: 'AI数据分析' },
-    { icon: TrendingUp, label: '销售管理' },
-    { icon: Factory, label: '生产管理' },
-    { icon: Package, label: '库存管理' },
-    { icon: ShoppingCart, label: '采购管理' },
-    { icon: Wallet, label: '财务管理' },
-    { icon: Users, label: '人员管理' },
-    { icon: Network, label: '产业链管理' },
-    { icon: MessageSquare, label: '消息管理' },
-    { icon: Building, label: '平台管理' },
-    { icon: MessageCircle, label: '问题反馈' }
-  ];
-
-  const allowedModules = roleModuleAccess[activeRole] || roleModuleAccess.老板;
-  const platformActor = { ...currentUser, role: activeRole };
-  const productionAvailable = isPlatformCapabilityEnabled(platformState, 'production')
-    && isPlatformActorEnabled(platformState, platformActor)
-    && hasPlatformPermission(platformState, platformActor, activeRole, 'production.view')
-    && getAuthorizedFactoryCodes(platformState, platformActor, activeRole).length > 0;
+  const menuItems = getModulesForRole(activeRole);
+  const allowedModules = menuItems.map((item) => item.label);
+  const productionAvailable = Boolean(currentUser?.accessToken && currentUser?.tenantIds?.includes(currentTenant.id));
   const visibleMenuItems = menuItems.filter(item => allowedModules.includes(item.label) && (item.label !== '生产管理' || productionAvailable));
 
   useEffect(() => {
     if (!allowedModules.includes(activeModule) || (activeModule === '生产管理' && !productionAvailable)) {
-      setActiveModule('工作台');
+      setActiveModule('工作台', { replace: true });
       if (activeModule === '生产管理' && !productionAvailable) showFlowToast('生产管理已被平台应用开关、账号权限或工厂数据范围阻断', 'warning');
     }
   }, [activeRole, activeModule, productionAvailable]);
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (activeModule === '平台管理') {
-      if (!url.searchParams.has('platform')) url.searchParams.set('platform', 'tenant');
-    } else {
-      url.searchParams.delete('platform');
-    }
-    if (activeModule === '生产管理') {
-      if (!url.searchParams.has('production')) url.searchParams.set('production', 'dashboard');
-    } else {
-      url.searchParams.delete('production');
-    }
-    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (nextUrl !== currentUrl) window.history.replaceState({}, '', nextUrl);
-  }, [activeModule]);
 
   if (!currentUser) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
   return (
-    <div className="h-screen min-h-0 bg-[#F8FAFC] text-slate-800 font-sans flex overflow-hidden">
+    <AppShell>
       <CenterToast toast={flowToast} onClose={() => setFlowToast({ show: false, msg: '', type: 'success' })} />
       <BusinessActionModal action={profileModal} onClose={() => setProfileModal(null)} onConfirm={() => setProfileModal(null)} />
       {isGlobalAssistantOpen && (
-        <div className="fixed inset-y-0 right-0 z-[130] flex justify-end pointer-events-none">
-          <div
-            className="relative h-full bg-white border-l-4 border-blue-600 shadow-2xl pointer-events-auto flex flex-col animate-in slide-in-from-right duration-200"
-            style={{ width: globalAssistantWidth }}
-          >
-            <div
-              onMouseDown={() => setIsGlobalAssistantResizing(true)}
-              className="absolute left-[-10px] top-0 bottom-0 w-5 cursor-col-resize group flex items-center justify-center"
-              title="向左拖拽放大对话窗口"
-            >
-              <div className="w-1.5 h-16 rounded-full bg-blue-300 group-hover:bg-blue-600 transition-colors shadow-sm"></div>
-            </div>
-            <div className="h-[72px] bg-blue-600 text-white px-6 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center"><Bot size={20} /></div>
-                <div>
-                  <div className="text-[16px] font-bold">AI 工业助手</div>
-                  <div className="text-[12px] text-blue-100 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse"></span>{currentTenant.code} · {activeRole} · 权限内分析</div>
-                </div>
-              </div>
-              <button onClick={() => setIsGlobalAssistantOpen(false)} className="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"><X size={18}/></button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#FBFCFF] p-5">
-              <div className="space-y-5">
-                {globalAssistantMessages.map((message, index) => {
-                  const isUser = message.role === 'user';
-                  return (
-                    <div key={`${message.role}-${index}`} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                      {!isUser && <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0"><Bot size={15}/></div>}
-                      <div className={`max-w-[88%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
-                        <div className={`px-4 py-3 rounded-2xl text-[13px] leading-relaxed shadow-sm ${isUser ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm'}`}>
-                          {message.text}
-                        </div>
-                        {message.action && (
-                          <div className="mt-2.5 w-full bg-[#10263f] text-blue-50 rounded-xl border border-[#1d3b5c] overflow-hidden shadow-sm">
-                            <div className="px-4 py-3 border-b border-blue-100/10 flex items-start justify-between gap-3">
-                              <div><div className="text-[10px] font-black tracking-[0.12em] text-amber-300">AI ACTION PLAN</div><div className="mt-1 text-[14px] font-black text-white">{message.action.title}</div></div>
-                              <span className="px-2 py-1 rounded bg-amber-300/15 text-amber-200 text-[10px] font-bold whitespace-nowrap">{message.action.risk}</span>
-                            </div>
-                            <div className="px-4 py-3 space-y-2 text-[11px] leading-relaxed">
-                              <div><span className="text-blue-100/55">影响范围：</span><span className="text-blue-50">{message.action.scope}</span></div>
-                              <div><span className="text-blue-100/55">数据依据：</span><span className="text-blue-50">{message.action.basis}</span></div>
-                              <div><span className="text-blue-100/55">审批路径：</span><span className="text-blue-50">{message.action.approval}</span></div>
-                            </div>
-                            <div className="px-4 pb-4 flex gap-2">
-                              {message.action.status === 'submitted' ? (
-                                <div className="h-9 w-full rounded-lg bg-emerald-400/15 text-emerald-200 flex items-center justify-center gap-2 text-[11px] font-bold"><CheckCircle2 size={14}/> 已提交审批，等待授权执行</div>
-                              ) : (
-                                <>
-                                  <button onClick={() => showFlowToast('已展示数据口径、来源单据与计算时间', 'success')} className="h-9 flex-1 rounded-lg bg-blue-50/10 hover:bg-blue-50/15 text-blue-100 text-[11px] font-bold">查看依据</button>
-                                  <button onClick={() => submitAiAction(index)} className="h-9 flex-1 rounded-lg bg-amber-300 hover:bg-amber-200 text-[#10263f] text-[11px] font-black">提交审批</button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                        <div className="text-[11px] text-slate-400 mt-1.5">{message.time}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="border-t border-slate-100 bg-white shrink-0">
-              <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">
-                {['查询低库存物料', '生成补货采购申请', '预测下月销量'].map(prompt => (
-                  <button key={prompt} onClick={() => sendGlobalAssistantMessage(prompt)} className="px-3 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100 text-[12px] font-bold transition-colors">{prompt}</button>
-                ))}
-              </div>
-              <div className="p-4 flex items-center gap-3">
-                <button className="w-11 h-11 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border border-blue-100"><UploadCloud size={18}/></button>
-                <div className="flex-1 h-11 border border-slate-200 bg-slate-50 rounded-xl px-4 flex items-center focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400 transition-all">
-                  <input
-                    value={globalAssistantInput}
-                    onChange={(event) => setGlobalAssistantInput(event.target.value)}
-                    onKeyDown={(event) => event.key === 'Enter' && sendGlobalAssistantMessage()}
-                    placeholder="输入问题，回车发送..."
-                    className="w-full bg-transparent outline-none text-[13px] text-slate-700"
-                  />
-                </div>
-                <button onClick={() => sendGlobalAssistantMessage()} className="w-11 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors shadow-sm"><Send size={18}/></button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AIAssistantDrawer
+          isOpen={isGlobalAssistantOpen}
+          onClose={() => setIsGlobalAssistantOpen(false)}
+          tenantCode={currentTenant.code}
+          roleName={activeRole}
+          onActionSubmit={() => {
+            setMessages(prev => [{ id: `MSG-AI-${Date.now()}`, title: 'AI 操作等待审批', content: 'AI 生成的采购申请已提交审批，审批通过后才会写入正式业务单据。', time: '刚刚', source: 'AI智能中枢', level: 'warning', read: false }, ...prev]);
+            showFlowToast('AI 操作已提交审批；系统已记录模型、依据、操作者和影响范围', 'success');
+          }}
+        />
       )}
       
       {/* Sidebar */}
-      <aside className={`${activeModule === '工作台' ? 'w-[300px]' : 'w-64'} bg-white border-r border-slate-200 shadow-sm hidden lg:flex flex-col z-20 shrink-0 transition-[width] duration-200`}>
+      <AppShellSidebar expanded={activeModule === '工作台'}>
         <div className="h-[72px] flex items-center px-4 border-b border-slate-100 shrink-0 whitespace-nowrap">
           <div className="w-9 h-9 mr-2 flex items-center justify-center shrink-0">
              <img src="/industrial-ai-logo.png" alt="工业AI平台" className="w-9 h-8 object-contain" />
@@ -9051,7 +11559,7 @@ export default function App() {
         
         <div className="p-4 border-t border-slate-100 shrink-0">
           <div className="relative group">
-            <div className="absolute left-0 right-0 bottom-[calc(100%+8px)] bg-white border border-slate-200 rounded-2xl shadow-xl p-2 opacity-0 translate-y-2 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all z-40">
+            <div className="absolute left-0 right-0 bottom-[calc(100%+8px)] bg-white border border-slate-200 rounded-2xl shadow-xl p-2 opacity-0 translate-y-2 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto transition-all z-40">
               <button onClick={openProfileModal} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors">
                 <UserCheck size={15} /> 个人信息
               </button>
@@ -9059,25 +11567,25 @@ export default function App() {
                 <Power size={15} /> 退出登录
               </button>
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center hover:bg-blue-50 hover:border-blue-200 transition-colors cursor-pointer">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shadow-sm group-hover:scale-105 transition-transform">
-              {(currentUser.name || '操作员').slice(0, 2).toUpperCase()}
-            </div>
-            <div className="ml-3 min-w-0 flex-1">
-              <div className="text-[13px] font-bold text-slate-800 group-hover:text-blue-700 truncate">{currentUser.name}</div>
-              <div className="text-[11px] font-medium text-slate-500 truncate">{activeRole} · {roleMeta.title}</div>
-            </div>
-            <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
-            </div>
+            <button type="button" aria-label="打开用户菜单" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center text-left hover:bg-blue-50 hover:border-blue-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shadow-sm group-hover:scale-105 transition-transform">
+                {(currentUser.name || '操作员').slice(0, 2).toUpperCase()}
+              </div>
+              <div className="ml-3 min-w-0 flex-1">
+                <div className="text-[13px] font-bold text-slate-800 group-hover:text-blue-700 truncate">{currentUser.name}</div>
+                <div className="text-[11px] font-medium text-slate-500 truncate">{activeRole} · {roleMeta.title}</div>
+              </div>
+              <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
+            </button>
           </div>
         </div>
-      </aside>
+      </AppShellSidebar>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <AppShellMain>
         
         {/* Header */}
-        <header className="h-16 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm flex items-center justify-between px-3 sm:px-5 lg:justify-end lg:px-8 z-10 shrink-0">
+        <AppShellHeader>
           <div className="relative lg:hidden">
             <label className="sr-only" htmlFor="mobile-module-switcher">切换业务模块</label>
             <select id="mobile-module-switcher" value={activeModule} onChange={event => setActiveModule(event.target.value)} className="h-10 max-w-[190px] appearance-none rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-[13px] font-bold text-slate-700 outline-none focus:border-blue-500">
@@ -9090,7 +11598,7 @@ export default function App() {
             <div className="hidden xl:flex items-center gap-2">
               <label className="sr-only" htmlFor="tenant-switcher">切换租户</label>
               <select id="tenant-switcher" value={currentTenantId} onChange={event => switchTenant(event.target.value)} className="h-9 max-w-[210px] rounded-lg border border-slate-200 bg-slate-50 px-3 text-[12px] font-bold text-slate-700 outline-none hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                {tenantOptions.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}
+                {authorizedTenantOptions.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}
               </select>
             </div>
             <button
@@ -9149,9 +11657,10 @@ export default function App() {
               )}
             </div>
           </div>
-        </header>
+        </AppShellHeader>
 
         {/* 动态内容路由 */}
+        <React.Fragment key={`tenant-content:${currentTenant.id}`}>
         {activeModule === '工作台' && (
           <div className="flex-1 overflow-y-auto px-5 py-4 scroll-smooth custom-scrollbar bg-[#f4f7fb]">
             <div className="max-w-[1420px] mx-auto space-y-4 animate-in fade-in duration-300">
@@ -9161,6 +11670,7 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-black shadow-sm">{todayLabel}</span>
                     <span className="px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">{activeRole} · {roleMeta.title}</span>
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[12px] font-black shadow-sm"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>系统运行良好</span>
                   </div>
                   <h1 className="text-[32px] leading-tight font-black text-slate-950 tracking-tight">早上好，{currentUser.name}</h1>
                   <p className="text-[14px] font-bold text-slate-500 mt-3 max-w-[760px]">
@@ -9256,7 +11766,7 @@ export default function App() {
                   </div>
                   <div className="p-5 space-y-2">
                     {[
-                      { title: '客户 test01 订单待确认，报价已过期', time: '10分钟前', module: '销售管理', tag: '销售', icon: BadgeDollarSign, tone: 'blue', urgent: true },
+                      { title: '客户 test01 订单待发货，报价已过期', time: '10分钟前', module: '销售管理', tag: '销售', icon: BadgeDollarSign, tone: 'blue', urgent: true },
                       { title: '工单 WO-260102 待齐套检查，请核对物料', time: '1小时前', module: '生产管理', tag: '生产', icon: Factory, tone: 'purple' },
                       { title: '3 项低库存物料已触发 PR 采购申请', time: '2小时前', module: '采购管理', tag: '采购', icon: ShoppingCart, tone: 'emerald', urgent: true },
                       { title: 'QC-260801 完工检待处理，样本数 150', time: '上午 10:30', module: '生产管理', tag: '生产', icon: ShieldCheck, tone: 'amber' },
@@ -9290,7 +11800,7 @@ export default function App() {
                       {[
                         { title: '工单 WO-260101 组装完成', desc: '操作人：张工（PDA扫码） · 准时达成', time: '15 分钟前', color: 'emerald' },
                         { title: 'AI 自动下发 MRP 采购需求', desc: '依据 MPS-26001 计划生成 3 笔采购单', time: '45 分钟前', color: 'blue' },
-                        { title: '财务收到预付款到账凭证', desc: '客户：上海万申产业 · SO-20260508', time: '2 小时前', color: 'amber' },
+                        { title: '财务收到预付款到账凭证', desc: currentTenant.id === 'TENANT-HDJG' ? '客户：苏州精密装备 · SO-HDJG-20260718' : '客户：上海万申产业 · SO-20260508', time: '2 小时前', color: 'amber' },
                         { title: '系统完成日结快照备份', desc: '凌晨 02:00', time: '', color: 'slate' },
                       ].map(item => {
                         const dot = item.color === 'emerald' ? 'border-emerald-500 bg-white' : item.color === 'blue' ? 'border-blue-500 bg-white' : item.color === 'amber' ? 'border-amber-500 bg-white' : 'border-slate-300 bg-slate-200';
@@ -9314,12 +11824,12 @@ export default function App() {
         
         {activeModule === '销售管理' && <SalesManagement resetSignal={salesResetSignal} currentTenant={currentTenant} currentUser={currentUser} {...linkedFlowProps} />}
         {activeModule === '生产管理' && <LegacyProductionManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} />}
-        {activeModule === '库存管理' && <InventoryManagement {...linkedFlowProps} />}
-        {activeModule === '采购管理' && <ProcurementManagement {...linkedFlowProps} />}
-        {activeModule === '财务管理' && <FinancialManagement {...linkedFlowProps} />}
+        {activeModule === '库存管理' && <InventoryManagement {...linkedFlowProps} currentTenant={currentTenant} currentUser={currentUser} />}
+        {activeModule === '采购管理' && <ProcurementManagement {...linkedFlowProps} currentTenant={currentTenant} currentUser={currentUser} />}
+        {activeModule === '财务管理' && <FinancialManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} />}
         {activeModule === '人员管理' && <PersonnelManagement />}
         {activeModule === '产业链管理' && <SupplyChainManagement />}
-        {activeModule === 'AI智能中枢' && <AIHubManagement onOpenAssistant={() => setIsGlobalAssistantOpen(true)} />}
+        {activeModule === 'AI智能中枢' && <AIHubManagementV2 onOpenAssistant={() => setIsGlobalAssistantOpen(true)} />}
         {activeModule === 'AI数据分析' && <AIDataAnalysisManagement />}
         {activeModule === '消息管理' && <MessageManagement onNavigateModule={setActiveModule} msgs={messages} setMsgs={setMessages} focusMsgId={focusedMessageId} focusTick={messageFocusTick} />}
         {activeModule === '平台管理' && <PlatformManagementV2 currentTenant={currentTenant} currentUser={currentUser} onToast={showFlowToast} />}
@@ -9334,8 +11844,9 @@ export default function App() {
             <p className="text-[16px] font-bold text-slate-500">{activeModule} 模块正在开发中...</p>
           </div>
         )}
+        </React.Fragment>
 
-      </main>
-    </div>
+      </AppShellMain>
+    </AppShell>
   );
 }

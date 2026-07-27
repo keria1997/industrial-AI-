@@ -2,7 +2,8 @@ import { ProductionError } from "./errors.js";
 import { ListQuery, ListResult, ProductionRepository } from "./store.js";
 import {
   AuditSnapshot, CloseRequest, Completion, CompletionAllocation, Demand, DemandSource, IdempotencyRecord,
-  Inspection, OperationTask, OutboxEvent, ReportCorrection, ReworkOrder, StatusHistory, WorkOrder,
+  InboxEvent, Inspection, InventoryAvailability, OperationTask, OutboxEvent, ReportCorrection, ReworkOrder,
+  SalesOrderIntake, StatusHistory, WorkOrder,
   WorkOrderDemand, WorkReport,
 } from "./types.js";
 
@@ -24,6 +25,9 @@ interface State {
   audits: AuditSnapshot[];
   idempotency: Map<string, IdempotencyRecord>;
   materialTransactionBlockers: Set<string>;
+  inventoryAvailability: Map<string, InventoryAvailability>;
+  inbox: Map<string, InboxEvent>;
+  salesOrderIntakes: Map<string, SalesOrderIntake>;
 }
 
 function emptyState(): State {
@@ -32,6 +36,7 @@ function emptyState(): State {
     workReports: new Map(), corrections: new Map(), inspections: new Map(), reworkOrders: new Map(),
     completions: new Map(), allocations: new Map(), closes: new Map(), tasks: new Map(), statusHistory: [],
     outbox: [], audits: [], idempotency: new Map(), materialTransactionBlockers: new Set(),
+    inventoryAvailability: new Map(), inbox: new Map(), salesOrderIntakes: new Map(),
   };
 }
 
@@ -48,11 +53,17 @@ function cloneState(source: State): State {
     tasks: cloneMap(source.tasks), statusHistory: structuredClone(source.statusHistory), outbox: structuredClone(source.outbox),
     audits: structuredClone(source.audits), idempotency: cloneMap(source.idempotency),
     materialTransactionBlockers: new Set(source.materialTransactionBlockers),
+    inventoryAvailability: cloneMap(source.inventoryAvailability), inbox: cloneMap(source.inbox),
+    salesOrderIntakes: cloneMap(source.salesOrderIntakes),
   };
 }
 
 const entityKey = (tenantId: string, id: string) => `${tenantId}:${id}`;
 const idempotencyKey = (tenantId: string, command: string, key: string) => `${tenantId}:${command}:${key}`;
+const inventoryKey = (tenantId: string, productId: string, warehouseId: string) => `${tenantId}:${productId}:${warehouseId}`;
+const inboxKey = (tenantId: string, consumerName: string, eventId: string) => `${tenantId}:${consumerName}:${eventId}`;
+const intakeKey = (tenantId: string, salesOrderId: string, sourceLineId: string, revision: number) =>
+  `${tenantId}:${salesOrderId}:${sourceLineId}:${revision}`;
 
 function paginate<T>(items: T[], query: ListQuery): ListResult<T> {
   return { items: items.slice(query.offset, query.offset + query.limit), total: items.length };
@@ -96,6 +107,10 @@ export class InMemoryProductionRepository implements ProductionRepository {
   }
 
   async getDemand(tenantId: string, id: string) { return structuredClone(this.state.demands.get(entityKey(tenantId, id))); }
+
+  async getDemandSource(tenantId: string, demandId: string) {
+    return structuredClone([...this.state.demandSources.values()].find((item) => item.tenantId === tenantId && item.demandId === demandId));
+  }
 
   async insertDemand(value: Demand, source?: DemandSource) {
     const duplicate = [...this.state.demands.values()].some((item) => item.tenantId === value.tenantId && item.code === value.code);
@@ -222,10 +237,43 @@ export class InMemoryProductionRepository implements ProductionRepository {
 
   async insertTask(value: OperationTask) { this.state.tasks.set(entityKey(value.tenantId, value.id), structuredClone(value)); }
   async getTask(tenantId: string, id: string) { return structuredClone(this.state.tasks.get(entityKey(tenantId, id))); }
+  async findSucceededPlanningTaskByCandidate(tenantId: string, candidateId: string) {
+    const task = [...this.state.tasks.values()].find((item) => {
+      if (item.tenantId !== tenantId || item.taskType !== "APS_RUN" || item.status !== "SUCCEEDED" || !item.result || typeof item.result !== "object") return false;
+      const candidates = (item.result as { scheduleCandidates?: Array<{ id?: string }> }).scheduleCandidates;
+      return candidates?.some((candidate) => candidate.id === candidateId);
+    });
+    return structuredClone(task);
+  }
+  async findSucceededMrpTaskByDemand(tenantId: string, demandId: string) {
+    const task = [...this.state.tasks.values()].find((item) => {
+      if (item.tenantId !== tenantId || item.taskType !== "MRP_RUN" || item.status !== "SUCCEEDED" || !item.result || typeof item.result !== "object") return false;
+      const lines = (item.result as { mpsLines?: Array<{ demandId?: string }> }).mpsLines;
+      return lines?.some((line) => line.demandId === demandId);
+    });
+    return structuredClone(task);
+  }
   async updateTask(value: OperationTask) { this.state.tasks.set(entityKey(value.tenantId, value.id), structuredClone(value)); }
 
   async addStatusHistory(value: StatusHistory) { this.state.statusHistory.push(structuredClone(value)); }
   async addOutboxEvent(value: OutboxEvent) { this.state.outbox.push(structuredClone(value)); }
+  async listPendingOutboxEvents(tenantId: string, eventType?: string) {
+    return structuredClone(this.state.outbox.filter((event) => event.tenantId === tenantId
+      && (event.status === "PENDING" || event.status === "RETRY_WAIT")
+      && (!eventType || event.eventType === eventType)));
+  }
+  async markOutboxEventPublished(tenantId: string, eventId: string) {
+    const event = this.state.outbox.find((item) => item.tenantId === tenantId && item.eventId === eventId);
+    if (event) Object.assign(event, { status: "PUBLISHED", retryCount: event.retryCount + 1, publishedAt: new Date().toISOString(), errorMessage: undefined });
+  }
+  async markOutboxEventFailed(tenantId: string, eventId: string, error: string, maxAttempts: number) {
+    const event = this.state.outbox.find((item) => item.tenantId === tenantId && item.eventId === eventId);
+    if (!event) return;
+    event.retryCount += 1;
+    event.status = event.retryCount >= maxAttempts ? "DEAD_LETTER" : "RETRY_WAIT";
+    event.nextRetryAt = new Date().toISOString();
+    event.errorMessage = error.slice(0, 1000);
+  }
   async addAudit(value: AuditSnapshot) { this.state.audits.push(structuredClone(value)); }
   async getIdempotency(tenantId: string, commandType: string, key: string) {
     return structuredClone(this.state.idempotency.get(idempotencyKey(tenantId, commandType, key)));
@@ -237,8 +285,46 @@ export class InMemoryProductionRepository implements ProductionRepository {
     return true;
   }
 
+  async getInventoryAvailability(tenantId: string, productId: string, inventoryWarehouseId: string) {
+    return structuredClone(this.state.inventoryAvailability.get(inventoryKey(tenantId, productId, inventoryWarehouseId)));
+  }
+  async upsertInventoryAvailability(value: InventoryAvailability) {
+    const key = inventoryKey(value.tenantId, value.productId, value.inventoryWarehouseId);
+    const existing = this.state.inventoryAvailability.get(key);
+    if (existing && existing.factVersion >= value.factVersion) return "STALE" as const;
+    this.state.inventoryAvailability.set(key, structuredClone(value));
+    return existing ? "UPDATED" as const : "CREATED" as const;
+  }
+  async getInboxEvent(tenantId: string, consumerName: string, eventId: string) {
+    return structuredClone(this.state.inbox.get(inboxKey(tenantId, consumerName, eventId)));
+  }
+  async addInboxEvent(value: InboxEvent) {
+    const key = inboxKey(value.tenantId, value.consumerName, value.eventId);
+    if (this.state.inbox.has(key)) return false;
+    this.state.inbox.set(key, structuredClone(value));
+    return true;
+  }
+  async lockSalesOrderIntake() {
+    // Top-level in-memory transactions are already serialized by transactionQueue.
+  }
+  async insertSalesOrderIntake(value: SalesOrderIntake) {
+    const key = intakeKey(value.tenantId, value.salesOrderId, value.sourceLineId, value.sourceRevision);
+    if (this.state.salesOrderIntakes.has(key)) {
+      throw new ProductionError("PRODUCTION_409_IDEMPOTENCY_CONFLICT", "销售订单行已完成生产接入", "使用原幂等键查询已有结果");
+    }
+    this.state.salesOrderIntakes.set(key, structuredClone(value));
+  }
+  async getSalesOrderIntake(tenantId: string, salesOrderId: string, sourceLineId: string, sourceRevision: number) {
+    return structuredClone(this.state.salesOrderIntakes.get(intakeKey(tenantId, salesOrderId, sourceLineId, sourceRevision)));
+  }
+
   // Test/diagnostic access without exposing mutable storage.
   snapshot() { return cloneState(this.state); }
+  seedInventoryAvailability(values: InventoryAvailability[]) {
+    for (const value of values) {
+      this.state.inventoryAvailability.set(inventoryKey(value.tenantId, value.productId, value.inventoryWarehouseId), structuredClone(value));
+    }
+  }
   setMaterialTransactionBlocked(tenantId: string, workOrderId: string, blocked: boolean) {
     const key = entityKey(tenantId, workOrderId);
     blocked ? this.state.materialTransactionBlockers.add(key) : this.state.materialTransactionBlockers.delete(key);

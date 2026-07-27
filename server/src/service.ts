@@ -3,8 +3,9 @@ import { addDecimal, compareDecimal, decimalToScaled, minDecimal, scaledToDecima
 import { ProductionError } from "./errors.js";
 import { ListQuery, ProductionRepository } from "./store.js";
 import {
-  AuditSnapshot, CloseCheck, CloseRequest, Completion, CompletionAllocation, Demand, DemandSource, Inspection,
-  OperationTask, OutboxEvent, ReportCorrection, RequestContext, ReworkOrder, StatusHistory, WorkOrder,
+  AuditSnapshot, CloseCheck, CloseRequest, Completion, CompletionAllocation, Demand, DemandSource, DemandTraceability, InboxEvent,
+  Inspection, InventoryAvailability, OperationTask, OutboxEvent, ReportCorrection, RequestContext, ReworkOrder,
+  SalesOrderIntake, StatusHistory, WorkOrder,
   WorkOrderDemand, WorkReport,
 } from "./types.js";
 
@@ -12,6 +13,9 @@ export interface CommandResponse<T = unknown> { statusCode: number; body: T; rep
 
 const now = () => new Date().toISOString();
 const codeSuffix = () => `${Date.now().toString(36).toUpperCase()}${randomUUID().slice(0, 4).toUpperCase()}`;
+const configuredInventoryFactMaxAge = Number(process.env.PRODUCTION_INVENTORY_FACT_MAX_AGE_SECONDS ?? 3600);
+const inventoryFactMaxAgeSeconds = Number.isFinite(configuredInventoryFactMaxAge)
+  ? Math.max(1, configuredInventoryFactMaxAge) : 3600;
 
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -21,6 +25,8 @@ function stableJson(value: unknown): string {
 }
 
 function requestHash(value: unknown) { return createHash("sha256").update(stableJson(value)).digest("hex"); }
+const optionalString = (value: unknown) => typeof value === "string" && value.length > 0 ? value : undefined;
+const optionalInteger = (value: unknown) => typeof value === "number" && Number.isInteger(value) ? value : undefined;
 
 function cloneWithVersion<T extends { version: number; updatedAt: string }>(value: T): T {
   return { ...structuredClone(value), version: value.version + 1, updatedAt: now() };
@@ -129,10 +135,36 @@ export class ProductionService {
     };
   }
 
-  listDemands(context: RequestContext, query: ListQuery) { return this.repository.listDemands(context.tenantId, query); }
+  async listDemands(context: RequestContext, query: ListQuery) {
+    const result = await this.repository.listDemands(context.tenantId, query);
+    return {
+      ...result,
+      items: await Promise.all(result.items.map(async (demand) => {
+        const source = await this.repository.getDemandSource(context.tenantId, demand.id);
+        if (!source) return demand;
+        const snapshot = source.payloadSnapshot;
+        const traceability: DemandTraceability = {
+          sourceSystem: source.sourceSystem,
+          sourceType: source.sourceType,
+          salesOrderId: source.sourceType === "SALES_ORDER" || demand.sourceType === "SALES_ORDER_SHORTAGE" ? source.sourceId : undefined,
+          salesOrderLineId: source.salesOrderLineId ?? optionalString(snapshot.salesOrderLineId) ?? source.sourceLineId,
+          shipmentRequestId: source.shipmentRequestId ?? optionalString(snapshot.shipmentRequestId),
+          shipmentRequestLineId: source.shipmentRequestLineId ?? optionalString(snapshot.shipmentRequestLineId),
+          inventoryWarehouseId: optionalString(snapshot.inventoryWarehouseId) ?? optionalString(snapshot.warehouseId),
+          inventoryFactVersion: optionalInteger(snapshot.inventoryFactVersion),
+          correlationId: demand.correlationId,
+          traceId: optionalString(snapshot.traceId),
+        };
+        return { ...demand, source: traceability };
+      })),
+    };
+  }
   listWorkOrders(context: RequestContext, query: ListQuery) { return this.repository.listWorkOrders(context.tenantId, query); }
   getWorkOrder(context: RequestContext, id: string) { return this.repository.getWorkOrder(context.tenantId, id); }
   getTask(context: RequestContext, id: string) { return this.repository.getTask(context.tenantId, id); }
+  getSalesOrderIntake(context: RequestContext, salesOrderId: string, sourceLineId: string, sourceRevision: number) {
+    return this.repository.getSalesOrderIntake(context.tenantId, salesOrderId, sourceLineId, sourceRevision);
+  }
 
   createDemand(context: RequestContext, input: {
     code?: string; sourceType: string; sourceSystem?: string; sourceId?: string; sourceLineId?: string; sourceRevision?: number;
@@ -153,12 +185,136 @@ export class ProductionService {
         id: randomUUID(), tenantId: context.tenantId, demandId: demand.id, sourceSystem: input.sourceSystem ?? "MANUAL",
         sourceType: input.sourceType, sourceId: input.sourceId, sourceLineId: input.sourceLineId,
         sourceRevision: input.sourceRevision ?? 1, qty: input.qty, payloadSnapshot: input.payloadSnapshot ?? {},
+        shipmentRequestId: optionalString(input.payloadSnapshot?.shipmentRequestId),
+        shipmentRequestLineId: optionalString(input.payloadSnapshot?.shipmentRequestLineId),
+        salesOrderLineId: optionalString(input.payloadSnapshot?.salesOrderLineId) ?? input.sourceLineId,
       } : undefined;
       await repository.insertDemand(demand, source);
       await this.recordTransition(repository, context, "Demand", demand.id, undefined, demand.status, demand.version,
         { code: demand.code, qty: demand.qty, productId: demand.productId }, undefined, undefined, demand.correlationId);
       return { statusCode: 201, body: demand, aggregateType: "Demand", aggregateId: demand.id };
     });
+  }
+
+  async receiveInventoryAvailability(context: RequestContext, input: {
+    eventId: string; eventVersion?: number; productId: string; inventoryWarehouseId: string;
+    availableQty: string; uom: string; factVersion: number; sourceSystem: string; asOf: string;
+  }) {
+    this.requirePermission(context, "production.inventory.sync");
+    const consumerName = "production.inventory-availability-projection";
+    return this.repository.transaction(async (repository) => {
+      const duplicate = await repository.getInboxEvent(context.tenantId, consumerName, input.eventId);
+      if (duplicate) {
+        const availability = await repository.getInventoryAvailability(context.tenantId, input.productId, input.inventoryWarehouseId);
+        return { statusCode: 200, body: { duplicate: true, projectionResult: "DUPLICATE", availability } };
+      }
+      const timestamp = now();
+      const availability: InventoryAvailability = {
+        tenantId: context.tenantId, productId: input.productId, inventoryWarehouseId: input.inventoryWarehouseId,
+        availableQty: input.availableQty, uom: input.uom, factVersion: input.factVersion, sourceEventId: input.eventId,
+        sourceSystem: input.sourceSystem, asOf: input.asOf, updatedAt: timestamp,
+      };
+      const projectionResult = await repository.upsertInventoryAvailability(availability);
+      const inbox: InboxEvent = {
+        id: randomUUID(), tenantId: context.tenantId, consumerName, eventId: input.eventId,
+        eventType: "inventory.availability.changed", eventVersion: input.eventVersion ?? 1,
+        aggregateId: `${input.inventoryWarehouseId}:${input.productId}`, aggregateVersion: input.factVersion,
+        status: "PROCESSED", payload: input, retryCount: 0, receivedAt: timestamp, processedAt: timestamp,
+      };
+      if (!await repository.addInboxEvent(inbox)) {
+        const current = await repository.getInventoryAvailability(context.tenantId, input.productId, input.inventoryWarehouseId);
+        return { statusCode: 200, body: { duplicate: true, projectionResult: "DUPLICATE", availability: current } };
+      }
+      const current = await repository.getInventoryAvailability(context.tenantId, input.productId, input.inventoryWarehouseId);
+      return { statusCode: 200, body: { duplicate: false, projectionResult, availability: current } };
+    });
+  }
+
+  createSalesOrderIntake(context: RequestContext, input: {
+    salesOrderId: string; sourceLineId?: string; sourceRevision?: number; productId: string; productName?: string;
+    orderedQty: string; uom: string; dueDate: string; factoryResourceId: string; inventoryWarehouseId: string;
+    priority?: number; correlationId?: string;
+  }) {
+    this.requirePermission(context, "production.demand.create");
+    return this.command<{ intake: SalesOrderIntake; availability?: InventoryAvailability; demand?: Demand; recovered: boolean }>(
+      context, "CreateSalesOrderIntake", input, async (repository) => {
+      const sourceLineId = input.sourceLineId ?? "1";
+      const sourceRevision = input.sourceRevision ?? 1;
+      await repository.lockSalesOrderIntake(context.tenantId, input.salesOrderId, sourceLineId, sourceRevision);
+      const existing = await repository.getSalesOrderIntake(context.tenantId, input.salesOrderId, sourceLineId, sourceRevision);
+      if (existing) {
+        if (existing.productId !== input.productId || existing.orderedQty !== input.orderedQty || existing.inventoryWarehouseId !== input.inventoryWarehouseId) {
+          throw new ProductionError("PRODUCTION_409_IDEMPOTENCY_CONFLICT", "同一销售订单行版本已使用不同业务数据接入", "增加来源版本后重新提交");
+        }
+        const demand = existing.demandId ? await repository.getDemand(context.tenantId, existing.demandId) : undefined;
+        return { statusCode: 200, body: { intake: existing, demand, recovered: true }, aggregateType: "SalesOrderIntake", aggregateId: existing.id };
+      }
+
+      const availability = await repository.getInventoryAvailability(context.tenantId, input.productId, input.inventoryWarehouseId);
+      if (!availability) {
+        throw new ProductionError("PRODUCTION_424_DEPENDENCY_FAILED", "库存可用量事实尚未同步", "等待库存服务发送可用量事件后使用同一幂等键重试", {
+          retryable: true, details: { productId: input.productId, inventoryWarehouseId: input.inventoryWarehouseId },
+        });
+      }
+      if (availability.uom !== input.uom) {
+        throw new ProductionError("PRODUCTION_424_DEPENDENCY_FAILED", "库存计量单位与销售订单不一致", "在库存服务完成单位换算或修正订单单位后重试", {
+          details: { inventoryUom: availability.uom, orderUom: input.uom },
+        });
+      }
+      const maxAgeMilliseconds = inventoryFactMaxAgeSeconds * 1000;
+      const factAge = Date.now() - new Date(availability.asOf).getTime();
+      if (!Number.isFinite(factAge) || factAge > maxAgeMilliseconds) {
+        throw new ProductionError("PRODUCTION_424_DEPENDENCY_FAILED", "库存可用量事实已过期", "刷新库存可用量后使用同一幂等键重试", {
+          retryable: true, details: { asOf: availability.asOf, maxInventoryFactAgeSeconds: inventoryFactMaxAgeSeconds },
+        });
+      }
+
+      const shortageQty = compareDecimal(input.orderedQty, availability.availableQty) > 0
+        ? subtractDecimal(input.orderedQty, availability.availableQty) : "0";
+      const correlationId = input.correlationId ?? randomUUID();
+      const timestamp = now();
+      let demand: Demand | undefined;
+      if (compareDecimal(shortageQty, "0") > 0) {
+        demand = {
+          id: randomUUID(), tenantId: context.tenantId, code: `DM-${codeSuffix()}`, sourceType: "SALES_ORDER_SHORTAGE",
+          productId: input.productId, productName: input.productName, qty: shortageQty, uom: input.uom, dueDate: input.dueDate,
+          priority: input.priority ?? 80, factoryResourceId: input.factoryResourceId, status: "RECEIVED", revision: sourceRevision,
+          correlationId, blockReasons: [], createdBy: context.actorId, version: 1, createdAt: timestamp, updatedAt: timestamp,
+        };
+        const source: DemandSource = {
+          id: randomUUID(), tenantId: context.tenantId, demandId: demand.id, sourceSystem: "SALES",
+          sourceType: "SALES_ORDER", sourceId: input.salesOrderId, sourceLineId, sourceRevision, qty: shortageQty,
+          payloadSnapshot: { orderedQty: input.orderedQty, availableQty: availability.availableQty,
+            inventoryFactVersion: availability.factVersion, inventoryWarehouseId: input.inventoryWarehouseId },
+        };
+        await repository.insertDemand(demand, source);
+      }
+
+      const intake: SalesOrderIntake = {
+        id: randomUUID(), tenantId: context.tenantId, salesOrderId: input.salesOrderId, sourceLineId, sourceRevision,
+        productId: input.productId, productName: input.productName, orderedQty: input.orderedQty,
+        availableQty: availability.availableQty, shortageQty, uom: input.uom, dueDate: input.dueDate,
+        factoryResourceId: input.factoryResourceId, inventoryWarehouseId: input.inventoryWarehouseId,
+        inventoryFactVersion: availability.factVersion,
+        decision: demand ? "CREATE_PRODUCTION_DEMAND" : "FULFILL_FROM_STOCK", demandId: demand?.id,
+        status: "COMPLETED", correlationId, traceId: context.traceId, createdBy: context.actorId,
+        version: 1, createdAt: timestamp,
+      };
+      await repository.insertSalesOrderIntake(intake);
+      if (demand) {
+        await this.recordTransition(repository, context, "Demand", demand.id, undefined, demand.status, demand.version,
+          { code: demand.code, qty: demand.qty, productId: demand.productId, sourceSalesOrderId: input.salesOrderId,
+            inventoryFactVersion: availability.factVersion }, undefined, undefined, correlationId);
+      }
+      await this.recordTransition(repository, context, "SalesOrderIntake", intake.id, undefined, intake.status, intake.version,
+        { salesOrderId: input.salesOrderId, sourceLineId, orderedQty: input.orderedQty,
+          availableQty: availability.availableQty, shortageQty, decision: intake.decision, demandId: demand?.id },
+        undefined, undefined, correlationId);
+      await this.audit(repository, context, "SALES_ORDER_INTAKE", "SalesOrderIntake", intake.id, undefined,
+        { intake, inventoryAvailability: availability, demand });
+      return { statusCode: 201, body: { intake, availability, demand, recovered: false }, aggregateType: "SalesOrderIntake", aggregateId: intake.id };
+      },
+    );
   }
 
   validateDemand(context: RequestContext, id: string, input: {
@@ -220,10 +376,32 @@ export class ProductionService {
       if (links.length && compareDecimal(sumDecimals(links.map((item) => item.allocatedQty)), input.plannedQty) !== 0) {
         throw new ProductionError("PRODUCTION_422_QUANTITY_VIOLATION", "工单需求分配合计必须等于计划数量", "调整需求分配数量后重试");
       }
+      const targetInventoryWarehouses = new Set<string>();
       for (const link of links) {
         const demand = await repository.getDemand(context.tenantId, link.demandId);
         if (!demand) this.notFound("关联需求");
-        if (!(["APPROVED", "PLANNED"] as string[]).includes(demand.status)) this.illegal("关联需求", demand.status, ["APPROVED", "PLANNED"]);
+        if (demand.status !== "PLANNED") this.illegal("关联需求", demand.status, ["PLANNED"]);
+        const source = await repository.getDemandSource(context.tenantId, link.demandId);
+        const warehouseId = source && (optionalString(source.payloadSnapshot.inventoryWarehouseId) ?? optionalString(source.payloadSnapshot.warehouseId));
+        if (warehouseId) targetInventoryWarehouses.add(warehouseId);
+      }
+      if (targetInventoryWarehouses.size > 1) throw new ProductionError("PRODUCTION_422_QUANTITY_VIOLATION", "同一工单不能同时回补多个库存仓库", "按目标库存仓库拆分工单", { details: { inventoryWarehouseIds: [...targetInventoryWarehouses] } });
+      if (links.length) {
+        if (!input.scheduleCandidateId) throw new ProductionError("PRODUCTION_422_MASTER_DATA_MISSING", "关联需求尚未选择正式 APS 排程候选", "先执行 MRP 与 APS，再从成功任务结果创建工单");
+        const planningTask = await repository.findSucceededPlanningTaskByCandidate(context.tenantId, input.scheduleCandidateId);
+        const candidate = planningTask && (planningTask.result as { scheduleCandidates?: Array<{ id: string; demandIds?: string[] }> }).scheduleCandidates?.find((item) => item.id === input.scheduleCandidateId);
+        const linkedDemandIds = new Set(candidate?.demandIds ?? []);
+        if (!candidate || links.some((link) => !linkedDemandIds.has(link.demandId))) throw new ProductionError("PRODUCTION_422_MASTER_DATA_MISSING", "APS 排程候选与工单需求不一致", "使用覆盖全部关联需求的成功 APS 候选", { details: { scheduleCandidateId: input.scheduleCandidateId, demandIds: links.map((link) => link.demandId) } });
+        for (const link of links) {
+          const mrpTask = await repository.findSucceededMrpTaskByDemand(context.tenantId, link.demandId);
+          const shortages = (mrpTask?.result as { materialShortages?: Array<{ demandId: string; materialId: string; warehouseId: string; grossRequiredQty: string; uom: string }> } | undefined)?.materialShortages?.filter((item) => item.demandId === link.demandId) ?? [];
+          for (const shortage of shortages) {
+            const availability = await repository.getInventoryAvailability(context.tenantId, shortage.materialId, shortage.warehouseId);
+            if (!availability || availability.uom !== shortage.uom || compareDecimal(availability.availableQty, shortage.grossRequiredQty) < 0) {
+              throw new ProductionError("PRODUCTION_422_MASTER_DATA_MISSING", "采购物料尚未齐套", "完成采购入库并刷新物料库存事实后重试", { details: { demandId: link.demandId, materialId: shortage.materialId, warehouseId: shortage.warehouseId, requiredQty: shortage.grossRequiredQty, availableQty: availability?.availableQty ?? "0" } });
+            }
+          }
+        }
       }
       const timestamp = now();
       const order: WorkOrder = {
@@ -233,8 +411,8 @@ export class ProductionService {
         inputQty: input.inputQty ?? "0", reportedGoodQty: "0", reportedDefectQty: "0", reportedScrapQty: "0", postedQty: "0",
         uom: input.uom, dueDate: input.dueDate, status: input.bomSnapshotId && input.routingSnapshotId ? "PLANNED" : "DRAFT",
         bomSnapshotId: input.bomSnapshotId, routingSnapshotId: input.routingSnapshotId, scheduleCandidateId: input.scheduleCandidateId,
-        kittingCheckId: input.kittingCheckId, kittingStatus: input.kittingStatus, assigneeEmployeeId: input.assigneeEmployeeId,
-        correlationId: input.correlationId ?? randomUUID(), parameterSnapshot: {}, createdBy: context.actorId, version: 1,
+        kittingCheckId: input.kittingCheckId ?? (links.length ? `KIT-${codeSuffix()}` : undefined), kittingStatus: links.length ? "READY" : input.kittingStatus, assigneeEmployeeId: input.assigneeEmployeeId,
+        correlationId: input.correlationId ?? randomUUID(), parameterSnapshot: { inventoryWarehouseId: [...targetInventoryWarehouses][0], demandIds: links.map((link) => link.demandId) }, createdBy: context.actorId, version: 1,
         createdAt: timestamp, updatedAt: timestamp,
       };
       const demandLinks: WorkOrderDemand[] = links.map((item, index) => ({
@@ -516,6 +694,10 @@ export class ProductionService {
       const inspection = await repository.getInspection(context.tenantId, input.inspectionId);
       if (!inspection || inspection.workOrderId !== order.id) this.notFound("FQC 检验单");
       if (inspection.status !== "PASSED") throw new ProductionError("PRODUCTION_409_ILLEGAL_STATE", "FQC 未通过或处置未关闭，禁止完工入库", "完成 FQC 并确保结果为 PASSED", { details: { inspectionStatus: inspection.status } });
+      const expectedInventoryWarehouseId = optionalString(order.parameterSnapshot.inventoryWarehouseId);
+      if (expectedInventoryWarehouseId && input.inventoryWarehouseId !== expectedInventoryWarehouseId) {
+        throw new ProductionError("PRODUCTION_400_INVALID_ARGUMENT", "完工入库仓库与销售缺货需求的目标仓库不一致", "使用生产需求固化的目标库存仓库", { details: { expectedInventoryWarehouseId, actualInventoryWarehouseId: input.inventoryWarehouseId } });
+      }
       const available = await this.completionAvailable(repository, order, inspection);
       if (compareDecimal(input.qty, available) > 0) throw new ProductionError("PRODUCTION_422_QUANTITY_VIOLATION", "完工数量超过 FQC 合格且未提交入库数量", "减少完工数量或完成新的 FQC", { details: { availableQty: available } });
       const serials = [...new Set(input.serialNumbers ?? [])];
@@ -570,6 +752,7 @@ export class ProductionService {
         const retryTask = { ...task, status: "RETRY_WAIT" as const, progress: task.progress, retryCount: task.retryCount + 1,
           errorCode: "INVENTORY_RESULT_UNKNOWN", errorMessage: "库存结果暂时未知，保留原幂等关系查询", updatedAt: now() };
         await repository.updateTask(retryTask);
+        await this.audit(repository, context, "INVENTORY_RESULT_UNKNOWN", "OperationTask", task.id, task, retryTask, retryTask.errorMessage);
         return { statusCode: 202, body: { ...completion, task: retryTask }, aggregateType: "Completion", aggregateId: id };
       }
       if (input.result === "REJECTED") {
@@ -578,6 +761,7 @@ export class ProductionService {
         if (!await repository.updateCompletion(result, completion.version)) throw new ProductionError("PRODUCTION_409_VERSION_CONFLICT", "完工记录已被并发修改", "查询原任务结果");
         await repository.updateTask({ ...task, status: "MANUAL_INTERVENTION", errorCode: result.failureCode, errorMessage: result.failureMessage, updatedAt: now() });
         await this.recordTransition(repository, context, "Completion", id, "POSTING", "FAILED", result.version, { taskId: task.id }, result.failureCode, result.failureMessage);
+        await this.audit(repository, context, "COMPLETION_REJECTED", "Completion", id, completion, result, result.failureMessage);
         return { statusCode: 200, body: result, aggregateType: "Completion", aggregateId: id };
       }
       if (!input.externalTransactionId) throw new ProductionError("PRODUCTION_400_INVALID_ARGUMENT", "库存确认成功时必须返回唯一库存流水号", "补充 externalTransactionId 后重试");
@@ -594,6 +778,20 @@ export class ProductionService {
       await repository.updateTask({ ...task, status: "SUCCEEDED", progress: 100, result: { externalTransactionId: input.externalTransactionId }, updatedAt: now() });
       await this.recordTransition(repository, context, "Completion", id, "POSTING", "POSTED", result.version,
         { workOrderId: order.id, qty: completion.qty, externalTransactionId: input.externalTransactionId, allocations }, undefined, undefined, order.correlationId);
+      if (allocations.length > 0) {
+        const occurredAt = now();
+        await repository.addOutboxEvent({
+          id: randomUUID(), tenantId: context.tenantId, eventId: randomUUID(), eventType: "production.completion.posted.v1",
+          eventVersion: 1, aggregateType: "Completion", aggregateId: id, aggregateVersion: result.version,
+          correlationId: order.correlationId, traceId: context.traceId, status: "PENDING", retryCount: 0, createdAt: occurredAt,
+          payload: {
+            completionId: id, workOrderId: order.id, externalTransactionId: input.externalTransactionId,
+            warehouseId: completion.inventoryWarehouseId, productId: order.productId, qty: completion.qty,
+            uom: completion.uom, productionDate: completion.productionDate,
+            allocations: allocations.map((allocation) => ({ demandId: allocation.demandId, qty: allocation.qty })),
+          },
+        });
+      }
       if (updatedOrder.status !== order.status) await this.recordTransition(repository, context, "WorkOrder", order.id, order.status, updatedOrder.status, updatedOrder.version, { postedQty: updatedOrder.postedQty }, undefined, undefined, order.correlationId);
       await this.audit(repository, context, "COMPLETION_POSTED", "Completion", id, completion, result);
       return { statusCode: 200, body: { completion: result, workOrder: updatedOrder, allocations }, aggregateType: "Completion", aggregateId: id };
@@ -616,6 +814,7 @@ export class ProductionService {
         errorCode: undefined, errorMessage: undefined, input: { ...task.input, retry: task.retryCount + 1, inventoryIdempotencyKey: completion.inventoryIdempotencyKey }, updatedAt: now() });
       await this.recordTransition(repository, context, "Completion", id, "FAILED", "POSTING", result.version,
         { inventoryIdempotencyKey: completion.inventoryIdempotencyKey, retryCount: task.retryCount + 1 }, "RETRY", input.remark);
+      await this.audit(repository, context, "COMPLETION_RETRY", "Completion", id, completion, result, input.remark);
       return { statusCode: 202, body: { completionId: id, taskId: completion.taskId, status: "POSTING", inventoryIdempotencyKey: completion.inventoryIdempotencyKey }, aggregateType: "Completion", aggregateId: id };
     });
   }
@@ -722,12 +921,72 @@ export class ProductionService {
     this.requirePermission(context, type === "MRP" ? "production.mrp.run" : "production.aps.run");
     return this.command(context, `Start${type}Task`, input, async (repository) => {
       const timestamp = now();
-      const task: OperationTask = { id: randomUUID(), tenantId: context.tenantId, taskType: `${type}_RUN`, status: "RUNNING",
-        progress: 0, retryCount: 0, maxRetryCount: 4, input, traceId: context.traceId, createdBy: context.actorId,
+      const requestedDemandIds = Array.isArray(input.demandIds) ? input.demandIds.filter((value): value is string => typeof value === "string") : [];
+      if (!requestedDemandIds.length) throw new ProductionError("PRODUCTION_400_INVALID_ARGUMENT", `${type} 任务必须指定生产需求`, "从已审批需求中至少选择一项", { fieldErrors: [{ field: "demandIds", message: "至少包含一个需求 ID" }] });
+      if (new Set(requestedDemandIds).size !== requestedDemandIds.length) throw new ProductionError("PRODUCTION_400_INVALID_ARGUMENT", "计划任务包含重复生产需求", "移除重复 demandId 后重试");
+      const demands: Demand[] = [];
+      const inventoryWarehouseByDemand = new Map<string, string | undefined>();
+      for (const demandId of requestedDemandIds) {
+        const demand = await repository.getDemand(context.tenantId, demandId);
+        if (!demand) this.notFound("计划任务关联需求");
+        const expected = type === "MRP" ? ["APPROVED"] : ["PLANNED"];
+        if (!expected.includes(demand.status)) this.illegal("计划任务关联需求", demand.status, expected);
+        demands.push(demand);
+        const source = await repository.getDemandSource(context.tenantId, demand.id);
+        inventoryWarehouseByDemand.set(demand.id, source && (optionalString(source.payloadSnapshot.inventoryWarehouseId) ?? optionalString(source.payloadSnapshot.warehouseId)));
+        if (type === "APS") {
+          const mrpTask = await repository.findSucceededMrpTaskByDemand(context.tenantId, demand.id);
+          const shortages = (mrpTask?.result as { materialShortages?: Array<{ demandId: string; materialId: string; warehouseId: string; grossRequiredQty: string; uom: string }> } | undefined)?.materialShortages?.filter((item) => item.demandId === demand.id) ?? [];
+          for (const shortage of shortages) {
+            const availability = await repository.getInventoryAvailability(context.tenantId, shortage.materialId, shortage.warehouseId);
+            if (!availability || availability.uom !== shortage.uom || compareDecimal(availability.availableQty, shortage.grossRequiredQty) < 0) {
+              throw new ProductionError("PRODUCTION_422_MASTER_DATA_MISSING", "MRP 缺料尚未通过采购入库补齐", "完成采购入库并刷新物料库存事实后再运行 APS", { details: { demandId: demand.id, materialId: shortage.materialId, requiredQty: shortage.grossRequiredQty, availableQty: availability?.availableQty ?? "0" } });
+            }
+          }
+        }
+      }
+      const taskId = randomUUID();
+      const materialShortages: Array<Record<string, unknown>> = [];
+      if (type === "MRP") {
+        for (const demand of demands) {
+          if (demand.productId !== "FG001") continue;
+          const source = await repository.getDemandSource(context.tenantId, demand.id);
+          const materialWarehouseId = source && optionalString(source.payloadSnapshot.materialWarehouseId) || "WH-RM-01";
+          const grossRequiredQty = scaledToDecimal(decimalToScaled(demand.qty) * 2n);
+          const materialFact = await repository.getInventoryAvailability(context.tenantId, "RM201", materialWarehouseId);
+          const availableQty = materialFact?.availableQty ?? "0";
+          if (compareDecimal(availableQty, grossRequiredQty) < 0) {
+            materialShortages.push({
+              demandId: demand.id, demandCode: demand.code, materialId: "RM201", materialName: "AI算力芯片",
+              warehouseId: materialWarehouseId, grossRequiredQty, availableQty,
+              shortageQty: subtractDecimal(grossRequiredQty, availableQty), uom: "PCS", requiredDate: demand.dueDate,
+              inventoryFactVersion: materialFact?.factVersion ?? 0,
+            });
+          }
+        }
+      }
+      const result = type === "MRP" ? {
+        solver: "REFERENCE_MPS_MRP_V2", completedAt: timestamp,
+        mpsLines: demands.map((demand) => ({ demandId: demand.id, demandCode: demand.code, productId: demand.productId, plannedQty: demand.qty, uom: demand.uom, dueDate: demand.dueDate, inventoryWarehouseId: inventoryWarehouseByDemand.get(demand.id) })),
+        materialShortages, canProceedToAps: materialShortages.length === 0,
+      } : {
+        solver: "REFERENCE_APS_V1", completedAt: timestamp,
+        scheduleCandidates: [{ id: randomUUID(), demandIds: demands.map((demand) => demand.id), factoryResourceIds: [...new Set(demands.map((demand) => demand.factoryResourceId))], inventoryWarehouseIds: [...new Set([...inventoryWarehouseByDemand.values()].filter((value): value is string => Boolean(value)))], startAt: timestamp, dueDate: [...demands].sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0].dueDate, published: true }],
+      };
+      if (type === "MRP") {
+        for (const demand of demands) {
+          const planned = cloneWithVersion(demand); planned.status = "PLANNED";
+          if (!await repository.updateDemand(planned, demand.version)) throw new ProductionError("PRODUCTION_409_VERSION_CONFLICT", "生产需求在计划计算期间发生变化", "刷新需求后重新运行 MRP");
+          await this.recordTransition(repository, context, "Demand", demand.id, demand.status, planned.status, planned.version, { taskId, solver: "REFERENCE_MPS_MRP_V1" }, undefined, undefined, demand.correlationId);
+        }
+      }
+      const task: OperationTask = { id: taskId, tenantId: context.tenantId, taskType: `${type}_RUN`, status: "SUCCEEDED",
+        progress: 100, retryCount: 0, maxRetryCount: 4, input, result, traceId: context.traceId, createdBy: context.actorId,
         createdAt: timestamp, updatedAt: timestamp };
       await repository.insertTask(task);
       await this.recordTransition(repository, context, "OperationTask", task.id, "PENDING", "RUNNING", 1, { taskType: task.taskType });
-      return { statusCode: 202, body: { taskId: task.id, status: task.status, traceId: context.traceId }, aggregateType: "OperationTask", aggregateId: task.id };
+      await this.recordTransition(repository, context, "OperationTask", task.id, "RUNNING", "SUCCEEDED", 1, { taskType: task.taskType, solver: type === "MRP" ? "REFERENCE_MPS_MRP_V1" : "REFERENCE_APS_V1" });
+      return { statusCode: 202, body: { taskId: task.id, status: task.status, progress: task.progress, result: task.result, traceId: context.traceId }, aggregateType: "OperationTask", aggregateId: task.id };
     });
   }
 
