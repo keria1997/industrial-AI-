@@ -2,6 +2,16 @@
 
 本目录用于在 Ubuntu 22.04 / 24.04 LTS 上部署工业 AI 平台。包含前端静态资源、Java 后端 fat jar、PostgreSQL 数据库与 nginx 反向代理的完整部署链路。
 
+## 本机 5175 / 8081 发布
+
+`node deploy/run-local-release.mjs <已解压制品目录>` 使用同一发布包切换本机端口：5175 由 nginx 提供 `app/dist`，8081 运行 Java fat jar，继续连接根目录 `.env.local` 指定的 PostgreSQL。不使用 Vite 开发服务、测试数据库或内存库存；数据库连接及签名/加密密钥缺失时拒绝发布。
+
+脚本先检查制品、nginx 与数据库连接，生成权限为 600 的真实数据库备份，再通过 Java 迁移器检查并执行未应用迁移。已应用迁移按 checksum 校验，不重放，也不会删除数据库中其他版本的迁移。仅停止确认属于本平台的端口进程，健康检查通过后才切换静态目录。已有发布版本时，后端启动失败会恢复上一版本；数据库恢复须由运维根据保留的备份另行操作，脚本不自动回退数据。
+
+发布状态、日志、PID、数据库备份和 `current` 位于忽略版本控制的 `deploy/artifacts/local-runtime/`；发布包保留在 `deploy/artifacts/releases/`。`.env.local` 不进入发布包，现有数据不重置，不运行生成订单或库存的验收脚本。构建独立源码快照时，可用 `BUILD_GIT_COMMIT` 和 `BUILD_GIT_BRANCH` 记录该快照来源。
+
+本机发布沿用现有登录配置。公网正式上线必须先开通真实租户账号并设置 `DEMO_AUTH_ENABLED=false`，再完成目标服务器、HTTPS、服务托管及客户库存来源联调；不能将本机端口可访问认定为整个平台已具备全部上线条件。
+
 ## 1. 目录结构
 
 ```

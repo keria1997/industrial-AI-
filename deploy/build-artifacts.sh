@@ -90,8 +90,8 @@ cp "$REPO_ROOT/deploy/README.md" "$STAGING_PKG_DIR/deploy/README.md"
 cat > "$STAGING_PKG_DIR/MANIFEST.txt" <<EOF
 industrial-ai $VERSION
 build-time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-git-commit: $(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)
-git-branch: $(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+git-commit: ${BUILD_GIT_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)}
+git-branch: ${BUILD_GIT_BRANCH:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}
 node: $(node -v)
 npm: $(npm -v)
 java: $(java -version 2>&1 | head -n1)
