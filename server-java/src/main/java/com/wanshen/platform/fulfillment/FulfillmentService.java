@@ -381,7 +381,8 @@ public class FulfillmentService {
                     || !Set.of("CONFIRMED", "PARTIALLY_SHIPPED").contains(text(order, "overallStatus"))) {
                 throw conflict("订单尚未完成审批或确认", "确认订单后再发起发货");
             }
-            if (!text(input, "warehouseId").equals(text(order, "fulfillmentWarehouseId"))) {
+            if (!repository.warehouseId(context.tenantId(), text(input, "warehouseId"))
+                    .equals(repository.warehouseId(context.tenantId(), text(order, "fulfillmentWarehouseId")))) {
                 throw badRequest("发货仓库与订单履约仓库不一致",
                         List.of(new ApiException.FieldError("warehouseId", "warehouse_mismatch")));
             }
@@ -418,7 +419,8 @@ public class FulfillmentService {
                     .put("id", requestId).put("tenantId", context.tenantId())
                     .put("requestNo", "SR-" + timestamp.substring(0, 10).replace("-", "") + "-"
                             + requestId.substring(0, 8).toUpperCase())
-                    .put("salesOrderId", orderId).put("warehouseId", text(input, "warehouseId"))
+                    .put("salesOrderId", orderId)
+                    .put("warehouseId", repository.warehouseId(context.tenantId(), text(input, "warehouseId")))
                     .put("orderRevision", version(order)).put("workflowStatus", "REQUESTED")
                     .put("availabilityStatus", "UNCHECKED").put("replenishmentStatus", "NOT_REQUIRED")
                     .put("postingStatus", "NOT_STARTED").put("version", 1)
@@ -557,14 +559,16 @@ public class FulfillmentService {
                         List.of(new ApiException.FieldError("fulfillableQty", "formula_mismatch")));
             }
             ObjectNode fact = input.deepCopy();
-            fact.put("tenantId", context.tenantId()).put("sourceEventId", eventId);
+            fact.put("tenantId", context.tenantId()).put("sourceEventId", eventId)
+                    .put("warehouseId", repository.warehouseId(context.tenantId(), text(input, "warehouseId")));
             String projection = repository.saveAvailability(fact);
             ObjectNode inbox = mapper.createObjectNode().put("eventId", eventId)
                     .put("eventType", "inventory.availability.changed.v1");
             repository.addInbox(context.tenantId(), consumer, inbox);
             if (!"STALE".equals(projection)) {
                 for (JsonNode taskValue : repository.shipmentTasks(context.tenantId())) {
-                    boolean matches = text(taskValue, "warehouseId").equals(text(input, "warehouseId"))
+                    boolean matches = repository.warehouseId(context.tenantId(), text(taskValue, "warehouseId"))
+                            .equals(text(fact, "warehouseId"))
                             && "IN_PROGRESS".equals(text(taskValue, "replenishmentStatus"))
                             && streamNodes(taskValue.withArray("lines")).anyMatch(line ->
                                     text(line, "productId").equals(text(input, "productId"))
@@ -587,10 +591,18 @@ public class FulfillmentService {
 
     public List<JsonNode> availability(RequestContext context, String warehouseId, List<String> productIds) {
         require(context, "inventory.availability.read");
-        return store.transaction(context.tenantId(), repository -> productIds.stream()
-                .map(productId -> store.availability(context.tenantId(), warehouseId, productId))
-                .flatMap(Optional::stream)
-                .toList());
+        return store.transaction(context.tenantId(), repository -> {
+            String canonicalId = warehouseId == null ? null : repository.warehouseId(context.tenantId(), warehouseId);
+            if (canonicalId != null && productIds != null && !productIds.isEmpty()) {
+                return productIds.stream().distinct()
+                        .map(productId -> repository.availability(context.tenantId(), canonicalId, productId))
+                        .flatMap(Optional::stream).toList();
+            }
+            return repository.availability(context.tenantId()).stream()
+                    .filter(fact -> canonicalId == null || canonicalId.equals(text(fact, "warehouseId")))
+                    .filter(fact -> productIds == null || productIds.isEmpty() || productIds.contains(text(fact, "productId")))
+                    .toList();
+        });
     }
 
     public record CompletionProjection(boolean duplicate, String projectionResult, JsonNode availability) {}
@@ -605,7 +617,7 @@ public class FulfillmentService {
             String correlationId = input.hasNonNull("correlationId")
                     ? text(input, "correlationId") : UUID.randomUUID().toString();
             String occurredAt = text(input, "occurredAt");
-            String warehouseId = text(input, "warehouseId");
+            String warehouseId = repository.warehouseId(context.tenantId(), text(input, "warehouseId"));
             String productId = text(input, "productId");
             JsonNode current = repository.availability(context.tenantId(), warehouseId, productId).orElse(null);
             if (current != null && !text(current, "uom").equals(text(input, "uom"))) {
@@ -648,7 +660,7 @@ public class FulfillmentService {
                 Set<String> demandIds = new java.util.HashSet<>();
                 input.withArray("allocations").forEach(value -> demandIds.add(text(value, "demandId")));
                 for (JsonNode taskValue : repository.shipmentTasks(context.tenantId())) {
-                    boolean matches = text(taskValue, "warehouseId").equals(warehouseId)
+                    boolean matches = repository.warehouseId(context.tenantId(), text(taskValue, "warehouseId")).equals(warehouseId)
                             && "IN_PROGRESS".equals(text(taskValue, "replenishmentStatus"))
                             && streamNodes(taskValue.withArray("lines")).anyMatch(line ->
                                     text(line, "productId").equals(productId)
@@ -720,7 +732,8 @@ public class FulfillmentService {
             }
             requireReservableSnapshot(context, sourceTask);
             ObjectNode task = sourceTask.deepCopy();
-            String requestedWarehouseId = text(input, "warehouseId");
+            String requestedWarehouseId = repository.warehouseId(context.tenantId(), text(input, "warehouseId"));
+            task.put("warehouseId", repository.warehouseId(context.tenantId(), text(task, "warehouseId")));
             boolean hasAnyReservation = !repository.reservationsByTask(context.tenantId(), taskId).isEmpty();
             boolean hasPostedQty = streamNodes(task.withArray("lines"))
                     .anyMatch(line -> compare(text(line, "postedQty"), "0") > 0);

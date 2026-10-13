@@ -53,6 +53,10 @@ type Props = {
   onCreatePurchaseRequest: (row: InventoryStockQueryRow & { procurementType?: string }) => void;
   apiContext?: ApiContext;
   onWarehousesChanged?: () => void;
+  formalMasterData?: InventoryMasterData;
+  stockStatus?: 'loading' | 'ready' | 'error';
+  stockError?: string;
+  onRefreshStock?: () => void;
 };
 
 const entityLabels: Record<MasterEntity, string> = {
@@ -238,8 +242,13 @@ export const InventoryMasterDataPanel = ({
   onCreatePurchaseRequest,
   apiContext,
   onWarehousesChanged,
+  formalMasterData,
+  stockStatus,
+  stockError,
+  onRefreshStock,
 }: Props) => {
-  const [data, setData] = useState(() => loadInventoryMasterData(localStorage, tenantId));
+  const [localData, setData] = useState(() => loadInventoryMasterData(localStorage, tenantId));
+  const data = formalMasterData || (stockStatus ? { ...localData, stockSource: 'formal' as const, warehouses: [] } : localData);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('全部');
   const [warehouseKind, setWarehouseKind] = useState('全部');
@@ -252,55 +261,17 @@ export const InventoryMasterDataPanel = ({
     setWarehouseKind('全部');
   }, [tenantId]);
 
-  useEffect(() => {
-    if (!apiContext) return;
-    let cancelled = false;
-    const sync = async () => {
-      try {
-        let warehouses = (await inventoryApi.listWarehouses(apiContext)).items || [];
-        const localWarehouses = loadInventoryMasterData(localStorage, tenantId).warehouses;
-        for (const local of localWarehouses.filter((item) => !item.serverId)) {
-          const code = local.code || local.id;
-          const existing = warehouses.find((item) => item.code === code);
-          if (!existing) {
-            const created = await inventoryApi.createWarehouse(apiContext, {
-              code,
-              name: local.name,
-              type: local.type,
-              address: local.address,
-              manager: local.manager,
-              phone: local.phone,
-              organization: local.organization,
-              capacity: String(local.capacity || 1000),
-              usedCapacity: String(local.usedCapacity || 0),
-              status: warehouseStatusToServer(local.status),
-              remark: local.remark,
-            });
-            warehouses = [created.warehouse, ...warehouses];
-          }
-        }
-        if (cancelled) return;
-        const serverWarehouses = warehouses.map((dto) =>
-          mapWarehouseDto(dto, localWarehouses.find((item) => (item.code || item.id) === dto.code)));
-        commit({ ...data, warehouses: serverWarehouses });
-        onWarehousesChanged?.();
-      } catch (error) {
-        if (!cancelled) onToast(error instanceof Error ? error.message : '仓库主数据同步失败，请刷新重试', 'danger');
-      }
-    };
-    void sync();
-    return () => { cancelled = true; };
-  }, [apiContext?.tenantId, apiContext?.accessToken, tenantId]);
-
   const commit = (next: InventoryMasterData) => {
     setData(next);
     saveInventoryMasterData(localStorage, tenantId, next);
     window.dispatchEvent(new CustomEvent('inventory-master-data-changed', { detail: { tenantId } }));
   };
   const warehouseName = (id: string) => data.warehouses.find((item) => item.id === id)?.name || id;
-  const selectedWarehouse = data.warehouses.find((item) => item.id === selectedWarehouseId);
-  const warehouseRows = useMemo(() => selectedWarehouse ? getWarehouseInventoryRows(selectedWarehouse, data, stockData) : [], [selectedWarehouse, data, stockData]);
-  const inventoryRows = useMemo(() => getInventoryStockQueryRows(data, stockData), [data, stockData]);
+  const selectedWarehouse = data.warehouses.find((item) =>
+    item.id === selectedWarehouseId || item.serverId === selectedWarehouseId || item.code === selectedWarehouseId);
+  const stockReady = !stockStatus || stockStatus === 'ready';
+  const warehouseRows = useMemo(() => selectedWarehouse && stockReady ? getWarehouseInventoryRows(selectedWarehouse, data, stockData) : [], [selectedWarehouse, data, stockData, stockReady]);
+  const inventoryRows = useMemo(() => stockReady ? getInventoryStockQueryRows(data, stockData) : [], [data, stockData, stockReady]);
   const findInventoryRow = (kind: '产品' | '物料', id: string, warehouseId: string) =>
     inventoryRows.find((item) => item.kind === kind && item.id === id && item.warehouseId === warehouseId);
   const normalizedQuery = query.trim().toLowerCase();
@@ -421,8 +392,13 @@ export const InventoryMasterDataPanel = ({
   const openEditor = (entity: MasterEntity, mode: EditorMode, record?: InventoryWarehouse | InventoryProduct | InventoryMaterial) => setEditor({ entity, mode, record: (record ? { ...record } : newRecord(entity)) as Record<string, string | number> });
   const currentEntity: MasterEntity = activeTab === 'warehouses' ? 'warehouse' : activeTab === 'products' ? 'product' : 'material';
 
+  if (!stockReady) return <div role={stockStatus === 'error' ? 'alert' : 'status'} className="border-y border-slate-200 bg-white px-6 py-10 text-center text-[13px] text-slate-600">
+    {stockStatus === 'error' ? stockError || '库存加载失败，请重试' : '正在加载仓库库存…'}
+    {stockStatus === 'error' && <button type="button" onClick={onRefreshStock} className="ml-3 font-bold text-blue-700">重新加载</button>}
+  </div>;
+
   if (selectedWarehouse) {
-    const usedRate = Math.min(100, Math.round((selectedWarehouse.usedCapacity / selectedWarehouse.capacity) * 100));
+    const usedRate = selectedWarehouse.capacity > 0 ? Math.min(100, Math.round((selectedWarehouse.usedCapacity / selectedWarehouse.capacity) * 100)) : 0;
     const productCount = warehouseRows.filter((item) => item.kind === '产品').length;
     const materialCount = warehouseRows.filter((item) => item.kind === '物料').length;
     return <div className="animate-in fade-in duration-200">
@@ -485,16 +461,16 @@ export const InventoryMasterDataPanel = ({
                       <div className="mt-0.5 text-[11px] text-slate-500">{row.category}</div>
                     </td>
                     <td className="px-5 py-3 font-mono text-slate-600">{row.location}</td>
-                    <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-900">{row.stockQty} {row.unit}</td>
-                    <td className="px-5 py-3 text-right font-bold tabular-nums text-rose-600">{row.lockQty}</td>
-                    <td className="px-5 py-3 text-right font-bold tabular-nums text-emerald-700">{row.availQty}</td>
+                    <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-900">{row.hasStockFact ? row.stockQty : '-'} {row.unit}</td>
+                    <td className="px-5 py-3 text-right font-bold tabular-nums text-rose-600">{row.hasStockFact ? row.lockQty : '-'}</td>
+                    <td className="px-5 py-3 text-right font-bold tabular-nums text-emerald-700">{row.hasStockFact ? row.availQty : '-'}</td>
                     <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-800">{formatUnitPrice(master?.unitPrice ?? row.unitPrice)}</td>
                     <td className="px-5 py-3"><StatusPill value={row.status} /></td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-2">
-                        <IconButton title={`查看${row.kind}`} onClick={() => openEditor(row.kind === '产品' ? 'product' : 'material', 'view', master)}>
+                        {master && <IconButton title={`查看${row.kind}`} onClick={() => openEditor(row.kind === '产品' ? 'product' : 'material', 'view', master)}>
                           <Eye size={14} />
-                        </IconButton>
+                        </IconButton>}
                         {actionRow && (row.kind === '产品'
                           ? <IconButton title="补货申请" tone="blue" onClick={() => onCreateProductionRequest(actionRow)}><Factory size={14} /></IconButton>
                           : <IconButton title="补货申请" tone="amber" onClick={() => onCreatePurchaseRequest({ ...actionRow, procurementType: master?.procurementType })}><FilePlus size={14} /></IconButton>)}

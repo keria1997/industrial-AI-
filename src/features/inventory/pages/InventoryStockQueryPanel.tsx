@@ -20,6 +20,7 @@ import {
   loadInventoryMasterData,
   queryInventoryStock,
   type InventoryStockFact,
+  type InventoryMasterData,
   type InventoryStockQueryKind,
   type InventoryStockQueryRow,
 } from '../model/inventoryMasterData';
@@ -34,6 +35,10 @@ type Props = {
   onDelete: (row: InventoryStockQueryRow) => void;
   onCreateProductionRequest: (row: InventoryStockQueryRow) => void;
   onCreatePurchaseRequest: (row: InventoryStockQueryRow) => void;
+  formalMasterData?: InventoryMasterData;
+  stockStatus?: 'loading' | 'ready' | 'error';
+  stockError?: string;
+  onRefreshStock?: () => void;
 };
 
 const statusClasses: Record<string, string> = {
@@ -70,8 +75,13 @@ export const InventoryStockQueryPanel = ({
   onDelete,
   onCreateProductionRequest,
   onCreatePurchaseRequest,
+  formalMasterData,
+  stockStatus,
+  stockError,
+  onRefreshStock,
 }: Props) => {
-  const [masterData, setMasterData] = useState(() => loadInventoryMasterData(localStorage, tenantId));
+  const [localData, setMasterData] = useState(() => loadInventoryMasterData(localStorage, tenantId));
+  const masterData = formalMasterData || localData;
   const [kind, setKind] = useState<InventoryStockQueryKind>('全部');
   const [warehouseId, setWarehouseId] = useState('全部');
   const [query, setQuery] = useState('');
@@ -85,7 +95,8 @@ export const InventoryStockQueryPanel = ({
     setStatus('全部');
   }, [tenantId]);
 
-  const rows = useMemo(() => getInventoryStockQueryRows(masterData, stockData), [masterData, stockData]);
+  const stockReady = !stockStatus || stockStatus === 'ready';
+  const rows = useMemo(() => stockReady ? getInventoryStockQueryRows(masterData, stockData) : [], [masterData, stockData, stockReady]);
   const filteredRows = useMemo(() => queryInventoryStock(rows, {
     warehouseId,
     kind,
@@ -100,6 +111,11 @@ export const InventoryStockQueryPanel = ({
     setQuery('');
     setStatus('全部');
   };
+
+  if (!stockReady) return <div role={stockStatus === 'error' ? 'alert' : 'status'} className="border-y border-slate-200 bg-white px-6 py-10 text-center text-[13px] text-slate-600">
+    {stockStatus === 'error' ? stockError || '库存加载失败，请重试' : '正在加载仓库库存…'}
+    {stockStatus === 'error' && <button type="button" onClick={onRefreshStock} className="ml-3 font-bold text-blue-700">重新加载</button>}
+  </div>;
 
   return (
     <section className="animate-in overflow-hidden rounded-lg border border-slate-200 bg-white fade-in duration-200">
@@ -141,7 +157,8 @@ export const InventoryStockQueryPanel = ({
           </select>
         </label>
         {hasFilters && <button type="button" onClick={resetFilters} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 hover:bg-slate-50"><RotateCcw size={14} />重置</button>}
-        <button type="button" onClick={onQuickInventory} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 text-[12px] font-bold text-blue-700 hover:bg-blue-100"><ScanLine size={14} />快速盘点</button>
+        {!stockStatus && <button type="button" onClick={onQuickInventory} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 text-[12px] font-bold text-blue-700 hover:bg-blue-100"><ScanLine size={14} />快速盘点</button>}
+        {stockStatus && <button type="button" title="刷新库存" aria-label="刷新库存" onClick={onRefreshStock} className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 text-slate-600"><RotateCcw size={14} /></button>}
       </div>
 
       <div className="overflow-x-auto">
@@ -153,12 +170,12 @@ export const InventoryStockQueryPanel = ({
               <td className="px-5 py-3"><div className="font-bold text-slate-900">{row.name}</div><div className="mt-0.5 font-mono text-[11px] text-slate-500">{row.id}</div></td>
               <td className="px-5 py-3"><div className="flex items-center gap-1.5 font-bold text-slate-700"><Warehouse size={12} className="text-blue-600" />{row.warehouse}</div><div className="mt-0.5 flex items-center gap-1 font-mono text-[11px] text-slate-500"><MapPin size={10} />{row.location}</div></td>
               <td className="px-5 py-3"><div className="max-w-[230px] truncate text-slate-700" title={row.specification}>{row.specification}</div><div className="mt-0.5 text-[11px] text-slate-500">{row.category}</div></td>
-              <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-900">{row.stockQty} <span className="text-[10px] font-medium text-slate-400">{row.unit}</span></td>
-              <td className="px-5 py-3 text-right font-bold tabular-nums text-rose-600">{row.lockQty}</td>
-              <td className="px-5 py-3 text-right font-bold tabular-nums text-emerald-700">{row.availQty}</td>
+              <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-900">{row.hasStockFact ? row.stockQty : '-'} <span className="text-[10px] font-medium text-slate-400">{row.unit}</span></td>
+              <td className="px-5 py-3 text-right font-bold tabular-nums text-rose-600">{row.hasStockFact ? row.lockQty : '-'}</td>
+              <td className="px-5 py-3 text-right font-bold tabular-nums text-emerald-700">{row.hasStockFact ? row.availQty : '-'}</td>
               <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-700">{row.safetyStock}</td>
               <td className="px-5 py-3"><span className={`inline-flex h-6 items-center rounded-md border px-2 text-[11px] font-bold ${statusClasses[row.status] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>{row.status}</span></td>
-              <td className="px-5 py-3"><div className="flex justify-end gap-2"><IconButton title="查看库存" onClick={() => onView(row)}><Eye size={14} /></IconButton>{row.kind === '产品' ? <IconButton title="补货申请" tone="blue" onClick={() => onCreateProductionRequest(row)}><Factory size={14} /></IconButton> : <IconButton title="补货申请" tone="amber" onClick={() => onCreatePurchaseRequest(row)}><FilePlus size={14} /></IconButton>}{row.hasStockFact && <><IconButton title="编辑库存" tone="blue" onClick={() => onEdit(row)}><Edit2 size={14} /></IconButton><IconButton title="调拨库存" tone="amber" onClick={() => onTransfer(row)}><ArrowRightLeft size={14} /></IconButton><IconButton title="删除库存" tone="rose" onClick={() => onDelete(row)}><Trash2 size={14} /></IconButton></>}</div></td>
+              <td className="px-5 py-3"><div className="flex justify-end gap-2"><IconButton title="查看库存" onClick={() => onView(row)}><Eye size={14} /></IconButton>{row.kind === '产品' ? <IconButton title="补货申请" tone="blue" onClick={() => onCreateProductionRequest(row)}><Factory size={14} /></IconButton> : <IconButton title="补货申请" tone="amber" onClick={() => onCreatePurchaseRequest(row)}><FilePlus size={14} /></IconButton>}{row.hasStockFact && !stockStatus && <><IconButton title="编辑库存" tone="blue" onClick={() => onEdit(row)}><Edit2 size={14} /></IconButton><IconButton title="调拨库存" tone="amber" onClick={() => onTransfer(row)}><ArrowRightLeft size={14} /></IconButton><IconButton title="删除库存" tone="rose" onClick={() => onDelete(row)}><Trash2 size={14} /></IconButton></>}</div></td>
             </tr>)}
             {!filteredRows.length && <tr><td colSpan={10} className="px-5 py-14 text-center"><Search className="mx-auto text-slate-300" size={24} /><div className="mt-3 font-bold text-slate-700">没有符合条件的库存</div><div className="mt-1 text-[11px] text-slate-500">调整仓库、对象类型或搜索条件后重试</div>{hasFilters && <button type="button" onClick={resetFilters} className="mt-3 text-[12px] font-bold text-blue-700 hover:underline">清除筛选条件</button>}</td></tr>}
           </tbody>

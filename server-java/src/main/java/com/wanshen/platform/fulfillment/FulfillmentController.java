@@ -107,9 +107,15 @@ public class FulfillmentController {
 
     @GetMapping("/api/v1/inventory/availability")
     public List<JsonNode> availability(
-            HttpServletRequest request, @RequestParam String warehouseId,
-            @RequestParam List<String> productIds
+            HttpServletRequest request, @RequestParam(required = false) String warehouseId,
+            @RequestParam(required = false) List<String> productIds
     ) {
+        if (warehouseId != null && (warehouseId.isBlank() || warehouseId.length() > 100)
+                || productIds != null && (productIds.isEmpty() || productIds.size() > 100
+                || productIds.stream().anyMatch(id -> id.isBlank() || id.length() > 100))) {
+            throw new ApiException(400, "FULFILLMENT_400_INVALID_ARGUMENT",
+                    "库存查询条件无效", "仓库 ID 和产品 ID 最长 100 字，产品筛选最多 100 项");
+        }
         return service.availability(contexts.from(request), warehouseId, productIds);
     }
 

@@ -317,6 +317,12 @@ MRP 输入至少包含一个唯一 `demandId`。成功后需求从 `APPROVED` �
 
 出库、不可变库存流水、库存事实、预留消费、仓库任务、发货申请、销售累计量、审计/历史、Outbox 和幂等结果在同一租户 JDBC 事务内保存。PostgreSQL 事务锁串行化同租户写入，命令执行前重读数据库事实，失败后回滚数据库并恢复缓存。销售、任务、出库及库存查询重新读取正式事实。出库响应的 `task`、`order` 为前端回写来源，不使用本地销售桥接替代正式结果。
 
+`GET /api/v1/inventory/availability`（权限 `inventory.availability.read`）的 `warehouseId`、`productIds` 均可省略：无筛选返回当前租户全部库存事实，单仓筛选返回该仓全部事实，产品筛选最多 100 项。仓库编码和主数据 ID 解析到同一库存事实，响应统一返回服务端仓库 ID；查询、预留、出库扣减、完工入库共用该解析。旧编码事实在下一次有效更新时同事务迁移到 ID 键，不改变数量、不复制预置库存，版本陈旧的事件不覆盖。若编码及 ID 同时存在同产品记录则返回 `409 INVENTORY_409_WAREHOUSE_FACT_CONFLICT`，阻断查询和扣减并要求核对来源。
+
+仓库详情和现存量显示 `qualifiedOnHandQty`、`allocatedReservedQty + frozenQty`、`fulfillableQty`，安全库存展示 `safetyStockQty`，在途不计入可用量。发货可用量还包含本任务未消费的预留，避免将已经归属本单的预留误判为缺货。缺事实的默认分配产品显示“未查询到库存记录”和 `-`，加载失败可重试且不回退种子数量。发货/主数据变更及窗口获得焦点后重读库存。接口路径未增加，`server-java/java-routes.json` 原路由基线保持一致并执行路由校验。
+
+迁移 `028_inventory_fact_components.sql` 将历史数据库 `onHandQty/reservedQty` 补齐为现存/预留组成，缺省冻结和在途为 0，按现存减预留、冻结、安全库存重算可履约量，并推进事实版本。已有新版组成字段优先，未使用前端库存数量；历史“可用量未扣安全库存”的记录可能因此减少可履约量。
+
 客户端保存出库请求键、时间、版本和数量包；网络中断后复用原请求重试。未知结果不提示发货成功。`FulfillmentOutboxWorker` 每 2 秒重试仓库移交；创建任务、Inbox、审计/历史和标记已消费原子保存，不支持的事件继续 `PENDING`，并不代表外部 MQ 已发布。可通过 `FULFILLMENT_WORKER_ENABLED` 与 `FULFILLMENT_WORKER_INTERVAL_MS` 配置。已验收真实 PostgreSQL/RLS、并发抢库存、回滚/重试及两种桌面尺寸真实浏览器，见 [销售到仓库出库开发验收](tests/销售到仓库出库开发验收-20261013.md)。客户 WMS 与生产/采购/财务完整闭环不属于该验收结论。
 
 订单创建和编辑支持十进制字符串 `discountRate`（0 到 100，创建默认 100）、`discountAmount`（非负，创建默认 0）及可选 `expectedTotalAmount`。服务端保存 `originalAmount`、折扣率、优惠金额和 `totalAmount`，按 `max(含税原价合计 × 折扣率 / 100 - 优惠金额, 0)` 计算，最终四舍五入到两位小数；预期金额不一致返回 `422 FULFILLMENT_422_PRICE_MISMATCH`，不保存变更。编辑未传优惠或产品明细时保留原值。审批、确认和发货申请沿用持久化订单金额，同一订单在待发货和已确认列表及详情中展示相同总额。历史本地/报价转单在建立正式订单时完整传入优惠与预期金额，不能只传单价和数量。

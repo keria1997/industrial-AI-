@@ -64,6 +64,33 @@ class FulfillmentControllerTests {
     private FulfillmentService service;
 
     @Test
+    void listsTenantStockAndResolvesWarehouseCodesWithPermissionAndInputChecks() throws Exception {
+        var store = service.repository();
+        SalesShipmentWorkflowTests.stock(service, "TENANT-SHWS", "FG-0", "5", "0");
+        InventoryWarehouseFactsTests.warehouse(store, "TENANT-SHWS");
+        SalesShipmentWorkflowTests.stock(service, "other-tenant", "FG-0", "99", "0");
+        mockMvc.perform(get("/api/v1/inventory/availability")
+                        .header("Authorization", "Bearer " + token).header("X-Tenant-Id", "TENANT-SHWS"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].warehouseId").value("server-wh-id"))
+                .andExpect(jsonPath("$[0].qualifiedOnHandQty").value("5"));
+        for (String id : List.of("WH-TEST", "server-wh-id")) {
+            mockMvc.perform(get("/api/v1/inventory/availability").param("warehouseId", id)
+                            .header("Authorization", "Bearer " + token).header("X-Tenant-Id", "TENANT-SHWS"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        }
+        mockMvc.perform(get("/api/v1/inventory/availability").param("productIds", "missing")
+                        .header("Authorization", "Bearer " + token).header("X-Tenant-Id", "TENANT-SHWS"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(get("/api/v1/inventory/availability")
+                        .header("Authorization", "Bearer " + makerToken).header("X-Tenant-Id", "TENANT-SHWS"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/inventory/availability").param("warehouseId", "")
+                        .header("Authorization", "Bearer " + token).header("X-Tenant-Id", "TENANT-SHWS"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void listsLegacyOrderMissingRecipient() throws Exception {
         ObjectNode order = objectMapper.createObjectNode();
         order.put("id", "legacy-order").put("tenantId", "TENANT-SHWS")

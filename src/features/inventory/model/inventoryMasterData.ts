@@ -48,6 +48,7 @@ export type InventoryMaterial = {
 
 export type InventoryMasterData = {
   schemaVersion: 1;
+  stockSource?: 'formal';
   warehouses: InventoryWarehouse[];
   products: InventoryProduct[];
   materials: InventoryMaterial[];
@@ -65,6 +66,11 @@ export type InventoryStockFact = {
   availQty: number;
   unit: string;
   status: string;
+  kind?: string;
+  specification?: string;
+  unitPrice?: string | number;
+  safetyStock?: number;
+  factVersion?: number;
 };
 
 export type WarehouseInventoryRow = {
@@ -81,6 +87,7 @@ export type WarehouseInventoryRow = {
   unitPrice: number;
   unit: string;
   status: string;
+  hasStockFact?: boolean;
 };
 
 export type InventoryStockQueryKind = '全部' | '产品' | '物料';
@@ -245,24 +252,26 @@ export const getWarehouseInventoryRows = (
   const materialById = new Map(data.materials.map((item) => [item.id, item]));
   const warehouseNames = new Map(data.warehouses.map((item) => [item.name, item.id]));
   const facts = stockFacts.filter((fact) =>
-    (fact.warehouseId || warehouseNames.get(fact.warehouse)) === warehouse.id);
+    [warehouse.id, warehouse.code, warehouse.serverId].filter(Boolean)
+      .includes(fact.warehouseId || warehouseNames.get(fact.warehouse)));
   const rows = facts.map((fact) => {
     const product = productById.get(fact.id);
     const material = materialById.get(fact.id);
     return {
       id: fact.id,
-      kind: product ? '产品' as const : '物料' as const,
+      kind: fact.kind === '产品' || product ? '产品' as const : '物料' as const,
       name: fact.name,
-      specification: product?.specification || material?.specification || '-',
+      specification: fact.specification || product?.specification || material?.specification || '-',
       category: product?.category || material?.materialType || fact.category,
       warehouseId: warehouse.id,
       location: fact.location,
       stockQty: Number(fact.stockQty || 0),
       lockQty: Number(fact.lockQty || 0),
       availQty: Number(fact.availQty || 0),
-      unitPrice: Number(product?.unitPrice || material?.unitPrice || 0),
+      unitPrice: Number(fact.unitPrice ?? product?.unitPrice ?? material?.unitPrice ?? 0),
       unit: fact.unit,
       status: fact.status,
+      hasStockFact: true,
     };
   });
   const existingIds = new Set(rows.map((item) => item.id));
@@ -270,13 +279,15 @@ export const getWarehouseInventoryRows = (
     .forEach((item) => rows.push({
       id: item.id, kind: '产品', name: item.name, specification: item.specification,
       category: item.category, warehouseId: warehouse.id, location: '-', stockQty: 0,
-      lockQty: 0, availQty: 0, unitPrice: item.unitPrice, unit: item.unit, status: '未入库',
+      lockQty: 0, availQty: 0, unitPrice: item.unitPrice, unit: item.unit,
+      status: data.stockSource === 'formal' ? '未查询到库存记录' : '未入库', hasStockFact: false,
     }));
   data.materials.filter((item) => item.defaultWarehouseId === warehouse.id && !existingIds.has(item.id))
     .forEach((item) => rows.push({
       id: item.id, kind: '物料', name: item.name, specification: item.specification,
       category: item.materialType, warehouseId: warehouse.id, location: '-', stockQty: 0,
-      lockQty: 0, availQty: 0, unitPrice: item.unitPrice, unit: item.unit, status: '未入库',
+      lockQty: 0, availQty: 0, unitPrice: item.unitPrice, unit: item.unit,
+      status: data.stockSource === 'formal' ? '未查询到库存记录' : '未入库', hasStockFact: false,
     }));
   return rows.sort((left, right) => left.id.localeCompare(right.id));
 };
@@ -287,7 +298,6 @@ export const getInventoryStockQueryRows = (
 ): InventoryStockQueryRow[] => {
   const productById = new Map(data.products.map((item) => [item.id, item]));
   const materialById = new Map(data.materials.map((item) => [item.id, item]));
-  const stockFactKeys = new Set(stockFacts.map((item) => `${item.warehouseId || item.warehouse}:${item.id}`));
 
   return data.warehouses.flatMap((warehouse) =>
     getWarehouseInventoryRows(warehouse, data, stockFacts).map((row) => {
@@ -295,9 +305,10 @@ export const getInventoryStockQueryRows = (
       return {
         ...row,
         warehouse: warehouse.name,
-        safetyStock: Number(master?.safetyStock || 0),
-        hasStockFact: stockFactKeys.has(`${warehouse.id}:${row.id}`)
-          || stockFactKeys.has(`${warehouse.name}:${row.id}`),
+        safetyStock: stockFacts.find(fact => fact.id === row.id
+          && [warehouse.id, warehouse.code, warehouse.serverId, warehouse.name].filter(Boolean)
+            .includes(fact.warehouseId || fact.warehouse))?.safetyStock ?? Number(master?.safetyStock || 0),
+        hasStockFact: row.hasStockFact === true,
       };
     }),
   ).sort((left, right) => left.id.localeCompare(right.id) || left.warehouseId.localeCompare(right.warehouseId));

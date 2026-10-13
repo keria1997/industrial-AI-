@@ -2,6 +2,7 @@ package com.wanshen.platform.fulfillment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.wanshen.platform.web.ApiException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -151,21 +152,62 @@ public class FulfillmentStore {
     }
 
     public synchronized Optional<JsonNode> availability(String tenantId, String warehouseId, String productId) {
-        return Optional.ofNullable(availability.get(key(tenantId, warehouseId, productId))).map(FulfillmentStore::copy);
+        String canonicalId = warehouseId(tenantId, warehouseId);
+        List<JsonNode> matches = warehouseAliases(tenantId, canonicalId).stream()
+                .map(alias -> availability.get(key(tenantId, alias, productId)))
+                .filter(java.util.Objects::nonNull).toList();
+        if (matches.size() > 1) {
+            throw new ApiException(409, "INVENTORY_409_WAREHOUSE_FACT_CONFLICT",
+                    "同一仓库编码和 ID 存在重复库存记录", "核对库存来源后合并重复记录");
+        }
+        return matches.stream().findFirst().map(value -> {
+            ObjectNode fact = value.deepCopy();
+            return fact.put("warehouseId", canonicalId);
+        });
+    }
+
+    public synchronized String warehouseId(String tenantId, String idOrCode) {
+        return get(tenantId, idOrCode, warehouses)
+                .or(() -> getByCode(tenantId, idOrCode, warehouses))
+                .map(value -> text(value, "id")).orElse(idOrCode);
+    }
+
+    private List<String> warehouseAliases(String tenantId, String canonicalId) {
+        return get(tenantId, canonicalId, warehouses)
+                .map(value -> java.util.stream.Stream.of(canonicalId, text(value, "code"))
+                        .filter(alias -> !alias.isBlank()).distinct().toList())
+                .orElseGet(() -> List.of(canonicalId));
     }
 
     public synchronized List<JsonNode> availability(String tenantId) {
-        return availability.values().stream()
-                .filter(value -> text(value, "tenantId").equals(tenantId))
-                .map(FulfillmentStore::copy)
-                .toList();
+        Map<String, JsonNode> facts = new LinkedHashMap<>();
+        for (JsonNode value : availability.values()) {
+            if (!tenantId.equals(text(value, "tenantId"))) continue;
+            String canonicalId = warehouseId(tenantId, text(value, "warehouseId"));
+            ObjectNode fact = value.deepCopy();
+            fact.put("warehouseId", canonicalId);
+            if (facts.putIfAbsent(key(canonicalId, text(value, "productId")), fact) != null) {
+                throw new ApiException(409, "INVENTORY_409_WAREHOUSE_FACT_CONFLICT",
+                        "同一仓库编码和 ID 存在重复库存记录", "核对库存来源后合并重复记录");
+            }
+        }
+        return new ArrayList<>(facts.values());
     }
 
     public synchronized String saveAvailability(JsonNode value) {
-        String mapKey = key(text(value, "tenantId"), text(value, "warehouseId"), text(value, "productId"));
-        JsonNode current = availability.get(mapKey);
+        String tenantId = text(value, "tenantId");
+        String productId = text(value, "productId");
+        String canonicalId = warehouseId(tenantId, text(value, "warehouseId"));
+        String mapKey = key(tenantId, canonicalId, productId);
+        JsonNode current = availability(tenantId, canonicalId, productId).orElse(null);
         if (current != null && current.path("factVersion").asInt() >= value.path("factVersion").asInt()) return "STALE";
-        availability.put(mapKey, value.deepCopy());
+        ObjectNode normalized = value.deepCopy();
+        normalized.put("warehouseId", canonicalId);
+        // Move a legacy code-keyed fact in the same transaction as its next stock update.
+        List<String> oldKeys = warehouseAliases(tenantId, canonicalId).stream()
+                .map(alias -> key(tenantId, alias, productId)).filter(oldKey -> !oldKey.equals(mapKey)).toList();
+        oldKeys.forEach(availability::remove);
+        availability.put(mapKey, normalized);
         return current == null ? "CREATED" : "UPDATED";
     }
 

@@ -54,6 +54,57 @@ class SalesShipmentRealJdbcTests {
     }
 
     @Test
+    void legacyWarehouseMappingAndDeductionSurviveDatabaseReload() {
+        String tenant = "warehouse-mapping-jdbc-" + UUID.randomUUID();
+        JsonNode fact;
+        try (var dataSource = dataSource()) {
+            try (var store = new JdbcFulfillmentStore(dataSource, MAPPER)) {
+                fact = InventoryWarehouseFactsTests.shipLegacyFact(service(store), tenant);
+            }
+            try (var store = new JdbcFulfillmentStore(dataSource, MAPPER)) {
+                var service = service(store);
+                assertThat(service.availability(context(tenant, null, null), null, null)).containsExactly(fact);
+                assertThat(service.availability(context(tenant, null, null), "WH-TEST", java.util.List.of("FG-0"))).containsExactly(fact);
+                assertThat(service.availability(context("other", null, null), null, null)).doesNotContain(fact);
+                assertThat(store.transactions(tenant)).hasSize(1);
+            }
+        }
+    }
+
+    @Test
+    void legacyComponentMigrationUsesPersistedAmountsAndIsRepeatable() throws Exception {
+        String tenant = "legacy-stock-components-" + UUID.randomUUID();
+        String migration = new org.springframework.core.io.ClassPathResource(
+                "db/migrations/028_inventory_fact_components.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        try (var connection = DriverManager.getConnection(System.getenv("JAVA_JDBC_MIGRATION_URL"))) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.prepareStatement(
+                    "INSERT INTO module_document(module,tenant_id,kind,doc_id,data) VALUES('fulfillment',?,'availability',?,?::jsonb)")) {
+                statement.setString(1, tenant);
+                statement.setString(2, tenant + ":WH-TEST:FG-0");
+                statement.setString(3, MAPPER.createObjectNode().put("tenantId", tenant).put("warehouseId", "WH-TEST")
+                        .put("productId", "FG-0").put("onHandQty", "99").put("qualifiedOnHandQty", "8.3")
+                        .put("reservedQty", "1.1").put("safetyStockQty", "3.2").put("fulfillableQty", "98")
+                        .put("uom", "PCS").put("factVersion", 4).toString());
+                statement.executeUpdate();
+            }
+            try (var statement = connection.createStatement()) {
+                statement.execute(migration);
+                statement.execute(migration);
+            }
+            connection.commit();
+        }
+        try (var dataSource = dataSource(); var store = new JdbcFulfillmentStore(dataSource, MAPPER)) {
+            JsonNode fact = service(store).availability(context(tenant, null, null), null, null).get(0);
+            assertThat(fact.path("qualifiedOnHandQty").asText()).isEqualTo("8.3");
+            assertThat(fact.path("allocatedReservedQty").asText()).isEqualTo("1.1");
+            assertThat(fact.path("fulfillableQty").asText()).isEqualTo("4.0");
+            assertThat(fact.path("factVersion").asInt()).isEqualTo(5);
+            assertThat(fact.has("onHandQty")).isFalse();
+        }
+    }
+
+    @Test
     void realDatabasePreservesRequestPostingReplayAndSalesAfterReload() {
         String tenant = "shipment-jdbc-" + UUID.randomUUID();
         String orderId;

@@ -48,6 +48,15 @@ try {
       const marker = `SHIP-${size}-${Date.now()}`;
       const warehouse = (await api('/api/v1/inventory/warehouses', { code: marker, name: marker, type: 'standard' })).warehouse;
       const productIds = [`FG-${marker}-A`, `FG-${marker}-B`];
+      const missingProduct = `FG-${marker}-MISSING`;
+      await page.evaluate(({ tenantId, warehouseCode, missingProduct }) => {
+        const storageKey = `industrial-ai-inventory-master-data:v1:${tenantId}`;
+        const data = JSON.parse(localStorage.getItem(storageKey) || '{"schemaVersion":1,"warehouses":[],"products":[],"materials":[]}');
+        data.products.push({ id: missingProduct, name: missingProduct, specification: 'Test', category: '成品',
+          unit: 'PCS', unitPrice: 0, defaultWarehouseId: warehouseCode, safetyStock: 0,
+          traceMode: '不追溯', status: '启用', updatedAt: new Date().toISOString() });
+        localStorage.setItem(storageKey, JSON.stringify(data));
+      }, { tenantId, warehouseCode: warehouse.code, missingProduct });
       for (const product of productIds) {
         await api('/api/v1/inventory/products', { code: product, name: product, uom: 'PCS', unitPrice: '10' });
       }
@@ -64,13 +73,80 @@ try {
       });
       await api(`/api/v1/sales/sales-orders/${order.id}/review-decisions`, { decision: 'APPROVE' }, order.version);
       const stock = async (productId, qualified, allocated, factVersion) => api('/api/v1/inventory/internal/availability-events', {
-        eventId: randomUUID(), warehouseId: warehouse.id, productId,
+        eventId: randomUUID(), warehouseId: warehouse.code, productId,
         qualifiedOnHandQty: String(qualified), allocatedReservedQty: String(allocated), frozenQty: '0',
         safetyStockQty: '0', inTransitQty: '0', fulfillableQty: String(qualified - allocated), uom: 'PCS',
         formulaVersion: 'FULFILLABLE-V1', factVersion, sourceSystem: 'E2E_FIXTURE', asOf: new Date().toISOString(),
       });
       await stock(productIds[0], 3, 0, 1);
       await stock(productIds[1], 3, 0, 1);
+      const checkWarehouseStock = async (expected, label) => {
+        const factsByCode = await api(`/api/v1/inventory/availability?warehouseId=${warehouse.code}`);
+        const factsById = await api(`/api/v1/inventory/availability?warehouseId=${warehouse.id}`);
+        assert.deepEqual(factsByCode, factsById, 'Warehouse code and ID must resolve to the same facts');
+        if (label !== 'before') {
+          await page.getByRole('button', { name: '仓库', exact: true }).click();
+          await page.locator('tbody tr').filter({ hasText: warehouse.name }).getByTitle('查看仓库库存').click();
+          const cells = page.locator('tbody tr').filter({ hasText: productIds[0] }).locator('td');
+          assert.equal((await cells.nth(4).innerText()).trim(), `${expected[0][0]} PCS`,
+            'Posting must refresh the still-mounted inventory module before any page reload');
+          assert.equal((await cells.nth(5).innerText()).trim(), String(expected[0][1]));
+        }
+        for (const id of [warehouse.code, warehouse.id]) {
+          await page.goto(`${base}/?module=inventory&inventory=warehouses&warehouseId=${id}`);
+          await page.getByRole('heading', { name: warehouse.name, exact: true }).waitFor();
+          for (let index = 0; index < productIds.length; index++) {
+            const cells = page.locator('tbody tr').filter({ hasText: productIds[index] }).locator('td');
+            await cells.nth(4).waitFor();
+            assert.equal((await cells.nth(4).innerText()).trim(), `${expected[index][0]} PCS`);
+            assert.equal((await cells.nth(5).innerText()).trim(), String(expected[index][1]));
+            assert.equal((await cells.nth(6).innerText()).trim(), String(expected[index][2]));
+          }
+          const missingCells = page.locator('tbody tr').filter({ hasText: missingProduct }).locator('td');
+          assert.equal((await missingCells.nth(6).innerText()).trim(), '-');
+          assert.match(await missingCells.nth(8).innerText(), /未查询到库存记录/);
+        }
+        await page.screenshot({ path: `${artifacts}/warehouse-stock-${label}-${size}.png`, fullPage: true });
+        await page.goto(`${base}/?module=inventory&inventory=stock`);
+        await page.getByRole('heading', { name: '库存查询', exact: true }).waitFor();
+        await page.getByPlaceholder('搜索编码、名称、规格或库位').fill(marker);
+        for (let index = 0; index < productIds.length; index++) {
+          const cells = page.locator('tbody tr').filter({ hasText: productIds[index] }).filter({ hasText: warehouse.name }).locator('td');
+          assert.equal((await cells.nth(4).innerText()).trim(), `${expected[index][0]} PCS`);
+          assert.equal((await cells.nth(5).innerText()).trim(), String(expected[index][1]));
+          assert.equal((await cells.nth(6).innerText()).trim(), String(expected[index][2]));
+          assert.equal(await cells.nth(9).getByTitle('编辑库存').count(), 0);
+        }
+        await page.screenshot({ path: `${artifacts}/stock-query-${label}-${size}.png`, fullPage: true });
+        return factsById;
+      };
+      await checkWarehouseStock([[3, 0, 3], [3, 0, 3]], 'before');
+
+      let unblockStock;
+      const pendingStock = new Promise(resolve => { unblockStock = resolve; });
+      await page.route('**/api/v1/inventory/availability', async route => {
+        await pendingStock;
+        await route.continue();
+      });
+      await page.goto(`${base}/?module=inventory&inventory=warehouses&warehouseId=${warehouse.code}`);
+      await page.getByRole('status').filter({ hasText: '正在加载仓库库存' }).waitFor();
+      assert.equal(await page.locator('tbody tr').filter({ hasText: productIds[0] }).count(), 0);
+      unblockStock();
+      await page.getByRole('heading', { name: warehouse.name, exact: true }).waitFor();
+      await page.unroute('**/api/v1/inventory/availability');
+      let failStock = true;
+      await page.route('**/api/v1/inventory/availability', async route => {
+        if (failStock) await route.fulfill({ status: 503, contentType: 'application/json',
+          body: JSON.stringify({ error: { message: '库存暂时不可用，请重试' } }) });
+        else await route.continue();
+      });
+      await page.reload();
+      await page.getByRole('alert').filter({ hasText: '库存暂时不可用' }).waitFor();
+      assert.equal(await page.locator('tbody tr').filter({ hasText: productIds[0] }).count(), 0);
+      failStock = false;
+      await page.getByRole('button', { name: '重新加载', exact: true }).click();
+      await page.getByRole('heading', { name: warehouse.name, exact: true }).waitFor();
+      await page.unroute('**/api/v1/inventory/availability');
       const salesUrl = `${base}/?module=sales&tab=orders&focusOrder=${order.orderNo}`;
       await page.goto(salesUrl);
       const salesRow = () => page.locator('tbody tr').filter({ hasText: order.orderNo });
@@ -112,7 +188,8 @@ try {
       assert.deepEqual(firstPost.order.lines.map(line => line.shippedQty), ['2', '3']);
       assert.deepEqual(firstPost.order.lines.map(line => line.remainingQty), ['3', '0']);
       await shipmentDialog().waitFor({ state: 'hidden' });
-      await page.getByRole('button', { name: '返回销售订单', exact: true }).click();
+      await checkWarehouseStock([[1, 1, 0], [0, 0, 0]], 'partial');
+      await page.goto(salesUrl);
       await salesRow().getByTitle('查看', { exact: true }).waitFor();
       await salesRow().getByText('部分发货', { exact: true }).first().waitFor();
       assert.match(await salesRow().innerText(), /部分发货/);
@@ -142,7 +219,8 @@ try {
       assert.deepEqual(secondPost.order.lines.map(line => line.activeRequestedQty), ['0', '0']);
       assert.deepEqual(secondPost.order.lines.map(line => line.reservedQty), ['0', '0']);
       await shipmentDialog().waitFor({ state: 'hidden' });
-      await page.getByRole('button', { name: '返回销售订单', exact: true }).click();
+      const finalStock = await checkWarehouseStock([[0, 0, 0], [0, 0, 0]], 'shipped');
+      await page.goto(salesUrl);
       await salesRow().getByTitle('查看', { exact: true }).waitFor();
       await salesRow().getByText('已发货', { exact: true }).first().waitFor();
       assert.match(await salesRow().innerText(), /已发货/);
@@ -167,7 +245,9 @@ try {
       assert.deepEqual(pageErrors, []);
       evidence.push({ viewport, orderId: order.id, orderNo: order.orderNo, taskId: tasks.items[0].id,
         outboundId: secondPost.outbound.id, status: secondPost.order.overallStatus,
-        shipped: secondPost.order.lines.map(line => line.shippedQty), transactionCount: transactions.total, pageErrors });
+        shipped: secondPost.order.lines.map(line => line.shippedQty), transactionCount: transactions.total,
+        stockBefore: [[3, 0, 3], [3, 0, 3]], stockPartial: [[1, 1, 0], [0, 0, 0]], finalStock,
+        warehouseCode: warehouse.code, warehouseId: warehouse.id, loadingAndRetryVerified: true, pageErrors });
       console.log(`${size}: ${order.orderNo} -> one warehouse task -> partial 2+3 -> total 5+3 -> SHIPPED; 3 stock transactions`);
     } catch (error) {
       await page.screenshot({ path: `${artifacts}/failure-${size}.png`, fullPage: true });

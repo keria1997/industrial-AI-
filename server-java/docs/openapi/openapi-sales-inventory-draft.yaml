@@ -234,14 +234,18 @@ paths:
   /inventory/availability:
     get:
       tags: [InventoryAvailability]
-      summary: 查询销售可履约库存组成
+      summary: 查询仓库库存及销售可履约库存组成
+      description: |
+        不传筛选时返回当前授权租户的库存事实；可按仓库和产品筛选。
+        warehouseId 接受同租户仓库主数据 ID 或编码，响应统一返回主数据 ID。
+        缺少库存事实的产品不返回记录，不能等同于产品不存在或用页面预置数量补齐。
+        编码与 ID 下同时存在同一产品事实时返回 409，禁止自动相加或任意选择。
       operationId: getInventoryAvailability
       x-permission: inventory.availability.read
       parameters:
         - { $ref: '#/components/parameters/TraceId' }
-        - { name: warehouseId, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 100 } }
-        - { name: productIds, in: query, required: true, schema: { type: array, minItems: 1, maxItems: 100, items: { type: string, maxLength: 100 } }, style: form, explode: false }
-        - { name: asOf, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: warehouseId, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: productIds, in: query, required: false, schema: { type: array, minItems: 1, maxItems: 100, items: { type: string, minLength: 1, maxLength: 100 } }, style: form, explode: false }
       responses:
         '200': { description: 可履约量组成, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/InventoryAvailability' } } } } }
         default: { $ref: '#/components/responses/Error' }

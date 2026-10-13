@@ -238,6 +238,7 @@ export type AvailabilityFactDto = {
   warehouseId: string; productId: string; qualifiedOnHandQty: string;
   allocatedReservedQty: string; frozenQty: string; safetyStockQty: string; inTransitQty: string;
   fulfillableQty: string; uom: string; factVersion: number;
+  asOf?: string;
 };
 
 export const inventoryApi = {
@@ -250,6 +251,8 @@ export const inventoryApi = {
 
   getAvailability: (context: ApiContext, warehouseId: string, productIds: string[]) =>
     apiRequest<AvailabilityFactDto[]>(`/api/v1/inventory/availability?warehouseId=${encodeURIComponent(warehouseId)}&productIds=${productIds.map(encodeURIComponent).join(',')}`, context),
+  listAvailability: (context: ApiContext) =>
+    apiRequest<AvailabilityFactDto[]>('/api/v1/inventory/availability', context),
 
   // Product
   listProducts: (context: ApiContext) => apiRequest<{ items: ProductDto[]; total: number }>('/api/v1/inventory/products', context),

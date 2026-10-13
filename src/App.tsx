@@ -65,6 +65,8 @@ import {
 } from './features/inventory/model/salesOutboundBridge';
 import { InventoryMasterDataPanel } from './features/inventory/pages/InventoryMasterDataPanel';
 import { InventoryStockQueryPanel } from './features/inventory/pages/InventoryStockQueryPanel';
+import { useFormalInventory } from './features/inventory/model/useFormalInventory';
+import { resolveWarehouse } from './features/inventory/model/formalInventory';
 import { loadInventoryMasterData } from './features/inventory/model/inventoryMasterData';
 import { mapInventoryMasterToQuoteOptions } from './features/sales/model/salesInventoryOptions';
 import { classifyOutboundShipment } from './features/inventory/model/outboundShipmentAction';
@@ -3858,7 +3860,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                       unitPrice: Number(order.unitPrice || 0),
                     }];
               const warehouseId = order.warehouseId || order.warehouse || order.lines?.[0]?.warehouseId || '';
-              const fulfillmentWarehouse = salesWarehouseList.find((warehouse) => warehouse.id === warehouseId || warehouse.name === warehouseId)
+              const fulfillmentWarehouse = salesWarehouseList.find((warehouse) => warehouse.id === warehouseId || warehouse.code === warehouseId || warehouse.name === warehouseId)
                   || salesWarehouseList[0];
               if (!fulfillmentWarehouse) throw new Error('请先在库存管理创建并启用发货仓库');
               const customer = customers.find((item) => item.name === order.client) || customers[0];
@@ -7624,10 +7626,14 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   const [outboundSourceSearch, setOutboundSourceSearch] = useState('');
   const outboundSourceSearchRef = useRef<HTMLInputElement>(null);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(() => resolveInventoryWarehouseId(window.location.search));
-  const [stockData, setStockData] = useState(inv_stockData);
+  const [, setStockData] = useState(inv_stockData);
   const [inboundData, setInboundData] = useState(inv_inboundData);
-  const [warehouseList, setWarehouseList] = useState([]);
-  const [warehouseLoadError, setWarehouseLoadError] = useState('');
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const formalInventory = useFormalInventory(formalContext);
+  const stockData = formalInventory.stockData;
+  const warehouseList = formalInventory.warehouses.filter(warehouse => warehouse.status === 'active');
+  const warehouseLoadError = formalInventory.error;
+  const loadOutboundWarehouses = formalInventory.refresh;
 
   // 出库管理的可用量统一取库存管理-产品中的"实际可用"(availQty)
   const resolveOutboundAvailQty = (row) => {
@@ -7722,24 +7728,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const keyword = outboundSourceSearch.trim().toLowerCase();
     return outboundData.filter(row => !keyword || String(row.source || '').toLowerCase().includes(keyword));
   }, [outboundData, outboundSourceSearch]);
-  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
-
-  const loadOutboundWarehouses = useCallback(async () => {
-    if (!formalContext) return;
-    setWarehouseLoadError('');
-    try {
-      const response = await inventoryApi.listWarehouses(formalContext);
-      setWarehouseList((response.items || []).filter(w => w.status === 'active'));
-    } catch (error) {
-      setWarehouseLoadError(error instanceof Error ? error.message : '仓库列表加载失败，请稍后重试');
-    }
-  }, [formalContext?.tenantId, formalContext?.accessToken]);
-
-  useEffect(() => {
-    void loadOutboundWarehouses();
-  }, [loadOutboundWarehouses]);
-
-  const warehouseName = (id) => warehouseList.find(w => w.id === id)?.name || id;
+  const warehouseName = (id) => resolveWarehouse(formalInventory.warehouses, id)?.name || id;
 
   const getOutboundSourceLines = (row) => {
     if (row?.formalTask?.lines?.length) return row.formalTask.lines;
@@ -7763,7 +7752,10 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 
   const buildOutboundLineStock = (row, facts = []) => {
     const task = row.formalTask || (row.shipmentRequestId ? row : undefined);
-    if (task) return formalShipmentStock(task, facts);
+    if (task) return formalShipmentStock({
+      ...task,
+      warehouseId: resolveWarehouse(formalInventory.warehouses, task.warehouseId)?.id || task.warehouseId,
+    }, facts);
     const factMap = new Map((facts || []).map(fact => [fact.productId, fact]));
     return getOutboundSourceLines(row).map(line => {
       const productId = line.productId;
@@ -7898,6 +7890,12 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   const [actionReview, setActionReview] = useState(null);
   const [isActionSubmitting, setIsActionSubmitting] = useState(false);
   const [outboundStockState, setOutboundStockState] = useState<OutboundStockState>({ status: 'idle' });
+  const outboundStockRevision = useRef(0);
+  useEffect(() => {
+    ++outboundStockRevision.current;
+    setOutboundStockState({ status: 'idle' });
+    return () => { ++outboundStockRevision.current; };
+  }, [formalContext?.tenantId, formalContext?.accessToken, actionReview?.record?.id]);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
   const showToast = (msg, type = 'success') => {
@@ -7906,23 +7904,35 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   };
 
   const loadOutboundStock = async (row, warehouseId) => {
+    const request = ++outboundStockRevision.current;
     if (!warehouseId) {
       setOutboundStockState({ status: 'idle' });
       return [];
     }
     if (!formalContext) throw new Error('请先登录正式会话后再读取仓库库存');
+    warehouseId = resolveWarehouse(formalInventory.warehouses, warehouseId)?.id || warehouseId;
     setOutboundStockState({ status: 'loading', warehouseId });
     setActionReview(prev => prev ? { ...prev, lineStockInfo: [] } : prev);
     const productIds = [...new Set(getOutboundSourceLines(row).map(line => line.productId).filter(Boolean))]
       .filter((productId): productId is string => Boolean(productId));
-    const facts = await inventoryApi.getAvailability(formalContext, warehouseId, productIds);
+    let facts;
+    try {
+      facts = await inventoryApi.getAvailability(formalContext, warehouseId, productIds);
+    } catch (error) {
+      if (request !== outboundStockRevision.current) return [];
+      const message = error instanceof Error ? error.message : '仓库库存加载失败，请重试';
+      setOutboundStockState({ status: 'error', warehouseId, error: message });
+      showToast(message, 'error');
+      return [];
+    }
+    if (request !== outboundStockRevision.current) return [];
     const lineStockInfo = buildOutboundLineStock(row, facts);
     const missingProductIds = [...new Set(lineStockInfo
       .filter(item => item.factVersion == null || item.warehouseId == null)
       .map(item => item.productId)
       .filter(Boolean))];
     if (lineStockInfo.length > 0 && missingProductIds.length === lineStockInfo.length) {
-      const message = `${warehouseName(warehouseId)}没有该产品：${missingProductIds.join('、')}`;
+      const message = `${warehouseName(warehouseId)}未查询到库存记录：${missingProductIds.join('、')}`;
       setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
       setOutboundStockState({
         status: 'missing-product',
@@ -7934,7 +7944,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       return lineStockInfo;
     }
     if (missingProductIds.length > 0) {
-      showToast(`${warehouseName(warehouseId)}缺少产品：${missingProductIds.join('、')}，仅可部分发货或申请生产`, 'warning');
+      showToast(`${warehouseName(warehouseId)}未查询到库存记录：${missingProductIds.join('、')}，仅可部分发货或申请生产`, 'warning');
     }
     setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
     setOutboundStockState({
@@ -8806,7 +8816,10 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             showToast('仓库库存尚未加载完成，请重新选择发货仓库', 'warning');
             return;
           }
-          let task = row.formalTask;
+          let task = {
+            ...row.formalTask,
+            warehouseId: resolveWarehouse(formalInventory.warehouses, row.formalTask.warehouseId)?.id || row.formalTask.warehouseId,
+          };
           if (['RESERVED', 'PARTIALLY_RESERVED'].includes(task.availabilityStatus) && task.warehouseId !== selectedWarehouseId) {
             throw new Error('当前任务已有库存预留，不能直接切换发货仓库');
           }
@@ -9133,6 +9146,10 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
               <InventoryStockQueryPanel
                 tenantId={currentTenant?.id}
                 stockData={stockData}
+                formalMasterData={formalInventory.masterData}
+                stockStatus={formalInventory.status}
+                stockError={formalInventory.error}
+                onRefreshStock={formalInventory.refresh}
                 onQuickInventory={handleQuickInventory}
                 onView={(row) => setRecordModal({ type: 'stock', mode: 'view', record: row })}
                 onEdit={(row) => setRecordModal({ type: 'stock', mode: 'edit', record: row })}
@@ -9294,6 +9311,10 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                 activeTab={activeTab}
                 tenantId={currentTenant?.id}
                 stockData={stockData}
+                formalMasterData={formalInventory.masterData}
+                stockStatus={formalInventory.status}
+                stockError={formalInventory.error}
+                onRefreshStock={formalInventory.refresh}
                 selectedWarehouseId={selectedWarehouseId}
                 onSelectWarehouse={selectInventoryWarehouse}
                 onToast={showToast}
