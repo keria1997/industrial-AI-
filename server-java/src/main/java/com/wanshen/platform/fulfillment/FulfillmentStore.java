@@ -201,8 +201,12 @@ public class FulfillmentStore {
         String mapKey = key(tenantId, canonicalId, productId);
         JsonNode current = availability(tenantId, canonicalId, productId).orElse(null);
         if (current != null && current.path("factVersion").asInt() >= value.path("factVersion").asInt()) return "STALE";
+        if (current != null && !InventoryUnits.compatible(text(current, "uom"), text(value, "uom"))) {
+            throw new ApiException(422, "FULFILLMENT_422_QUANTITY_VIOLATION",
+                    "库存事实单位不允许直接变更", "核对产品单位并完成库存单位换算后重试");
+        }
         ObjectNode normalized = value.deepCopy();
-        normalized.put("warehouseId", canonicalId);
+        normalized.put("warehouseId", canonicalId).put("uom", InventoryUnits.canonical(text(value, "uom")));
         // Move a legacy code-keyed fact in the same transaction as its next stock update.
         List<String> oldKeys = warehouseAliases(tenantId, canonicalId).stream()
                 .map(alias -> key(tenantId, alias, productId)).filter(oldKey -> !oldKey.equals(mapKey)).toList();

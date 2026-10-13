@@ -98,8 +98,48 @@ try {
         if (outboundLine) assert.equal(Number(line.postedQty), Number(outboundLine.postedQty));
       }
     }
+    let shipmentUnitCheck;
+    if (process.env.RELEASE_VERIFY_SALES_ORDER) {
+      const task = tasks.items.find(item => item.salesOrderNo === process.env.RELEASE_VERIFY_SALES_ORDER);
+      assert.ok(task, 'Affected shipment task exists');
+      const orderPath = `/api/v1/sales/sales-orders/${task.salesOrderId}`;
+      const taskPath = `/api/v1/inventory/shipment-tasks/${task.id}`;
+      const beforeOrder = await api(orderPath);
+      const beforeTask = await api(taskPath);
+      const beforeFacts = await api(`/api/v1/inventory/availability?warehouseId=${task.warehouseId}`);
+      const writes = [];
+      await page.route('**/api/v1/**', route => {
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) {
+          writes.push({ method: route.request().method(), path: new URL(route.request().url()).pathname });
+          return route.abort();
+        }
+        return route.continue();
+      });
+      await page.goto(`${base}/?module=inventory&inventory=outbound&sourceOrder=${encodeURIComponent(task.salesOrderNo)}`);
+      await page.getByRole('searchbox').fill(task.salesOrderNo);
+      const row = page.locator('tbody tr').filter({ hasText: task.salesOrderNo });
+      await row.getByRole('button', { name: '去发货', exact: true }).click();
+      const modal = page.locator('div.fixed.inset-0').filter({
+        has: page.getByRole('heading', { name: '确认销售发货', exact: true }),
+      });
+      await modal.locator('select').selectOption(task.warehouseId);
+      const quantity = modal.getByRole('spinbutton', { name: `${task.lines[0].productId} 本次发货数量` });
+      await quantity.waitFor();
+      assert.equal(await quantity.inputValue(), task.lines[0].requestedQty);
+      assert.equal(await modal.getByRole('button', { name: '确认发货', exact: true }).isEnabled(), true);
+      assert.equal(await modal.getByText('订单行与库存单位不一致', { exact: false }).count(), 0);
+      await page.screenshot({ path: resolve(output, `shipment-unit-${viewport.width}.png`), fullPage: true });
+      assert.deepEqual(await api(orderPath), beforeOrder, 'Order remains unchanged');
+      assert.deepEqual(await api(taskPath), beforeTask, 'Task remains unchanged');
+      assert.deepEqual(await api(`/api/v1/inventory/availability?warehouseId=${task.warehouseId}`),
+        beforeFacts, 'Inventory remains unchanged');
+      assert.deepEqual(writes, [], 'No business writes during unit verification');
+      shipmentUnitCheck = { orderNo: task.salesOrderNo, taskId: task.id,
+        orderUnits: task.lines.map(line => line.uom), facts: beforeFacts,
+        confirmEnabled: true, businessWrites: writes.length };
+    }
     assert.deepEqual(errors, []);
-    evidence.viewports.push({ viewport, tenantId, checked, taskCount: tasks.total, pageErrors: errors });
+    evidence.viewports.push({ viewport, tenantId, checked, taskCount: tasks.total, pageErrors: errors, shipmentUnitCheck });
     await page.close();
   }
   await writeFile(resolve(output, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n');

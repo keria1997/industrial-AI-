@@ -621,7 +621,7 @@ public class FulfillmentService {
             String warehouseId = repository.warehouseId(context.tenantId(), text(input, "warehouseId"));
             String productId = text(input, "productId");
             JsonNode current = repository.availability(context.tenantId(), warehouseId, productId).orElse(null);
-            if (current != null && !text(current, "uom").equals(text(input, "uom"))) {
+            if (current != null && !InventoryUnits.compatible(text(current, "uom"), text(input, "uom"))) {
                 throw new ApiException(424, "FULFILLMENT_424_DEPENDENCY_FAILED",
                         "完工入库单位与库存事实不一致", "修正生产完工单位或库存物料单位后重试", null,
                         Map.of("inventoryUom", text(current, "uom"), "completionUom", text(input, "uom")));
@@ -630,7 +630,7 @@ public class FulfillmentService {
                     .put("tenantId", context.tenantId()).put("transactionNo", transactionNo())
                     .put("externalTransactionId", text(input, "externalTransactionId"))
                     .put("type", "FG_COMPLETION_INBOUND").put("warehouseId", warehouseId)
-                    .put("productId", productId).put("qty", text(input, "qty")).put("uom", text(input, "uom"))
+                    .put("productId", productId).put("qty", text(input, "qty")).put("uom", InventoryUnits.canonical(text(input, "uom")))
                     .put("sourceType", "ProductionCompletion").put("sourceId", text(input, "completionId"))
                     .put("correlationId", correlationId).put("traceId", context.traceId())
                     .put("occurredAt", occurredAt);
@@ -652,7 +652,7 @@ public class FulfillmentService {
                         .put("frozenQty", frozen)
                         .put("safetyStockQty", safetyStock)
                         .put("inTransitQty", current == null ? "0" : text(current, "inTransitQty"))
-                        .put("uom", text(input, "uom")).put("formulaVersion", "FULFILLABLE-V1")
+                        .put("uom", InventoryUnits.canonical(text(input, "uom"))).put("formulaVersion", "FULFILLABLE-V1")
                         .put("factVersion", factVersion).put("sourceSystem", "REFERENCE_WMS")
                         .put("sourceEventId", eventId).put("asOf", occurredAt);
                 repository.saveAvailability(fact);
@@ -1166,7 +1166,7 @@ public class FulfillmentService {
                 JsonNode current = repository.availability(context.tenantId(), text(value, "warehouseId"),
                         entry.getKey()).orElse(null);
                 if (current == null || streamNodes(value.withArray("lines")).filter(line -> entry.getKey().equals(text(line, "productId")))
-                        .anyMatch(line -> !text(current, "uom").equals(text(line, "uom")))) {
+                        .anyMatch(line -> !InventoryUnits.compatible(text(current, "uom"), text(line, "uom")))) {
                     throw conflict("库存事实缺失或单位不一致", "刷新库存事实并检查产品单位");
                 }
                 String qualified = subtract(text(current, "qualifiedOnHandQty"), entry.getValue());
@@ -1681,7 +1681,7 @@ public class FulfillmentService {
             if (!inspection) {
                 JsonNode current = repository.availability(context.tenantId(), text(order, "warehouseId"),
                         text(order, "materialId")).orElse(null);
-                if (current != null && !text(current, "uom").equals(text(order, "uom"))) {
+                if (current != null && !InventoryUnits.compatible(text(current, "uom"), text(order, "uom"))) {
                     throw new ApiException(424, "FULFILLMENT_424_DEPENDENCY_FAILED",
                             "采购入库单位与物料库存单位不一致", "修正采购订单单位后重试");
                 }
@@ -2223,9 +2223,11 @@ public class FulfillmentService {
         }
         for (JsonNode line : lines) {
             JsonNode fact = facts.get(text(line, "productId"));
-            if (fact != null && !text(fact, "uom").equals(text(line, "uom"))) {
+            if (fact != null && !InventoryUnits.compatible(text(fact, "uom"), text(line, "uom"))) {
                 throw new ApiException(422, "FULFILLMENT_422_QUANTITY_VIOLATION",
-                        "订单行与库存单位不一致", "核对产品单位后重新申请");
+                        "订单行与库存单位不一致", "核对产品单位或配置换算后重新申请", null,
+                        Map.of("productId", text(line, "productId"), "orderUom", text(line, "uom"),
+                                "inventoryUom", text(fact, "uom")));
             }
         }
         Map<String, String> available = new LinkedHashMap<>();
@@ -2364,7 +2366,7 @@ public class FulfillmentService {
                 .put("tenantId", context.tenantId()).put("transactionNo", transactionNo())
                 .put("externalTransactionId", externalId).put("type", type)
                 .put("warehouseId", warehouseId).put("productId", productId).put("qty", qty)
-                .put("uom", uom).put("sourceType", sourceType).put("sourceId", sourceId)
+                .put("uom", InventoryUnits.canonical(uom)).put("sourceType", sourceType).put("sourceId", sourceId)
                 .put("correlationId", UUID.randomUUID().toString()).put("traceId", context.traceId())
                 .put("occurredAt", occurredAt);
         if (sourceLineId != null && !sourceLineId.isBlank()) value.put("sourceLineId", sourceLineId);
@@ -2382,7 +2384,7 @@ public class FulfillmentService {
                 .put("tenantId", context.tenantId()).put("transactionNo", transactionNo())
                 .put("externalTransactionId", externalTransactionId).put("type", type)
                 .put("warehouseId", warehouseId).put("productId", productId).put("qty", qty)
-                .put("uom", uom).put("sourceType", sourceType).put("sourceId", sourceId)
+                .put("uom", InventoryUnits.canonical(uom)).put("sourceType", sourceType).put("sourceId", sourceId)
                 .put("factVersion", Integer.parseInt(factVersion)).put("correlationId", correlationId)
                 .put("traceId", context.traceId()).put("occurredAt", occurredAt);
         return value;

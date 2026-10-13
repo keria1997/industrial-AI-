@@ -73,7 +73,7 @@ describe('formal outbound workflow', () => {
         { id: 'b', orderLineId: 'b', productId: 'FG-1', requestedQty: '2', postedQty: '0', reservedQty: '0', uom: 'PCS' },
       ],
     } as FulfillmentShipmentTask;
-    const facts = [{ productId: 'FG-1', warehouseId: 'WH-1', fulfillableQty: '2', factVersion: 4 }] as AvailabilityFactDto[];
+    const facts = [{ productId: 'FG-1', warehouseId: 'WH-1', fulfillableQty: '2', uom: 'PCS', factVersion: 4 }] as AvailabilityFactDto[];
     const lines = formalShipmentStock(stockTask, facts);
     expect(lines.map(line => line.availQty)).toEqual([3, 0]);
     expect(lines.map(line => line.shortage)).toEqual([0, 2]);

@@ -59,7 +59,8 @@ class SalesShipmentWorkflowTests {
             if (line.path("remainingQty").asText().equals("0")) continue;
             lines.addObject().put("orderLineId", line.path("id").asText())
                     .put("sourceLineRevision", line.path("version").asInt())
-                    .put("requestedQty", qty == null ? line.path("remainingQty").asText() : qty).put("uom", "PCS");
+                    .put("requestedQty", qty == null ? line.path("remainingQty").asText() : qty)
+                    .put("uom", line.path("uom").asText());
         }
         JsonNode result = service.createShipmentRequest(context(tenant, order, "request-" + order.path("id").asText()
                         + "-" + order.path("version").asInt()), order.path("id").asText(), input).body();
@@ -94,7 +95,8 @@ class SalesShipmentWorkflowTests {
         var lines = input.putArray("lines");
         for (JsonNode line : outbound.path("lines")) {
             String qty = quantities.get(line.path("productId").asText());
-            if (qty != null) lines.addObject().put("outboundLineId", line.path("id").asText()).put("qty", qty).put("uom", "PCS");
+            if (qty != null) lines.addObject().put("outboundLineId", line.path("id").asText())
+                    .put("qty", qty).put("uom", line.path("uom").asText());
         }
         return input;
     }

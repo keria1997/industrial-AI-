@@ -77,6 +77,7 @@ import { classifyOutboundShipment } from './features/inventory/model/outboundShi
 import { mapFormalShipmentStatus } from './features/inventory/model/formalShipmentStatus';
 import { postFormalOutbound, prepareFormalOutbound } from './features/inventory/model/formalOutboundWorkflow';
 import { formalShipmentStock } from './features/inventory/model/formalShipmentStock';
+import { canonicalInventoryUnit } from './shared/inventoryUnits';
 import { restoreShippedSalesOutbounds, syncShippedSalesOutbounds } from './features/inventory/model/shippedSalesOutboundSync';
 import { compareQuantity, subtractQuantity } from './shared/decimal';
 import {
@@ -3727,7 +3728,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                       lineNo: index + 1,
                       productId: line.productId,
                       orderedQty: String(line.qty),
-                      uom: 'PCS',
+                      uom: canonicalInventoryUnit(line.unit),
                       unitPrice: String(line.unitPrice || 0),
                       taxRate: '0',
                       promisedDate: order.deliveryDate,
@@ -7585,12 +7586,12 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     }];
   };
 
-  const buildOutboundLineStock = (row, facts = []) => {
+  const buildOutboundLineStock = (row, facts = [], selectedWarehouseId?) => {
     const task = row.formalTask || (row.shipmentRequestId ? row : undefined);
     if (task) return formalShipmentStock({
       ...task,
       warehouseId: resolveWarehouse(formalInventory.warehouses, task.warehouseId)?.id || task.warehouseId,
-    }, facts);
+    }, facts, selectedWarehouseId);
     const factMap = new Map((facts || []).map(fact => [fact.productId, fact]));
     return getOutboundSourceLines(row).map(line => {
       const productId = line.productId;
@@ -7761,7 +7762,16 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       return [];
     }
     if (request !== outboundStockRevision.current) return [];
-    const lineStockInfo = buildOutboundLineStock(row, facts);
+    const lineStockInfo = buildOutboundLineStock(row, facts, warehouseId);
+    const incompatibleLines = lineStockInfo.filter(item => item.unitMismatch);
+    if (incompatibleLines.length > 0) {
+      const message = incompatibleLines.map(item =>
+        `${item.productId}：订单单位 ${item.uom}，库存单位 ${item.inventoryUom}，请核对单位换算`,
+      ).join('；');
+      setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
+      setOutboundStockState({ status: 'error', warehouseId, error: message });
+      return lineStockInfo;
+    }
     const missingProductIds = [...new Set(lineStockInfo
       .filter(item => item.factVersion == null || item.warehouseId == null)
       .map(item => item.productId)

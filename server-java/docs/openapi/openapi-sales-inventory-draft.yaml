@@ -308,6 +308,11 @@ paths:
     post:
       tags: [InventoryShipmentTask, InventoryReservation]
       summary: 原子重读权威库存并预留、创建或恢复出库单
+      description: |
+        PCS、件、台、个表示同产品的单件数量，按 1:1 计数兼容；来源订单/任务保留原单位。
+        库存事实和新流水统一记录 PCS，数量不变。套、箱、重量等单位不做隐式换算，
+        不兼容返回 422 FULFILLMENT_422_QUANTITY_VIOLATION，附产品、订单及库存单位。
+        实际出库扣减和完工入库使用相同规则，禁止事件直接改变库存计量单位。
       operationId: checkAndReserveShipmentTask
       x-permission: inventory.reservation.create
       parameters:

@@ -30,7 +30,7 @@ describe('formal inventory authority', () => {
     expect(ledger.find(row => row.id === 'FG003' && row.hasStockFact)).toMatchObject({ availQty: 105, safetyStock: 10 });
     const task = { warehouseId: warehouse.id, lines: [{
       id: 'line', orderLineId: 'order-line', productId: 'FG003',
-      requestedQty: '110', postedQty: '0', reservedQty: '0',
+      requestedQty: '110', postedQty: '0', reservedQty: '0', uom: '台',
     }] } as FulfillmentShipmentTask;
     expect(formalShipmentStock(task, [fact])[0]).toMatchObject({ availQty: 105, shortage: 5, factVersion: 7 });
     expect(getWarehouseInventoryRows(masterData.warehouses[1], masterData, stockData)).toEqual([]);
@@ -60,5 +60,19 @@ describe('formal inventory authority', () => {
 
   it('adds frozen and reserved decimal quantities without floating point arithmetic', () => {
     expect(snapshot([{ ...fact, allocatedReservedQty: '0.1', frozenQty: '0.2' }]).stockData[0].lockQty).toBe(0.3);
+  });
+
+  it('accepts single item aliases and excludes incompatible units or another warehouse from shipment quantities', () => {
+    const task = { warehouseId: warehouse.id, lines: [{
+      id: 'line', productId: 'FG003', requestedQty: '1', postedQty: '0', reservedQty: '0', uom: '台',
+    }] } as FulfillmentShipmentTask;
+    expect(formalShipmentStock(task, [{ ...fact, uom: 'PCS' }])[0])
+      .toMatchObject({ availQty: 1, shortage: 0, unitMismatch: false });
+    expect(formalShipmentStock(task, [{ ...fact, uom: '套' }])[0])
+      .toMatchObject({ availQty: 0, shortage: 1, unitMismatch: true, inventoryUom: '套' });
+    expect(formalShipmentStock(task, [{ ...fact, warehouseId: other.id }])[0])
+      .toMatchObject({ availQty: 0, shortage: 1 });
+    expect(formalShipmentStock(task, [{ ...fact, warehouseId: other.id }], other.id)[0])
+      .toMatchObject({ availQty: 1, shortage: 0 });
   });
 });

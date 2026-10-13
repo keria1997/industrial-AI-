@@ -1,5 +1,6 @@
 import type { ApiContext, FulfillmentOrder } from '../../../api/fulfillment';
 import { createFulfillmentOrder } from '../../../api/fulfillment';
+import { canonicalInventoryUnit } from '../../../shared/inventoryUnits';
 import { salesOrderPricingInput } from './salesOrderPricing';
 import type { SalesQuoteForConversion } from './salesRules';
 
@@ -62,7 +63,7 @@ export const createQuickSalesOrder = async (
       productName: line.productName || '',
       specification: line.spec || '',
       orderedQty: String(line.quantity),
-      uom: line.unit === '件' ? 'PCS' : line.unit || 'PCS',
+      uom: canonicalInventoryUnit(line.unit || 'PCS'),
       unitPrice: String(line.unitPrice),
       taxRate: '0',
       promisedDate: requestedDeliveryDate,

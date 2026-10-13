@@ -54,6 +54,28 @@ class SalesShipmentRealJdbcTests {
     }
 
     @Test
+    void legacyChineseCountUnitShipmentSurvivesDatabaseReload() {
+        String tenant = "shipment-unit-jdbc-" + UUID.randomUUID();
+        JsonNode posted;
+        try (var dataSource = dataSource()) {
+            try (var store = new JdbcFulfillmentStore(dataSource, MAPPER)) {
+                posted = InventoryUnitShipmentTests.shipLegacyUnit(service(store), tenant, "台");
+            }
+            try (var store = new JdbcFulfillmentStore(dataSource, MAPPER)) {
+                var service = service(store);
+                JsonNode order = service.order(context(tenant, null, null), posted.path("order").path("id").asText());
+                assertThat(order.path("overallStatus").asText()).isEqualTo("SHIPPED");
+                assertThat(order.path("lines").get(0).path("uom").asText()).isEqualTo("台");
+                JsonNode fact = service.availability(context(tenant, null, null), "server-wh-id", null).get(0);
+                assertThat(fact.path("qualifiedOnHandQty").asText()).isEqualTo("4");
+                assertThat(fact.path("allocatedReservedQty").asText()).isEqualTo("0");
+                assertThat(fact.path("uom").asText()).isEqualTo("PCS");
+                assertThat(store.transactions(tenant)).hasSize(1);
+            }
+        }
+    }
+
+    @Test
     void quickOrderMetadataAndReplaySurviveDatabaseReload() {
         String tenant = "quick-order-metadata-" + UUID.randomUUID();
         var input = QuickSalesOrderMetadataTests.input();

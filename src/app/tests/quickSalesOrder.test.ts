@@ -24,6 +24,12 @@ const response = (body: unknown, status = 201) => new Response(JSON.stringify(bo
 afterEach(() => vi.restoreAllMocks());
 
 describe('quick sales order creation from the quotation form', () => {
+  it.each(['台', '件', '个', 'PCS'])('submits %s as the canonical single item unit', async (unit) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ id: 'order-uuid' }));
+    await createQuickSalesOrder(context, { ...draft, lines: [{ ...draft.lines![0], unit }] }, options);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).lines[0].uom).toBe('PCS');
+  });
+
   it('creates one pending order with every line, selected warehouse, units and discounts', async () => {
     const pending = { id: 'order-uuid', overallStatus: 'PENDING_CONFIRMATION', shipmentStatus: 'NOT_REQUESTED' };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response(pending));
