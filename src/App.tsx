@@ -3527,7 +3527,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
   );
 };
 
-const Sales_OutboundRequestModal = ({ request, onClose, onNavigateOutbound }) => {
+const Sales_OutboundRequestModal = ({ request, onClose, onNavigateOutbound, canNavigateOutbound = false }) => {
   if (!request) return null;
   const { order, task, status } = request;
   const productLines = order?.lines && Array.isArray(order.lines) && order.lines.length > 0
@@ -3613,14 +3613,17 @@ const Sales_OutboundRequestModal = ({ request, onClose, onNavigateOutbound }) =>
         </div>
         <div className="p-4 border-t border-slate-100 flex flex-wrap justify-end gap-3 bg-slate-50/50 shrink-0">
           <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors">我知道了</button>
-          <button onClick={onNavigateOutbound} className="inline-flex items-center gap-2 px-5 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"><ArrowUpFromLine size={14}/>进入出库管理</button>
+          {canNavigateOutbound && <button onClick={onNavigateOutbound} className="inline-flex items-center gap-2 px-5 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"><ArrowUpFromLine size={14}/>进入出库管理</button>}
         </div>
       </div>
     </div>
   );
 };
 
-const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
+const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser, canAccessInventory = false }) => {
+  const canNavigateOutbound = canAccessInventory && Boolean(currentUser?.permissions?.some(
+    (permission) => permission === '*' || permission === 'inventory.shipment-task.read',
+  ));
   const persistedWorkspace = useMemo(() => sales_loadWorkspace(currentTenant?.id), [currentTenant?.id, resetSignal]);
   const [activeTab, setActiveTab] = useState(() => resolveSalesTab(window.location.search));
   const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(false);
@@ -3926,7 +3929,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   };
 
   const navigateToRequestedOutbound = () => {
-      if (!outboundRequestModal) return;
+      if (!outboundRequestModal || !canNavigateOutbound) return;
       const orderId = outboundRequestModal.order.aggregateId || outboundRequestModal.order.id;
       addAudit('从销售订单进入库存出库', orderId);
       setOutboundRequestModal(null);
@@ -4067,7 +4070,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
               
               {isQuickOrderModalOpen && <Sales_QuickOrderModal onClose={() => setIsQuickOrderModalOpen(false)} onCreate={handleQuickOrderCreate} />}
               <Sales_Toast toast={toast} onClose={() => setToast(null)} />
-              {outboundRequestModal && <Sales_OutboundRequestModal request={outboundRequestModal} onClose={() => setOutboundRequestModal(null)} onNavigateOutbound={navigateToRequestedOutbound} />}
+              {outboundRequestModal && <Sales_OutboundRequestModal request={outboundRequestModal} onClose={() => setOutboundRequestModal(null)} onNavigateOutbound={navigateToRequestedOutbound} canNavigateOutbound={canNavigateOutbound} />}
           </div>
       </div>
   );
@@ -13835,7 +13838,7 @@ export default function App() {
           </div>
         )}
         
-        {activeModule === '销售管理' && <SalesManagement resetSignal={salesResetSignal} currentTenant={currentTenant} currentUser={currentUser} {...linkedFlowProps} />}
+        {activeModule === '销售管理' && <SalesManagement resetSignal={salesResetSignal} currentTenant={currentTenant} currentUser={currentUser} canAccessInventory={allowedModules.includes('库存管理')} {...linkedFlowProps} />}
         {activeModule === '生产管理' && <LegacyProductionManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} />}
         {activeModule === '库存管理' && <InventoryManagement {...linkedFlowProps} currentTenant={currentTenant} currentUser={currentUser} />}
         {activeModule === '采购管理' && <ProcurementManagement {...linkedFlowProps} currentTenant={currentTenant} currentUser={currentUser} />}

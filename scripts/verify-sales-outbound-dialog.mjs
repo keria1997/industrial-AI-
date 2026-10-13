@@ -42,10 +42,13 @@ try {
   await page.getByText('登录成功，欢迎进入工业AI平台', { exact: true }).waitFor({ state: 'hidden' });
 
   const dialog = page.getByRole('dialog', { name: '已通知仓库准备发货' });
-  const verifyDialog = async expectedUrl => {
+  const verifyDialog = async (expectedUrl, canNavigateOutbound = true) => {
     await dialog.waitFor();
     assert.equal(page.url(), expectedUrl, 'Opening the success dialog must keep the sales URL');
     assert.ok(await dialog.getByText(order.orderNo, { exact: true }).isVisible());
+    assert.equal(await dialog.getByRole('button', { name: '进入出库管理', exact: true }).count(),
+      canNavigateOutbound ? 1 : 0, 'Outbound entry must match inventory access');
+    assert.ok(await dialog.getByRole('button', { name: '我知道了', exact: true }).isVisible());
     const bounds = await dialog.boundingBox();
     const viewport = page.viewportSize();
     assert.ok(bounds.x >= 0 && bounds.y >= 0 &&
@@ -121,8 +124,62 @@ try {
   const outboundUrl = new URL(page.url());
   assert.equal(outboundUrl.searchParams.get('module'), 'inventory');
   assert.equal(outboundUrl.searchParams.get('inventory'), 'outbound');
-  assert.equal(outboundUrl.searchParams.get('sourceOrder'), order.orderNo);
+  assert.equal(outboundUrl.searchParams.get('sourceOrder'), order.id);
   assert.equal(await dialog.count(), 0);
+
+  // Simulate client permission snapshots; the real token remains unchanged.
+  // This verifies entry visibility, not server-side permission revocation.
+  const originalSession = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem('industrial-ai-session:v2')));
+  const permissionCases = [
+    { name: 'no-inventory-module', role: '财务', permissions: originalSession.permissions, canNavigate: false },
+    {
+      name: 'sales-only', role: '销售',
+      permissions: originalSession.permissions.filter(permission =>
+        permission !== '*' && !permission.startsWith('inventory.')),
+      canNavigate: false,
+    },
+    {
+      name: 'inventory-task-reader', role: '销售',
+      permissions: ['sales.order.read', 'sales.shipment-request.create', 'inventory.shipment-task.read'],
+      canNavigate: true,
+    },
+  ];
+  for (const permissionCase of permissionCases) {
+    await page.evaluate(({ session, role, permissions }) => {
+      sessionStorage.setItem('industrial-ai-session:v2', JSON.stringify({ ...session, role, permissions }));
+    }, { session: originalSession, ...permissionCase });
+    await page.goto(`${baseUrl}/?module=sales&tab=orders`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: '已确认', exact: true }).click();
+    await page.getByPlaceholder('搜索订单号、客户', { exact: true }).fill(order.orderNo);
+    await row.waitFor();
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
+      await page.setViewportSize(viewport);
+      const currentSalesUrl = page.url();
+      await row.getByRole('button', { name: `订单 ${order.orderNo} 去发货`, exact: true }).click();
+      await verifyDialog(currentSalesUrl, permissionCase.canNavigate);
+      await page.screenshot({
+        path: new URL(`${permissionCase.name}-${viewport.width}.png`, outputDirectory).pathname,
+      });
+      await dialog.getByRole('button', { name: '我知道了', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+      assert.equal(page.url(), currentSalesUrl);
+      await row.getByRole('button', { name: `订单 ${order.orderNo} 更多操作`, exact: true }).click();
+      await page.getByRole('menuitem', { name: '去发货', exact: true }).click();
+      await verifyDialog(currentSalesUrl, permissionCase.canNavigate);
+      await dialog.getByRole('button', { name: '关闭发货申请弹窗', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+      assert.equal(page.url(), currentSalesUrl);
+      await row.getByTitle('查看', { exact: true }).click();
+      await page.getByRole('button', { name: '去发货', exact: true }).click();
+      await verifyDialog(currentSalesUrl, permissionCase.canNavigate);
+      await dialog.getByRole('button', { name: '我知道了', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+      assert.equal(page.url(), currentSalesUrl);
+      console.log(`${permissionCase.name} ${viewport.width}x${viewport.height}: entry and dismissal passed`);
+    }
+  }
+  assert.equal(shipmentPosts.length, 2, 'Permission checks must not create duplicate shipment requests');
   assert.deepEqual(pageErrors, []);
   console.log('First submission, failure and explicit navigation passed; no browser errors');
 } finally {
