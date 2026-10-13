@@ -46,6 +46,7 @@ import {
 } from './platformSeed';
 import EmployeeAccountManagement from './EmployeeAccountManagement';
 import { platformApi } from '../api/platform/client';
+import { ApiError } from '../api/client';
 
 type Props = {
   currentTenant?: { id?: string; code?: string; name?: string };
@@ -510,7 +511,13 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       setPermissionError('请登录后管理角色权限');
       return;
     }
-    platformApi.getSnapshot({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken })
+    const context = { tenantId: tenantIdentity.id, accessToken: currentUser.accessToken };
+    platformApi.getSnapshot(context)
+      .catch(async error => {
+        if (!(error instanceof ApiError) || error.status !== 404 || !active) throw error;
+        await platformApi.selfProvision(context);
+        return platformApi.getSnapshot(context);
+      })
       .then(snapshot => {
         if (!active) return;
         setState(prev => ({ ...prev, roles: snapshot.roles, permissions: snapshot.permissions, roleGrants: snapshot.roleGrants }));

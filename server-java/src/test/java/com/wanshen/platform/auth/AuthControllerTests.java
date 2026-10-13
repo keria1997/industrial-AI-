@@ -5,12 +5,37 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AuthControllerTests {
+    private String token(List<String> permissions) {
+        return new TokenService("test-secret", new ObjectMapper()).issue("test01", "管理员", "老板",
+                List.of("TENANT-SHWS", "TENANT-HDJG"), permissions, "test").accessToken();
+    }
+
+    @Test void provisionsSelectedTenantOnceForAnAuthorizedAdministrator() throws Exception {
+        for (boolean created : List.of(true, false)) {
+            mockMvc.perform(post("/api/v1/platform/tenants/self-provision")
+                            .header("Authorization", "Bearer " + token(List.of("*")))
+                            .header("X-Tenant-Id", "TENANT-HDJG"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.created").value(created))
+                    .andExpect(jsonPath("$.tenantId").value("TENANT-HDJG"));
+        }
+    }
+
+    @Test void rejectsBootstrapFromUnprivilegedOrForeignTenantSessions() throws Exception {
+        mockMvc.perform(post("/api/v1/platform/tenants/self-provision")
+                        .header("Authorization", "Bearer " + token(List.of("production.mps.view")))
+                        .header("X-Tenant-Id", "TENANT-SHWS")).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/platform/tenants/self-provision")
+                        .header("Authorization", "Bearer " + token(List.of("*")))
+                        .header("X-Tenant-Id", "OTHER")).andExpect(status().isForbidden());
+    }
     private MockMvc mockMvc;
 
     private CaptchaService captchaService;

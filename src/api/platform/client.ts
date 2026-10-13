@@ -316,6 +316,8 @@ const operationKey = (scope: string) => `${scope}:${crypto.randomUUID()}`;
 // ===== API 客户端对象 =====
 
 export const platformApi = {
+  selfProvision: (context: ApiContext) =>
+    apiRequest<{ created: boolean; tenantId: string }>("/api/v1/platform/tenants/self-provision", context, { method: "POST" }),
   // ---- 平台快照与权限预览 ----
   getSnapshot: (context: ApiContext) =>
     apiRequest<PlatformSnapshotDto>("/api/v1/platform/snapshot", context),

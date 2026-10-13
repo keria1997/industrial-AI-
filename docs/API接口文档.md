@@ -1,5 +1,7 @@
 # 工业 AI 平台 API 接口文档
 
+> 2026-10-14 权限环境补齐：角色页 snapshot 返回租户未初始化 404 时调用已有 `/api/v1/platform/tenants/self-provision` 幂等初始化，再重新读取真实授权。服务端只允许 `*` 或 `platform.role.manage`，校验 `X-Tenant-Id` 在签名租户范围内，不再始终初始化第一个租户；非管理员及跨租户返回 403。初始化不会覆盖已有授权。
+
 > 2026-10-13 主计划权限变更：`production.mps.view` 菜单自动授予需求创建/校验/审批/接收、MRP/APS、建工单及规划任务查询，明确 action 拒绝优先。需求制单人可审批本人需求，`*` 为最高权限；不改变状态、版本、租户、审计及幂等检查。`GET /api/v1/production/readiness` 新增最终 `permissions`；已纳入平台管理的签名账号按真实岗位/角色重算，授权撤销下次请求生效。`PUT /api/v1/platform/roles/{id}/grants` 发布持久化授权并递增角色版本，支持 `If-Match` 冲突校验。普通需求支持 `sourceDescription` 和 `inventoryWarehouseId`。路由没有增加，原路由基线保持一致。
 
 > 2026-10-13 生产修复：MRP 已按服务端 BOM 和履约库存计算缺料；齐套预留全部物料，开工消费预留并产生实际出库流水；完工请求由 Worker 写入库存后回写 POSTED，失败重试沿用原库存流水身份。返工完成生成复检，报废和结案要求异人审批。以下较早“固定无缺料/不能开工”记录已由本次修复更新；客户 MES/WMS、完整主数据维护和财务 AR/AP 尚未验收。见 [修复验收](tests/生产阻断修复验收-20261013.md)。

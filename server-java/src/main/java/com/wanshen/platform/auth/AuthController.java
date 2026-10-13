@@ -178,15 +178,23 @@ public class AuthController {
     @PostMapping("/api/v1/platform/tenants/self-provision")
     public Map<String, Object> selfProvision(HttpServletRequest request) {
         TokenService.Claims admin = authenticate(request);
+        String tenantId = Optional.ofNullable(request.getHeader("X-Tenant-Id"))
+                .filter(value -> !value.isBlank()).orElse(admin.tenantIds().get(0));
+        if (!admin.tenantIds().contains(tenantId) || admin.permissions() == null
+                || !(admin.permissions().contains("*") || admin.permissions().contains("platform.role.manage"))) {
+            throw new ApiException(403, "PRODUCTION_403_PERMISSION_DENIED", "无权初始化所选企业权限", "由企业管理员初始化后再试");
+        }
         RegisteredUser user = users.findByAccount(admin.sub()).orElse(null);
+        String tenantName = user != null && !user.tenantName().isBlank() ? user.tenantName()
+                : "TENANT-SHWS".equals(tenantId) ? "上海万申工业集团"
+                : "TENANT-HDJG".equals(tenantId) ? "华东精工制造" : tenantId;
         if (provisioningService != null) {
             TenantProvisioningService.Result result = provisioningService.provisionBaseline(
-                    new TenantProvisioningService.Input(admin.tenantIds().get(0),
-                            user == null || user.tenantName().isBlank() ? admin.tenantIds().get(0) : user.tenantName(),
+                    new TenantProvisioningService.Input(tenantId, tenantName,
                             admin.sub(), user == null ? admin.sub() : user.name()));
             return Map.of("created", result.created(), "tenantId", result.tenantId());
         }
-        return Map.of("created", false, "tenantId", admin.tenantIds().get(0));
+        return Map.of("created", false, "tenantId", tenantId);
     }
 
     @GetMapping("/api/v1/platform/employee-accounts")
