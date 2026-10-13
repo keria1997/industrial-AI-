@@ -1,12 +1,33 @@
 import {
   findModuleById,
   findModuleByLabel,
+  type ModuleId,
   type ModuleLabel,
 } from './moduleRegistry';
 
 export type AppLocation = Pick<Location, 'pathname' | 'search' | 'hash'>;
 
 export const defaultModule: ModuleLabel = '工作台';
+
+const moduleOwnedSearchParams: Record<ModuleId, readonly string[]> = {
+  workbench: [],
+  sales: ['tab', 'focusOrder'],
+  inventory: ['inventory', 'sourceOrder', 'focusOutbound', 'warehouseId'],
+  production: ['production', 'focusMps', 'focusOrder'],
+  procurement: ['procurement', 'focusPr'],
+  finance: [],
+  personnel: [],
+  'supply-chain': [],
+  'ai-hub': [],
+  analytics: [],
+  messages: [],
+  platform: ['platform'],
+  feedback: [],
+};
+
+const allModuleOwnedSearchParams = new Set(
+  Object.values(moduleOwnedSearchParams).flat(),
+);
 
 export const resolveModuleFromLocation = (location: AppLocation): ModuleLabel => {
   const searchParams = new URLSearchParams(location.search);
@@ -23,33 +44,16 @@ export const createModuleUrl = (location: AppLocation, requestedModule: string) 
   const module = findModuleByLabel(requestedModule) ?? findModuleByLabel(defaultModule)!;
   const searchParams = new URLSearchParams(location.search);
 
+  allModuleOwnedSearchParams.forEach((key) => searchParams.delete(key));
+  searchParams.delete('focusId');
+  searchParams.delete('focusNo');
   if (module.label === defaultModule) searchParams.delete('module');
   else searchParams.set('module', module.id);
 
-  if (module.id === 'platform') {
-    if (!searchParams.has('platform')) searchParams.set('platform', 'tenant');
-  } else {
-    searchParams.delete('platform');
-  }
-
-  if (module.id === 'production') {
-    if (!searchParams.has('production')) searchParams.set('production', 'dashboard');
-  } else {
-    searchParams.delete('production');
-  }
-
-  if (module.id !== 'sales') {
-    searchParams.delete('tab');
-    searchParams.delete('focusOrder');
-  }
-
-  if (module.id === 'inventory') {
-    if (!searchParams.has('inventory')) searchParams.set('inventory', 'dashboard');
-    if (searchParams.get('inventory') !== 'outbound') searchParams.delete('sourceOrder');
-  } else {
-    searchParams.delete('inventory');
-    searchParams.delete('sourceOrder');
-  }
+  if (module.id === 'production') searchParams.set('production', 'dashboard');
+  if (module.id === 'procurement') searchParams.set('procurement', 'dashboard');
+  if (module.id === 'inventory') searchParams.set('inventory', 'dashboard');
+  if (module.id === 'platform') searchParams.set('platform', 'tenant');
 
   const search = searchParams.toString();
   return `${location.pathname}${search ? `?${search}` : ''}${location.hash}`;

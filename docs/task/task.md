@@ -7,8 +7,8 @@
 | 项目 | 工业 AI 平台 V2.1.0 |
 | 文档用途 | 管理需求变更历史、当前交付基线、风险与下一阶段执行任务 |
 | 初始化日期 | 2026-07-25 |
-| 最近更新 | 2026-07-26 |
-| 当前基线编号 | `DELIVERY-BASELINE-20260726-02` |
+| 最近更新 | 2026-10-13 |
+| 当前基线编号 | `DELIVERY-BASELINE-20260728-03` |
 | 需求源 | `docs/01 需求规格说明书-工业AI平台-V2.1.0-PRD.md` |
 | 状态清单 | `docs/需求功能清单.md` |
 | 验收依据 | `docs/usecase.md` |
@@ -101,14 +101,14 @@
 | 公共框架与工作台 | 原型完成 | 登录演示、集中运行时上下文、模块注册与刷新恢复、租户/角色切换、工作台、全局助手 | 可信会话、服务端菜单权限、指标和待办 API；业务子页面路由仍待统一 |
 | 销售管理 | 首期范围已实现 | 保持原五页签；最小订单、审批/复核、发货申请、三轴状态、部分/全量发货回写和履约追踪已接正式 API | 报价、客户全面生产化及结算不在首期；客户 UAT 待执行 |
 | 生产管理 | Reference 闭环已局部接入旧版入口 | `LegacyProductionManagement` 为用户指定主入口；需求、MRP 缺料、APS、工单、报工、FQC、完工业务流动作已接正式 API | 旧版其余页面仍为原型；不得整体替换模块；复杂 MRP/APS 和客户系统联调待完成 |
-| 库存管理 | 首期范围已实现 | 保持原页面；版本化可用量、原子预留、缺口申请、销售出库、不可变流水、完工 Inbox 和重校验已实现 | 客户 WMS 联调待完成；调拨、盘点不在首期 |
-| 采购管理 | Reference 闭环部分完成 | MRP 转 PR、异人审批、PO、全量采购入库、库存事实和页面动作已接正式 API | 供应商主数据、询比价、合同、分批/退货、来料质检、价格税务与 ERP/SRM 集成 |
+| 库存管理 | 阶段 6 已完成 | 保持原页面；版本化可用量、原子预留、缺口申请、销售出库、不可变流水、完工 Inbox 和重校验已实现；调拨单（创建→审批→发货→收货）、盘点单（创建→审批→开始→录入→调整库存）、仓库/产品/物料主数据 CRUD、WMS 异步结果重查已实现 | 客户真实 WMS 联调、消息代理、人工补偿操作台待后续 |
+| 采购管理 | 阶段 5 已完成 | MRP 转 PR、异人审批、PO、全量/分批采购入库、库存事实和页面动作已接正式 API；供应商主数据 CRUD、PR 驳回、PO 取消、来料质检、采购退货、价格税务已实现 | 询比价、合同、SRM 集成、多币种汇率待后续 |
 | 财务管理 | 后端已落地 | AR/AP 自动生成（销售发货→AR、采购入库→AP）、收付款登记与确认、发票、凭证（借贷平衡校验）、成本核算、资金看板；前端已接 API | 冲销、外部财务系统适配、多币种汇率、复杂税务规则待后续 |
-| 人员管理 | 原型完成 | 员工、考勤、排班和技能页面 | HR 数据源、服务端持久化和权限联动 |
-| 产业链管理 | 原型完成 | 供应商、客户和风险策略页面 | 企业档案和外部风险数据服务 |
-| 消息管理 | 部分完成 | 收件箱、路由规则原型；履约 Worker、生产完工 Outbox 到库存 Inbox 转发、重试和死信已实现 | 客户消息代理、正式消息服务和通道发送 |
-| AI 智能中枢 | 原型完成 | 助手、数字员工和动作确认交互 | 模型网关、RAG、权限过滤、评测和审计 |
-| AI 数据分析 | 原型完成 | NL2SQL、归因树和推演页面 | 指标语义层、分析服务和结果溯源 |
+| 人员管理 | 阶段 9 已完成 | 保持原页面；员工档案 CRUD（工号、姓名、部门、岗位、状态）、考勤管理（班次、打卡、状态）、技能资质管理（证书编号、资质名称、等级、到期、复训续期）、人员仪表盘已接正式 API | HR 数据源对接、排班规则引擎、考勤设备集成待后续 |
+| 产业链管理 | 阶段 9 已完成 | 保持原页面；供应商管理（CRUD、评级、风险等级、合作统计）、客户管理（企业经营画像、应收逾期、承压等级、风险预警）、风险事件管理（CRUD、风险等级、处理动作、解决）、产业链仪表盘已接正式 API | 企业工商信息外部数据服务、SRM 集成、风险评分模型待后续 |
+| 消息管理 | 阶段 7 已完成 | 保持原页面；消息模板 CRUD、消息发送（单发/群发）、模板变量渲染、已读/归档/标星、全部已读、用户通知偏好、事件订阅、消息仪表盘、Outbox 事件驱动已实现 | 客户消息代理、外部通道（邮件/短信/Webhook）发送、AI 文案润色待后续 |
+| AI 智能中枢 | 阶段 8 已完成 | 保持原页面；模型配置管理（多供应商、主备切换、API Key 脱敏）、对话管理（意图识别、域检测、消息历史）、聊天 API（后端规则引擎回复、操作方案生成）、NL2SQL（自然语言转 SQL）、生产智能分析（异常检测、预测、建议、自动洞察）、AI 洞察管理（CRUD、忽略）、操作方案管理（提交、审批、拒绝）、AI 仪表盘、Outbox 事件驱动、审计日志已实现 | 真实 LLM 集成、RAG 知识库、AI 数据权限过滤、评测和外部模型联调待后续 |
+| AI 数据分析 | 阶段 8 后端已落地 | 保持原页面；NL2SQL 后端已实现（域识别、SQL 生成、表名提取） | 指标语义层、分析服务结果溯源、前端归因树和推演页面接正式 API 待后续 |
 | 平台管理 | 后端已落地 | 浏览器本地原型保留；后端 IAM 模块已实现（组织、员工、账号、角色、权限、审计、参数、字典、能力开关、会话撤销）；安全加固含 Token 刷新、登出撤销、密码治理规则 | 前端接入后端 API；企业 OIDC/SSO 联调；前端 PlatformManagement 组件从 localStorage 迁移到服务端 |
 | 非功能与运维 | 部分完成 | 生产域幂等、乐观锁、租户过滤、审计、状态历史和 RLS；IAM 域 RLS + FORCE、会话撤销、密码治理、字段级 AES-256-GCM 加密 | E2E、性能、安全审计告警、埋点、可观测性和归档策略 |
 
@@ -123,7 +123,11 @@
 - 生产驾驶舱 KPI、幂等回放、版本冲突、租户隔离、审计、状态历史和 Outbox 记录。
 - PostgreSQL 初始迁移和生产核心 API 自动化测试。
 - 财务 AR/AP 自动生成（销售发货→AR、采购入库→AP）、收付款登记与确认、发票、凭证（借贷平衡）、成本核算和资金看板。
-
+- 采购域完整化：供应商主数据管理（CRUD、评级、状态）、采购申请驳回、采购订单取消、分批收货与部分入库、来料质检（ACCEPTED/REJECTED）、采购退货（创建→处理→完成）、价格与税务（单价、税率、币种、总额计算）。
+- 库存域完整化：仓库/产品/物料主数据 CRUD、调拨单全生命周期（草稿→审批→发货→在途→收货→完成/取消）、盘点单全生命周期（草稿→审批→开始→录入→完成→库存调整）、WMS 异步结果重查（queryReservation/queryOutbound/queryRelease）、新增库存流水类型（TRANSFER_OUTBOUND/INBOUND、STOCKTAKE_ADJUSTMENT）。
+- 消息中心建设：消息模板 CRUD（9 个预置模板）、消息发送（单发/群发、模板变量 {{var}} 渲染、用户偏好过滤）、消息操作（已读/归档/标星/全部已读）、用户通知偏好管理、事件订阅管理、消息仪表盘（未读统计、分类/优先级分布、最近未读）、Outbox 事件驱动投递。
+- AI 智能化生产：模型配置管理（多供应商支持 openai/anthropic/azure/local/custom、主备模型切换、API Key 脱敏存储、温度/Token/超时参数）、对话管理（自动意图识别 query/action/prediction/analysis/general、域检测 inventory/sales/production/procurement/finance/general、消息历史和反馈）、聊天 API（后端规则引擎回复、Action Plan 生成与数据依据）、NL2SQL（自然语言转 SQL、域识别、表名提取、解释生成）、生产智能分析（异常检测 schedule_delay/material_shortage、趋势预测、优先级建议、自动创建 AI 洞察）、AI 洞察管理（CRUD、类型/严重度/状态过滤、忽略操作）、操作方案管理（提交→审批→拒绝/批准、风险等级、影响范围、数据依据、审批路径）、AI 仪表盘（对话/消息/洞察/操作方案统计）、Outbox 事件驱动、审计日志。
+- 人员与产业链管理：员工档案管理（CRUD、工号唯一校验、部门/岗位/状态、在职/调动/休假/离职状态机）、考勤管理（CRUD、班次早班/中班/晚班/休息、打卡时间、正常/迟到/早退/缺勤/请假/加班状态）、技能资质管理（CRUD、证书编号唯一校验、初级/中级/高级/技师/高级技师等级、有效/即将到期/已过期/已撤销状态、复训续期操作）、人员仪表盘（在职总数、出勤率、资质过期预警）；供应商管理（CRUD、A/B/C/D 评级、低/中/高风险等级、active/suspended/blacklisted 状态、合作次数与金额）、客户管理（CRUD、经营状态、应收余额、逾期天数、低/中/高暴露与承压等级、工商异常预警）、风险事件管理（CRUD、低/中/高风险、active/processing/resolved/ignored 状态、解决操作）、产业链仪表盘（供应商/客户/风险事件统计）。
 ### 4.4 关键代码事实
 
 | 事实 | 证据 |
@@ -139,7 +143,11 @@
 | 前端仍为非严格模式且应用壳过大 | `tsconfig.json`、`src/App.tsx` |
 | 财务结算闭环已落地 | `server/db/migrations/009_finance_settlement.sql`、`server/src/modules/finance/`、`src/api/finance.ts` |
 | 销售发货和采购入库自动触发财务 AR/AP | `server/src/modules/fulfillment/service.ts` 中 `onSalesOutboundPosted` 和 `onPurchaseReceiptPosted` 回调 |
-
+| 采购域完整化已落地 | `server/db/migrations/010_procurement_completion.sql`（proc_supplier、proc_purchase_return 表 + RLS + FORCE）、`server/src/modules/fulfillment/` types/store/memory-store/pg-store/service/routes 扩展、`src/api/procurement.ts` 前端 API 客户端 |
+| 库存域完整化已落地 | `server/db/migrations/011_inventory_completion.sql`（inv_warehouse、inv_product、inv_material、inv_transfer_order、inv_transfer_line、inv_stocktake_task、inv_stocktake_line 表 + RLS + FORCE）、fulfillment 模块全层扩展、`src/api/fulfillment.ts` 新增 inventoryApi、App.tsx 调拨/盘点动作接正式 API |
+| 消息中心已落地 | `server/db/migrations/012_message_center.sql`（msg_template、msg_record、msg_user_preference、msg_subscription、msg_outbox、msg_audit_log、msg_idempotency_record 表 + RLS + FORCE + 9 个预置模板）、`server/src/modules/message/` 全层模块（types/store/memory-store/service/routes）、`src/api/messages.ts` 新增 messagesApi、App.tsx 消息列表接正式 API（带本地降级）、app.ts 注册消息模块路由和 Outbox Worker |
+| AI 智能化生产已落地 | `server/db/migrations/013_ai_intelligence.sql`（ai_model_config、ai_conversation、ai_message、ai_insight、ai_action_plan、ai_audit_log、ai_idempotency_record 表 + RLS + FORCE + 2 个预置模型配置）、`server/src/modules/ai/` 全层模块（types/store/memory-store/service/routes）、`src/api/ai.ts` 新增 aiApi、App.tsx AIAssistantDrawer 接正式 API（带本地规则引擎降级）、app.ts 注册 AI 模块路由和 Outbox Worker |
+| 人员与产业链管理已落地 | `server/db/migrations/014_personnel_supply_chain.sql`（hr_employee、hr_attendance、hr_skill、sc_supplier、sc_customer、sc_risk_event 表 + RLS + FORCE）、`server/src/modules/personnel/` 全层模块（types/store/memory-store/service/routes）、`server/src/modules/supplychain/` 全层模块（types/store/memory-store/service/routes）、`src/api/personnel.ts` 新增 personnelApi、`src/api/supply-chain.ts` 新增 supplyChainApi、App.tsx PersonnelManagement 和 SupplyChainManagement 组件接正式 API（带本地降级）、app.ts 注册人员与产业链模块路由和 Outbox Worker |
 ### 4.5 初始化质量检查
 
 | 检查日期 | 检查项 | 结果 | 结论/后续动作 |
@@ -174,7 +182,11 @@
 | 2026-07-26 | `UI-20260726-03` UI 检查 | 通过：销售订单 `1280x720`、`1920x1080` | 点击菜单外关闭、菜单内编辑动作、`Esc` 关闭均通过；宽屏页面横向溢出为 0 |
 | 2026-07-27 | MRP—采购—生产—销售闭环复测 | 通过：类型检查、19 个测试文件共 71 项测试、生产构建、OpenAPI YAML 和 `git diff --check` | 后端 26 项、前端 45 项；缺料必须经过 PR/异人审批/PO/采购入库后才能 APS/生产，完工后重校验并销售出库至 `SHIPPED`；采购页 1280x720、1920x1080 无溢出和控制台错误 |
 | 2026-07-27 | `REQ-20260727-01` 质量检查 | 通过：类型检查、21 个测试文件共 89 项测试、生产构建和 `git diff --check` | 后端 26 项、前端 63 项；新增多行报价完整快照转单测试，生产入口保护 2 项继续通过；浏览器刷新后进入验证码登录页，未执行登录后的点击式复测 |
-
+| 2026-07-28 | 阶段 5 采购域完整化质量检查 | 通过：类型检查、21 个测试文件共 89 项测试、生产构建 | 后端 26 项、前端 63 项；供应商主数据、PR 驳回、PO 取消、分批收货、来料质检、采购退货、价格税务扩展通过现有质量门槛；主 JS 1,033.53 kB、gzip 255.32 kB，保留代码拆分风险 |
+| 2026-07-28 | 阶段 6 库存域完整化质量检查（复验） | 通过：类型检查、21 个测试文件共 89 项测试、生产构建、`git diff --check` | 后端 26 项、前端 63 项；调拨单、盘点单、仓库/产品/物料主数据、WMS 异步重查扩展通过现有质量门槛；主 JS 1,039.59 kB、gzip 256.49 kB，保留代码拆分风险 |
+| 2026-07-28 | 阶段 7 消息中心建设质量检查 | 通过：类型检查、21 个测试文件共 89 项测试、生产构建、`git diff --check` | 后端 26 项、前端 63 项；消息模板 CRUD、消息发送（单发/群发）、模板变量渲染、已读/归档/标星、全部已读、用户偏好、事件订阅、消息仪表盘、Outbox 事件驱动扩展通过现有质量门槛；主 JS 1,043.43 kB、gzip 257.56 kB，保留代码拆分风险 |
+| 2026-07-28 | 阶段 8 AI 智能化生产质量检查 | 通过：类型检查、21 个测试文件共 89 项测试、生产构建、`git diff --check` | 后端 26 项、前端 63 项；模型配置管理、对话聊天（意图识别+域检测+规则引擎回复+Action Plan 生成）、NL2SQL、生产智能分析（异常检测+预测+建议+自动洞察）、AI 洞察 CRUD+忽略、操作方案提交+审批、AI 仪表盘、Outbox 事件驱动扩展通过现有质量门槛；同时修复消息模块 z.record 和 MsgOutboxEvent.lastError 预存类型问题；主 JS 1,051.26 kB、gzip 258.96 kB，保留代码拆分风险 |
+| 2026-07-28 | 阶段 9 人员与产业链管理质量检查 | 通过：类型检查、21 个测试文件共 89 项测试、生产构建、`git diff --check` | 后端 26 项、前端 63 项；员工档案 CRUD、考勤管理 CRUD、技能资质 CRUD+复训续期、人员仪表盘、供应商管理 CRUD、客户管理 CRUD、风险事件 CRUD+解决、产业链仪表盘扩展通过现有质量门槛；前端 PersonnelManagement 和 SupplyChainManagement 组件接正式 API（带本地降级）；主 JS 1,063.77 kB、gzip 262.34 kB，保留代码拆分风险 |
 当前代码质量基线已恢复并持续记录；业务完成口径仍按正式 API、自动化测试和数据库事实判定，不以本地原型代替生产能力。
 
 ## 5. 当前需求与决策风险
@@ -291,8 +303,11 @@
 | TASK-DLV-006 | P0 | 实现 Outbox/Inbox Worker 和试点 Adapter | 集成、后端、运维 | `TASK-DLV-002`、`DLV-DEC-004/008` | 重复、乱序、超时、死信、重查和人工补偿测试通过 | 开发基线完成：Reference Adapter、重试/死信 Worker、生产完工到库存 Inbox 转发已实现；客户消息代理、真实 WMS 和人工补偿操作台待联调 |
 | TASK-DLV-007 | P0 | 建立首期闭环 E2E 与客户 UAT | 测试、实施、业务负责人 | `TASK-DLV-003~006` | 基线第 12 节场景通过，订单可从待确认推进到已发货并全程追溯 | 进行中：自动化已覆盖审批、缺口、需求、工单、报工、FQC、完工事件、重校验和发货；客户数据、真实集成和 UAT 待执行 |
 | TASK-PROC-001 | P0 | 修复 MRP 到采购入库的正式闭环断点 | 采购/生产/库存后端、前端、测试 | `TASK-DLV-003~006` | 缺料不能绕过采购；PR/PO/入库/库存/齐套均有正式事实并最终销售出库 | 已完成：Reference API、迁移、页面局部接入和强制采购路径自动化已通过；完整采购域及客户 ERP/SRM 待后续 |
+| TASK-PROC-002 | P0 | 采购域完整化（阶段 5） | 采购后端、前端、测试 | `TASK-PROC-001`、`TASK-FIN-001` | 供应商主数据 CRUD、PR 驳回、PO 取消、分批收货、来料质检、采购退货、价格税务；DB 迁移、后端扩展、前端 API 和 UI 动作；typecheck/测试/构建通过 | 已完成：010_procurement_completion.sql 迁移（proc_supplier + proc_purchase_return + RLS + FORCE）、fulfillment 模块扩展（types/store/memory-store/pg-store/service/routes）、前端 procurement.ts API 客户端和 ProcurementManagement 组件扩展（供应商列表、PR 驳回、PO 取消动作）；询比价、合同、SRM 集成待后续 |
+| TASK-INV-002 | P0 | 库存域完整化与 WMS 联调（阶段 6） | 库存后端、前端、测试 | `TASK-DLV-003~006`、`TASK-PROC-001` | 调拨单全生命周期、盘点单全生命周期、仓库/产品/物料主数据 CRUD、WMS 异步结果重查；DB 迁移、后端扩展、前端 API 和 UI 动作；typecheck/测试/构建通过 | 已完成：011_inventory_completion.sql 迁移（7 张新表 + RLS + FORCE）、fulfillment 模块全层扩展（types/store/memory-store/pg-store/service/routes）、fulfillment.ts 新增 inventoryApi、App.tsx 调拨和盘点动作接正式 API（带本地降级）、pg-store.ts 供应商 SQL 占位符 bug 修复；客户真实 WMS 联调、消息代理、人工补偿操作台待后续 |
 | TASK-FIN-001 | P0 | 实现财务结算闭环 | 财务后端、销售/采购后端、前端、测试 | `TASK-DLV-003~006`、`TASK-PROC-001` | AR/AP 自动生成、收付款登记确认、发票、凭证、成本核算、资金看板；DB 迁移、后端模块、API 路由、前端接入；typecheck/测试/构建通过 | 已完成：009_finance_settlement.sql 迁移、finance 模块（types/store/memory-store/service/routes）、fulfillment 回调（onSalesOutboundPosted→AR、onPurchaseReceiptPosted→AP）、前端 API 客户端和 FinancialManagement 组件接入；冲销和外部系统适配待后续 |
-
+| TASK-MSG-001 | P0 | 消息中心建设（阶段 7） | 消息后端、前端、测试 | `TASK-DLV-003~006` | 消息模板 CRUD、消息发送（单发/群发）、模板变量渲染、已读/归档/标星、全部已读、用户通知偏好、事件订阅、消息仪表盘、Outbox 事件驱动；DB 迁移、后端模块、API 路由、前端接入；typecheck/测试/构建通过 | 已完成：012_message_center.sql 迁移（7 张新表 + RLS + FORCE + 9 个预置模板）、message 模块全层（types/store/memory-store/service/routes）、src/api/messages.ts 新增 messagesApi、App.tsx 消息列表接正式 API（带本地降级）、app.ts 注册消息模块路由和 Outbox Worker；外部通道发送、AI 文案润色待后续 |
+| TASK-HR-SC-001 | P0 | 人员与产业链管理（阶段 9） | 人员/产业链后端、前端、测试 | `TASK-DLV-003~006` | 员工档案 CRUD、考勤管理 CRUD、技能资质 CRUD+复训续期、人员仪表盘、供应商管理 CRUD、客户管理 CRUD、风险事件 CRUD+解决、产业链仪表盘、Outbox 事件驱动；DB 迁移、后端模块、API 路由、前端接入；typecheck/测试/构建通过 | 已完成：014_personnel_supply_chain.sql 迁移（6 张新表 + RLS + FORCE）、personnel 模块全层（types/store/memory-store/service/routes）、supplychain 模块全层（types/store/memory-store/service/routes）、src/api/personnel.ts 新增 personnelApi、src/api/supply-chain.ts 新增 supplyChainApi、App.tsx PersonnelManagement 和 SupplyChainManagement 组件接正式 API（带本地降级）、app.ts 注册人员与产业链模块路由和 Outbox Worker；HR 数据源对接、排班规则引擎、企业工商信息外部数据服务、SRM 集成待后续 |
 ### 8.1 建议执行顺序
 
 1. `TASK-DLV-001`、`TASK-DLV-002` 已完成；后续基线异议必须形成版本化变更。
@@ -319,6 +334,11 @@
 
 | 日期 | 记录 ID | 类型 | 变更内容 | 影响范围 | 结论 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-13 | `DEV-20261013-SALES-SHIPMENT` | 销售到仓库出库正式开发 | 完成订单申请占用、预留/出库行关联、部分与剩余出库、同事务回写销售、JDBC 租户锁与事实重读、失败回滚、同键重试和移交 Worker；出库返回权威任务/订单，保持销售发货弹窗交互并修复 720px 弹窗操作可见性 | Java 履约/仓储、销售/库存流程、OpenAPI 1.12.0、需求/用例/架构与验收脚本 | Java 73 项零跳过（含真实 PostgreSQL/RLS）、前端 117 项、TypeScript、构建和 261 路由基线通过；两种尺寸真实浏览器确认→任务→部分出库→补货→全量回写通过，见销售到仓库出库开发验收；客户 WMS 与五模块完整闭环未验收 |
+| 2026-10-13 | `FIX-20261013-MODULE-HOME` | 模块首页回归修复 | 主导航进入、重复点击及离开后返回统一打开模块第一页面，有监控舱时默认监控舱；导航版本重置内部页签，移除后台业务流同步的自动选页；明确业务跳转携带 query，保留深链接、刷新与历史目标；需求写入仓库规范和验收用例 | 运行时 Provider、业务宿主、路由/导航测试、浏览器脚本、AGENTS、PRD、架构、功能清单及用例 | TypeScript、24 个文件 117 项前端测试和构建通过；1280×720、1920×1080 下 10 个带页签模块进入/重复点击/返回通过，延迟计划恢复、深链接、刷新、历史及 800px 移动导航通过；无业务写请求和浏览器异常，详见模块默认首页回归报告 |
+| 2026-10-13 | `UI-20261013-OUTBOUND-SEARCH` | 销售订单号搜索 | 库存出库管理新增“销售订单号”搜索框，按来源 / 目标单据即时筛选；支持完整/部分单号、忽略大小写和首尾空格、清空恢复、匹配记录数及空结果；销售发货弹窗规则保持 | 库存出库列表、用例和功能清单 | TypeScript、98 项前端测试和构建通过；真实登录页面在 1280×720、1920×1080 下搜索、清空、空结果及记录数验证通过，无业务写请求和浏览器异常；截图位于 `docs/tests/artifacts/inventory-source-search-20261013/` |
+| 2026-10-13 | `REQ-20261013-02` | 恢复销售发货弹窗并保持交互 | 销售订单“去发货”创建或恢复真实仓库任务后只展示成功弹窗；“我知道了”和关闭按钮停留销售页面，仅手动点击“进入出库管理”才跳转并定位来源订单；未经用户明确变更不得恢复自动跳转 | 销售订单行、更多操作、详情、剩余发货共用流程，AGENTS、PRD、架构、功能清单、用例和浏览器回归脚本 | TypeScript、93 项前端测试、构建通过；1280×720 与 1920×1080 页面验证通过，已有任务不重复申请；首次提交/失败分支使用 HTTP 桩验证，详见销售发货弹窗回归报告 |
+| 2026-10-13 | `REQ-20261013-01` | 出库动作状态机 | 选定仓库缺少产品库存事实时阻断预留并给出明确 toast；库存充足展示“去发货”；可用量为零展示“去生产”；允许分批且部分可用时展示“部分发货”和“去生产”；服务端把缺失库存事实按零可用量计入缺口 | 销售出库弹窗、库存事实状态机、履约 Reference Adapter、前端测试、用例 | 已完成：前端 80 项测试通过、TypeScript 检查通过、构建通过、履约域 10 项测试通过；等待用户在浏览器复测 |
 | 2026-07-27 | `IAM-20260727-01` | 平台治理与安全基座 | 完成阶段 3：创建 IAM 数据库迁移（008_platform_iam.sql，16 张表 + RLS + FORCE）；创建后端平台管理模块（types/store/memory-store/service/routes，30+ API 路由，含种子数据）；创建前端平台 API 客户端（platform/client.ts）；安全加固：Token 刷新、登出撤销、密码治理规则、会话撤销预检钩子 | 平台管理、IAM、安全基座、OpenAPI、任务台账 | TypeScript 零错误，89 项测试通过，Vite 构建 1603 模块成功 |
 | 2026-07-27 | `REQ-20260727-01` | 报价转单数据同步 | 产品报价编辑保存后递增版本；审批转单提交时重新读取最后一次保存的报价，将客户、报价日期、有效期、多行产品、仓库、规格、单位、可用量、数量、单价、优惠、总额和备注完整复制到待发货销售订单，并保存独立报价快照 | 销售报价、销售订单、规则测试、用例和功能清单 | 前端原型已完成；类型检查、89 项测试、构建和代码格式检查通过；正式报价/订单事务仍属于后续正式化范围 |
 | 2026-07-27 | `DELIVERY-20260727-01` | 销售确认流程修复 | 待发货订单执行“确认订单”只确认销售发货内容并进入已确认；已确认订单执行“去发货”后才创建或恢复仓库任务；修复字段校验失败及展示单号误作正式聚合 ID | 销售前后端、库存出库桥接、状态规则、测试、PRD、OpenAPI | 类型检查、后端 26 项、前端 46 项、构建、OpenAPI 解析及 1280×720 页面业务流验证通过 |

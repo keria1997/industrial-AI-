@@ -1,0 +1,36 @@
+[
+  {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "orderId": "bb0060e0-ab5c-4dc9-b9e0-15cfb7042c18",
+    "orderNo": "SO-20261013-BB0060E0",
+    "taskId": "c6017582-498b-4c96-95d6-38ba9c100b8f",
+    "outboundId": "abc47b53-e319-4a06-8e12-a7dbfc499685",
+    "status": "SHIPPED",
+    "shipped": [
+      "5",
+      "3"
+    ],
+    "transactionCount": 3,
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "orderId": "c8838966-f0dd-48c8-9c10-306c0bc8951f",
+    "orderNo": "SO-20261013-C8838966",
+    "taskId": "e4a0df43-b30e-4bda-9735-0a5b0477a0ab",
+    "outboundId": "f3113984-d072-408e-a2f3-c4b364ec31e9",
+    "status": "SHIPPED",
+    "shipped": [
+      "5",
+      "3"
+    ],
+    "transactionCount": 3,
+    "pageErrors": []
+  }
+]

@@ -53,9 +53,25 @@ describe('inventory master data workspace', () => {
     }]);
 
     expect(rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'FG001', kind: '产品', stockQty: 3500, availQty: 2300 }),
-      expect.objectContaining({ id: 'FG002', kind: '产品', stockQty: 0, status: '未入库' }),
+      expect.objectContaining({ id: 'FG001', kind: '产品', stockQty: 3500, availQty: 2300, unitPrice: 500 }),
+      expect.objectContaining({ id: 'FG002', kind: '产品', stockQty: 0, status: '未入库', unitPrice: 1200 }),
     ]));
+  });
+
+  it('migrates legacy seed records to reference prices and custom records to zero', () => {
+    const storage = new MemoryStorage();
+    const legacy = createInventoryMasterDataSeed();
+    delete (legacy.products[0] as { unitPrice?: number }).unitPrice;
+    delete (legacy.materials[0] as { unitPrice?: number }).unitPrice;
+    saveInventoryMasterData(storage, 'TENANT-A', legacy);
+
+    const loaded = loadInventoryMasterData(storage, 'TENANT-A');
+    expect(loaded.products[0].unitPrice).toBe(500);
+    expect(loaded.materials[0].unitPrice).toBe(125);
+
+    legacy.products[0].unitPrice = 0;
+    saveInventoryMasterData(storage, 'TENANT-A', legacy);
+    expect(loadInventoryMasterData(storage, 'TENANT-A').products[0].unitPrice).toBe(0);
   });
 
   it('queries everything assigned to one warehouse, including zero-stock records', () => {

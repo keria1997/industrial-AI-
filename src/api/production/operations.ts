@@ -9,6 +9,7 @@ export type DemandTraceability = {
   shipmentRequestLineId?: string;
   inventoryWarehouseId?: string;
   inventoryFactVersion?: number;
+  payloadSnapshot?: { warehouseId?: string; inventoryWarehouseId?: string };
   correlationId: string;
   traceId?: string;
 };
@@ -17,6 +18,8 @@ export type DemandDto = {
   id: string; code: string; sourceType: string; productId: string; productName?: string; qty: string; uom: string;
   dueDate: string; factoryResourceId: string; status: string; blockReasons: string[]; createdBy: string; version: number;
   correlationId: string; updatedAt: string;
+  reviewerId?: string; approvedBy?: string; approvedAt?: string;
+  handlerRole?: string; handlerId?: string; assignedAt?: string; acceptedAt?: string; mrpTaskId?: string;
   source?: DemandTraceability;
 };
 
@@ -72,6 +75,10 @@ export const productionOperationsApi = {
   approveDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/approve`, context, {
     method: "POST", body: JSON.stringify({ remark: "生产作业台复核通过" }), expectedVersion: demand.version,
     idempotencyKey: `demand-approve:${context.tenantId}:${demand.id}:${demand.version}`,
+  }),
+  claimDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/claim`, context, {
+    method: "POST", expectedVersion: demand.version,
+    idempotencyKey: `demand-claim:${context.tenantId}:${demand.id}:${demand.version}`,
   }),
   listWorkOrders: (context: ApiContext) => apiRequest<{ items: WorkOrderDto[]; total: number }>("/api/v1/production/work-orders?page=1&pageSize=200", context),
   createWorkOrder: (context: ApiContext, input: Record<string, unknown>, businessKey: string) => apiRequest<WorkOrderDto>("/api/v1/production/work-orders", context, {

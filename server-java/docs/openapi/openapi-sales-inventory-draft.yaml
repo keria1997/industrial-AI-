@@ -1,0 +1,1406 @@
+openapi: 3.1.0
+info:
+  title: 工业 AI 平台首期销售与库存履约开发基线
+  version: 0.3.0-development-baseline
+  description: |
+    DELIVERY-BASELINE-20260726-02 的机器可读开发基线，已通过 FULFILLMENT-DEV-GATE-20260726-01 评审。
+    对应路由、数据库迁移和 Reference Adapter 已实现，并由 server-java/docs/openapi/openapi.yaml 纳入当前契约。
+    2026-10-13 销售到仓库出库链路已通过真实 PostgreSQL 与浏览器验收；
+    部分/剩余发货复用出库行标识，成功过账返回权威任务和销售订单。
+    Reference 实现不是客户真实 WMS、OIDC、KMS、消息代理或 UAT 通过证明。
+    数量使用 decimal(18,6) 字符串，金额使用 decimal(20,6) 字符串。
+    销售订单优惠后总额四舍五入至两位小数，审批与确认沿用持久化总额。
+    普通请求使用 Bearer Token 和租户上下文；内部事件还必须携带时间戳、密钥 ID 和签名。
+  x-baseline-id: DELIVERY-BASELINE-20260726-02
+  x-implementation-status: implemented-reference-baseline
+  x-review-status: approved-for-development
+  x-development-gate: FULFILLMENT-DEV-GATE-20260726-01
+  x-tenant-authority: Bearer token tenantIds authorize tenants; X-Tenant-Id only selects one authorized tenant
+servers:
+  - url: /api/v1
+    description: 目标同源地址
+security:
+  - BearerAuth: []
+    TenantContext: []
+tags:
+  - { name: SalesOrder }
+  - { name: SalesReview }
+  - { name: ShipmentRequest }
+  - { name: FulfillmentTrace }
+  - { name: InventoryAvailability }
+  - { name: InventoryShipmentTask }
+  - { name: InventoryReservation }
+  - { name: SalesOutbound }
+  - { name: InventoryTransaction }
+  - { name: InternalEvent }
+paths:
+  /sales/sales-orders:
+    post:
+      tags: [SalesOrder]
+      summary: 创建首期最小销售订单
+      operationId: createSalesOrder
+      x-permission: sales.order.create
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSalesOrder' }
+      responses:
+        '201':
+          description: 已创建
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderDetail' } } }
+        '422':
+          description: FULFILLMENT_422_PRICE_MISMATCH，expectedTotalAmount 与服务端计算金额不一致，未创建订单
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        default: { $ref: '#/components/responses/Error' }
+    get:
+      tags: [SalesOrder]
+      summary: 按数据范围分页查询销售订单
+      operationId: listSalesOrders
+      x-permission: sales.order.read
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Sort' }
+        - { $ref: '#/components/parameters/TraceId' }
+        - { name: overallStatus, in: query, schema: { $ref: '#/components/schemas/SalesOrderOverallStatus' } }
+        - { name: reviewStatus, in: query, schema: { $ref: '#/components/schemas/SalesReviewStatus' } }
+        - { name: shipmentStatus, in: query, schema: { $ref: '#/components/schemas/SalesShipmentStatus' } }
+        - { name: customerId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: ownerEmployeeId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: warehouseId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: updatedFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: updatedTo, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: 订单分页, content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderPage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /sales/sales-orders/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [SalesOrder]
+      summary: 获取销售订单详情
+      operationId: getSalesOrder
+      x-permission: sales.order.read
+      parameters:
+        - { $ref: '#/components/parameters/TraceId' }
+      responses:
+        '200':
+          description: 订单详情
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [SalesOrder]
+      summary: 编辑待确认订单
+      operationId: updateSalesOrder
+      x-permission: sales.order.update
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateSalesOrder' } } }
+      responses:
+        '200':
+          description: 已更新
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderDetail' } } }
+        '422':
+          description: FULFILLMENT_422_PRICE_MISMATCH，expectedTotalAmount 与服务端计算金额不一致，未更新订单
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /sales/sales-orders/{id}/review-submit:
+    post:
+      tags: [SalesReview]
+      summary: 修改后重新提交已退回的销售订单
+      description: 审批开启时新建订单直接进入 PENDING 并记录 SUBMIT 动作；本接口仅允许 RETURNED -> PENDING。
+      operationId: resubmitSalesOrderReview
+      x-permission: sales.order.review.submit
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReviewSubmitInput' } } }
+      responses:
+        '200':
+          description: 已重新提交审批
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /sales/sales-orders/{id}/review-decisions:
+    post:
+      tags: [SalesReview]
+      summary: 审批、退回或拒绝销售订单
+      description: 需要 sales.order.review.decide；制单人默认不能审批本人订单，显式授予 sales.order.review.self-approve 后可自审。
+      operationId: decideSalesOrderReview
+      x-permission: sales.order.review.decide
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReviewDecisionInput' } } }
+      responses:
+        '200':
+          description: 审批状态已更新
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /sales/sales-orders/{id}/confirm:
+    post:
+      tags: [SalesOrder]
+      summary: 确认销售发货内容并进入已确认
+      description: 只固化交期和销售发货内容，不创建仓库发货任务；订单必须已完成复核或审批。
+      operationId: confirmSalesOrderShipmentContent
+      x-permission: sales.order.confirm
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ConfirmSalesOrderInput' } } }
+      responses:
+        '200':
+          description: 发货内容已确认，订单进入 CONFIRMED，尚未创建发货任务
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /sales/sales-orders/{id}/shipment-requests:
+    post:
+      tags: [ShipmentRequest]
+      summary: 已确认订单发起本次或剩余发货并移交仓库
+      description: 首次发货只接受 CONFIRMED，剩余发货接受 PARTIALLY_SHIPPED；待发货订单必须先确认销售发货内容。
+      operationId: createShipmentRequest
+      x-permission: sales.shipment-request.create
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateShipmentRequest' } } }
+      responses:
+        '202':
+          description: 发货申请已受理，等待库存域处理
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/ShipmentRequestDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /sales/sales-orders/{id}/fulfillment-trace:
+    get:
+      tags: [FulfillmentTrace]
+      summary: 查询订单履约全链路
+      operationId: getSalesOrderFulfillmentTrace
+      x-permission: sales.fulfillment-trace.read
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/TraceId' }
+      responses:
+        '200': { description: 履约时间线, content: { application/json: { schema: { $ref: '#/components/schemas/FulfillmentTrace' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /sales/sales-orders/{id}/cancel:
+    post:
+      tags: [SalesOrder]
+      summary: 在无下游不可逆事实时取消待确认订单
+      operationId: cancelSalesOrder
+      x-permission: sales.order.cancel
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReasonInput' } } }
+      responses:
+        '200':
+          description: 已取消
+          headers: { ETag: { $ref: '#/components/headers/ETag' }, X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOrderDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/availability:
+    get:
+      tags: [InventoryAvailability]
+      summary: 查询销售可履约库存组成
+      operationId: getInventoryAvailability
+      x-permission: inventory.availability.read
+      parameters:
+        - { $ref: '#/components/parameters/TraceId' }
+        - { name: warehouseId, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: productIds, in: query, required: true, schema: { type: array, minItems: 1, maxItems: 100, items: { type: string, maxLength: 100 } }, style: form, explode: false }
+        - { name: asOf, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: 可履约量组成, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/InventoryAvailability' } } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/internal/availability-events:
+    post:
+      tags: [InternalEvent]
+      summary: 消费 WMS 库存可用量事实
+      operationId: receiveInventoryAvailabilityEvent
+      x-permission: inventory.availability.sync
+      security:
+        - BearerAuth: []
+          TenantContext: []
+          InternalEventSignature: []
+      parameters:
+        - { $ref: '#/components/parameters/TraceId' }
+        - { $ref: '#/components/parameters/EventTimestamp' }
+        - { $ref: '#/components/parameters/EventKeyId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InventoryAvailabilityEvent' } } }
+      responses:
+        '200': { description: Inbox 去重和投影结果, content: { application/json: { schema: { $ref: '#/components/schemas/InboxProjectionResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/shipment-tasks:
+    get:
+      tags: [InventoryShipmentTask]
+      summary: 分页查询仓库发货任务
+      operationId: listInventoryShipmentTasks
+      x-permission: inventory.shipment-task.read
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Sort' }
+        - { $ref: '#/components/parameters/TraceId' }
+        - { name: warehouseId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: workflowStatus, in: query, schema: { $ref: '#/components/schemas/ShipmentWorkflowStatus' } }
+        - { name: salesOrderId, in: query, schema: { type: string, format: uuid } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: updatedFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: updatedTo, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: 发货任务分页, content: { application/json: { schema: { $ref: '#/components/schemas/ShipmentTaskPage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/shipment-tasks/{id}:
+    get:
+      tags: [InventoryShipmentTask]
+      summary: 获取仓库发货任务详情
+      operationId: getInventoryShipmentTask
+      x-permission: inventory.shipment-task.read
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/TraceId' }
+      responses:
+        '200':
+          description: 发货任务详情
+          headers: { ETag: { $ref: '#/components/headers/ETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/ShipmentTaskDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/shipment-tasks/{id}/check-and-reserve:
+    post:
+      tags: [InventoryShipmentTask, InventoryReservation]
+      summary: 原子重读权威库存并预留、创建或恢复出库单
+      operationId: checkAndReserveShipmentTask
+      x-permission: inventory.reservation.create
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CheckAndReserveInput' } } }
+      responses:
+        '200': { description: 权威预留结果已确定, content: { application/json: { schema: { $ref: '#/components/schemas/CheckAndReserveResult' } } } }
+        '202': { description: WMS 结果未知，必须使用原幂等键重查, content: { application/json: { schema: { $ref: '#/components/schemas/CheckAndReserveResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/shipment-tasks/{id}/production-requests:
+    post:
+      tags: [InventoryShipmentTask]
+      summary: 对已确认缺口创建或恢复生产需求
+      operationId: createProductionRequestForShipmentTask
+      x-permission: inventory.production-request.create
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProductionRequestInput' } } }
+      responses:
+        '200': { description: 已恢复既有生产需求关联, content: { application/json: { schema: { $ref: '#/components/schemas/ProductionRequestResult' } } } }
+        '201': { description: 已创建生产需求关联, content: { application/json: { schema: { $ref: '#/components/schemas/ProductionRequestResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/reservations/{id}:
+    get:
+      tags: [InventoryReservation]
+      summary: 获取库存预留详情
+      operationId: getInventoryReservation
+      x-permission: inventory.outbound.read
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/TraceId' }
+      responses:
+        '200':
+          description: 预留详情
+          headers: { ETag: { $ref: '#/components/headers/ETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/InventoryReservation' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/reservations/{id}/release:
+    post:
+      tags: [InventoryReservation]
+      summary: 经批准释放未消费预留
+      operationId: releaseInventoryReservation
+      x-permission: inventory.reservation.release
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseReservationInput' } } }
+      responses:
+        '200': { description: 已释放, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryReservation' } } } }
+        '202': { description: WMS 释放结果未知, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryReservation' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/outbounds/{id}:
+    get:
+      tags: [SalesOutbound]
+      summary: 获取销售出库单详情
+      operationId: getSalesOutbound
+      x-permission: inventory.outbound.read
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/TraceId' }
+      responses:
+        '200':
+          description: 出库单详情
+          headers: { ETag: { $ref: '#/components/headers/ETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SalesOutboundDetail' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/outbounds/{id}/post:
+    post:
+      tags: [SalesOutbound]
+      summary: 确认部分或全量销售出库
+      operationId: postSalesOutbound
+      x-permission: inventory.outbound.post
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/TraceId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PostSalesOutboundInput' } } }
+      responses:
+        '200': { description: 出库结果已确定, content: { application/json: { schema: { $ref: '#/components/schemas/PostSalesOutboundResult' } } } }
+        '202': { description: WMS 结果未知，使用 postingKey 重查, content: { application/json: { schema: { $ref: '#/components/schemas/PostSalesOutboundResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/transactions:
+    get:
+      tags: [InventoryTransaction]
+      summary: 分页查询不可变库存流水投影
+      operationId: listInventoryTransactions
+      x-permission: inventory.transaction.read
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Sort' }
+        - { $ref: '#/components/parameters/TraceId' }
+        - { name: warehouseId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: productId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: sourceId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/InventoryTransactionType' } }
+        - { name: occurredFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: occurredTo, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: 库存流水分页, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryTransactionPage' } } } }
+        default: { $ref: '#/components/responses/Error' }
+  /inventory/internal/completion-results:
+    post:
+      tags: [InternalEvent]
+      summary: 消费生产完工过账结果并触发关联发货任务重校验
+      description: Reference WMS 实现在同一幂等事务内登记成品入库流水、推进库存事实版本，并将 allocations 关联的原销售出库任务置为 RECHECKING；客户 WMS 仍需用权威库存事实替换 Reference 投影。
+      operationId: receiveProductionCompletionResult
+      x-permission: inventory.availability.sync
+      security:
+        - BearerAuth: []
+          TenantContext: []
+          InternalEventSignature: []
+      parameters:
+        - { $ref: '#/components/parameters/TraceId' }
+        - { $ref: '#/components/parameters/EventTimestamp' }
+        - { $ref: '#/components/parameters/EventKeyId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ProductionCompletionPostedEvent' } } }
+      responses:
+        '200': { description: Inbox 去重和关联结果, content: { application/json: { schema: { $ref: '#/components/schemas/InboxProjectionResult' } } } }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    TenantContext:
+      type: apiKey
+      in: header
+      name: X-Tenant-Id
+      description: 选择本次操作租户，必须属于 Bearer Token 的 tenantIds；不能扩大令牌权限
+    InternalEventSignature:
+      type: apiKey
+      in: header
+      name: X-Event-Signature
+      description: 对原始请求体、时间戳和密钥 ID 计算的内部事件签名；算法由客户连接配置确定
+  headers:
+    ETag:
+      description: 当前聚合版本，例如 "3"
+      schema: { type: string }
+    TraceId:
+      description: 服务端确认的链路追踪 ID
+      schema: { type: string }
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 20 }
+    Sort:
+      name: sort
+      in: query
+      description: 服务端白名单排序，格式 field:asc 或 field:desc
+      schema: { type: string, maxLength: 80, example: 'updatedAt:desc' }
+    IdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 160 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string, pattern: '^"[1-9][0-9]*"$' }
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    EventTimestamp:
+      name: X-Event-Timestamp
+      in: header
+      required: true
+      description: ISO 8601 UTC 时间；服务端按配置拒绝超出防重放窗口的请求
+      schema: { type: string, format: date-time }
+    EventKeyId:
+      name: X-Event-Key-Id
+      in: header
+      required: true
+      description: 用于密钥轮换的非敏感密钥标识
+      schema: { type: string, minLength: 1, maxLength: 100 }
+  responses:
+    Error:
+      description: 统一业务错误
+      headers: { X-Trace-Id: { $ref: '#/components/headers/TraceId' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+  schemas:
+    Decimal:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$'
+      examples: ['0', '12.500000']
+    PositiveDecimal:
+      allOf:
+        - { $ref: '#/components/schemas/Decimal' }
+        - { pattern: '^(?=.*[1-9])(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$' }
+    Money:
+      type: string
+      pattern: '^-?(0|[1-9][0-9]{0,13})(\.[0-9]{1,6})?$'
+    NonNegativeMoney:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,13})(\.[0-9]{1,6})?$'
+    SalesDiscountRate:
+      type: string
+      description: 折扣百分比，范围 0 到 100（含），最多六位小数；100 表示不打折
+      pattern: '^(100(\.0{1,6})?|(0|[1-9][0-9]?)(\.[0-9]{1,6})?)$'
+      default: '100'
+    ExpectedSalesTotalAmount:
+      allOf:
+        - { $ref: '#/components/schemas/NonNegativeMoney' }
+      description: 可选金额一致性校验值；必须等于服务端计算的优惠后总额，否则返回 422；不作为直接赋值的金额来源
+    SalesOrderOverallStatus:
+      type: string
+      enum: [PENDING_CONFIRMATION, CONFIRMED, REPLENISHING, PARTIALLY_SHIPPED, SHIPPED, CANCELED]
+    SalesReviewStatus:
+      type: string
+      enum: [NOT_REQUIRED, PENDING, APPROVED, REJECTED, RETURNED, CANCELED]
+    SalesShipmentStatus:
+      type: string
+      enum: [NOT_REQUESTED, REQUESTED, PARTIALLY_SHIPPED, SHIPPED]
+    SalesOrderLineStatus:
+      type: string
+      enum: [OPEN, RESERVED, PARTIALLY_SHIPPED, SHIPPED, CANCELED]
+    ShipmentWorkflowStatus:
+      type: string
+      enum: [DRAFT, REQUESTED, PROCESSING, ACTIVE, PROCESSING_UNKNOWN, MANUAL_INTERVENTION, COMPLETED]
+    ShipmentAvailabilityStatus:
+      type: string
+      enum: [UNCHECKED, CHECKING, PARTIALLY_RESERVED, RESERVED, SHORTAGE, RECHECKING]
+    ShipmentReplenishmentStatus:
+      type: string
+      enum: [NOT_REQUIRED, REQUIRED, REQUESTED, IN_PROGRESS, AVAILABLE, CLOSED, FAILED]
+    ShipmentPostingStatus:
+      type: string
+      enum: [NOT_STARTED, PARTIALLY_POSTED, POSTED]
+    InventoryReservationStatus:
+      type: string
+      enum: [PENDING, PARTIAL, ACTIVE, CONSUMED, RELEASED, EXPIRED, FAILED]
+    SalesOutboundStatus:
+      type: string
+      enum: [CREATED, RESERVED, POSTING, PARTIALLY_POSTED, POSTED, PROCESSING_UNKNOWN, MANUAL_INTERVENTION, FAILED]
+    InventoryTransactionType:
+      type: string
+      enum: [SALES_OUTBOUND, FG_COMPLETION_INBOUND, RESERVATION_RELEASE]
+    Address:
+      type: object
+      additionalProperties: false
+      required: [name, phone, country, province, city, address]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        phone: { type: string, minLength: 5, maxLength: 40, writeOnly: true }
+        phoneMasked: { type: string, readOnly: true }
+        country: { type: string, minLength: 1, maxLength: 80 }
+        province: { type: string, minLength: 1, maxLength: 80 }
+        city: { type: string, minLength: 1, maxLength: 80 }
+        district: { type: string, maxLength: 80 }
+        address: { type: string, minLength: 1, maxLength: 500 }
+        postalCode: { type: string, maxLength: 20 }
+    EncryptedRecipientSnapshot:
+      type: object
+      additionalProperties: false
+      description: 跨域持久化快照；Outbox、Inbox 和审计不得保存明文电话，WMS Adapter 仅在调用边界按权限解密
+      required: [name, phoneCiphertext, phoneKeyId, phoneMasked, country, province, city, address]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        phoneCiphertext: { type: string, minLength: 1 }
+        phoneKeyId: { type: string, minLength: 1, maxLength: 100 }
+        phoneMasked: { type: string, minLength: 1, maxLength: 40 }
+        country: { type: string, minLength: 1, maxLength: 80 }
+        province: { type: string, minLength: 1, maxLength: 80 }
+        city: { type: string, minLength: 1, maxLength: 80 }
+        district: { type: string, maxLength: 80 }
+        address: { type: string, minLength: 1, maxLength: 500 }
+        postalCode: { type: string, maxLength: 20 }
+    CreateSalesOrderLine:
+      type: object
+      additionalProperties: false
+      required: [lineNo, productId, orderedQty, uom, unitPrice, taxRate, promisedDate, allowPartialShipment]
+      properties:
+        lineNo: { type: integer, minimum: 1 }
+        productId: { type: string, minLength: 1, maxLength: 100 }
+        orderedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string, minLength: 1, maxLength: 20 }
+        unitPrice: { $ref: '#/components/schemas/NonNegativeMoney' }
+        taxRate: { $ref: '#/components/schemas/Decimal' }
+        promisedDate: { type: string, format: date }
+        allowPartialShipment: { type: boolean }
+    CreateSalesOrder:
+      type: object
+      additionalProperties: false
+      description: 总额为 max(含税明细原价合计 × 折扣率 / 100 - 优惠金额, 0)，使用十进制计算并在最终总额四舍五入至两位小数
+      required: [customerId, ownerEmployeeId, fulfillmentWarehouseId, factoryResourceId, requestedDeliveryDate, allowPartialShipment, currency, recipient, lines]
+      properties:
+        customerId: { type: string, minLength: 1, maxLength: 100 }
+        ownerEmployeeId: { type: string, minLength: 1, maxLength: 100 }
+        fulfillmentWarehouseId: { type: string, minLength: 1, maxLength: 100 }
+        factoryResourceId: { type: string, minLength: 1, maxLength: 100 }
+        requestedDeliveryDate: { type: string, format: date }
+        allowPartialShipment: { type: boolean }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        discountRate: { $ref: '#/components/schemas/SalesDiscountRate' }
+        discountAmount:
+          allOf:
+            - { $ref: '#/components/schemas/NonNegativeMoney' }
+          default: '0'
+        expectedTotalAmount: { $ref: '#/components/schemas/ExpectedSalesTotalAmount' }
+        recipient: { $ref: '#/components/schemas/Address' }
+        sourceQuoteId: { type: string, format: uuid }
+        sourceQuoteRevision: { type: integer, minimum: 1 }
+        lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/CreateSalesOrderLine' } }
+      dependentRequired:
+        sourceQuoteId: [sourceQuoteRevision]
+        sourceQuoteRevision: [sourceQuoteId]
+    UpdateSalesOrder:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: 仅允许编辑无活动履约事实的待确认订单；未传折扣或优惠时保留原值。lines 存在时是按稳定 lineNo 匹配的完整目标集合，既有行保留 ID，缺失行转取消而不物理删除；未传 lines 时保留产品明细
+      properties:
+        ownerEmployeeId: { type: string, minLength: 1, maxLength: 100 }
+        fulfillmentWarehouseId: { type: string, minLength: 1, maxLength: 100 }
+        factoryResourceId: { type: string, minLength: 1, maxLength: 100 }
+        requestedDeliveryDate: { type: string, format: date }
+        allowPartialShipment: { type: boolean }
+        recipient: { $ref: '#/components/schemas/Address' }
+        discountRate: { $ref: '#/components/schemas/SalesDiscountRate' }
+        discountAmount: { $ref: '#/components/schemas/NonNegativeMoney' }
+        expectedTotalAmount: { $ref: '#/components/schemas/ExpectedSalesTotalAmount' }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          description: 完整目标集合；lineNo 在订单内稳定且已使用号码不得分配给另一业务行
+          items: { $ref: '#/components/schemas/CreateSalesOrderLine' }
+    SalesOrderLine:
+      allOf:
+        - { $ref: '#/components/schemas/CreateSalesOrderLine' }
+        - type: object
+          required: [id, shippedQty, activeRequestedQty, reservedQty, remainingQty, lineStatus, version]
+          properties:
+            id: { type: string, format: uuid }
+            shippedQty: { $ref: '#/components/schemas/Decimal' }
+            activeRequestedQty: { $ref: '#/components/schemas/Decimal' }
+            reservedQty: { $ref: '#/components/schemas/Decimal' }
+            remainingQty: { $ref: '#/components/schemas/Decimal' }
+            lineStatus: { $ref: '#/components/schemas/SalesOrderLineStatus' }
+            version: { type: integer, minimum: 1 }
+    SalesOrderSummary:
+      type: object
+      required: [id, orderNo, customerId, customerName, ownerEmployeeId, fulfillmentWarehouseId, totalAmount, currency, overallStatus, reviewStatus, shipmentStatus, requestedDeliveryDate, version, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        orderNo: { type: string }
+        customerId: { type: string }
+        customerName: { type: string }
+        ownerEmployeeId: { type: string }
+        fulfillmentWarehouseId: { type: string }
+        originalAmount:
+          allOf:
+            - { $ref: '#/components/schemas/NonNegativeMoney' }
+          description: 含税产品明细原价合计；旧订单可能没有该字段
+        discountRate: { $ref: '#/components/schemas/SalesDiscountRate' }
+        discountAmount: { $ref: '#/components/schemas/NonNegativeMoney' }
+        totalAmount:
+          allOf:
+            - { $ref: '#/components/schemas/NonNegativeMoney' }
+          description: 优惠后持久化订单金额，最终四舍五入至两位小数；审批和确认不重新定价
+        currency: { type: string }
+        overallStatus: { $ref: '#/components/schemas/SalesOrderOverallStatus' }
+        reviewStatus: { $ref: '#/components/schemas/SalesReviewStatus' }
+        shipmentStatus: { $ref: '#/components/schemas/SalesShipmentStatus' }
+        requestedDeliveryDate: { type: string, format: date }
+        version: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+    SalesOrderDetail:
+      allOf:
+        - { $ref: '#/components/schemas/SalesOrderSummary' }
+        - type: object
+          required: [factoryResourceId, allowPartialShipment, reviewRequired, reviewPolicyVersion, recipient, lines, correlationId, createdBy, createdAt]
+          properties:
+            factoryResourceId: { type: string }
+            allowPartialShipment: { type: boolean }
+            reviewRequired: { type: boolean }
+            reviewPolicyVersion: { type: string }
+            recipient: { $ref: '#/components/schemas/Address' }
+            lines: { type: array, items: { $ref: '#/components/schemas/SalesOrderLine' } }
+            correlationId: { type: string, format: uuid }
+            createdBy: { type: string }
+            createdAt: { type: string, format: date-time }
+            cancelReason: { type: string }
+            canceledAt: { type: string, format: date-time }
+    SalesOrderPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SalesOrderSummary' } }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+    ReviewSubmitInput:
+      type: object
+      additionalProperties: false
+      properties: { comment: { type: string, maxLength: 500 } }
+    ConfirmSalesOrderInput:
+      type: object
+      additionalProperties: false
+      required: [requestedDeliveryDate]
+      properties:
+        requestedDeliveryDate: { type: string, format: date, description: 确认后的销售承诺交期，不得早于租户当前日期 }
+    ReviewDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [APPROVE, RETURN, REJECT] }
+        comment: { type: string, maxLength: 500, description: RETURN/REJECT 时必填 }
+    ReasonInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: { reason: { type: string, minLength: 1, maxLength: 500 } }
+    CreateShipmentRequestLine:
+      type: object
+      additionalProperties: false
+      required: [orderLineId, sourceLineRevision, requestedQty, uom]
+      properties:
+        orderLineId: { type: string, format: uuid }
+        sourceLineRevision: { type: integer, minimum: 1 }
+        requestedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string, minLength: 1, maxLength: 20 }
+    CreateShipmentRequest:
+      type: object
+      additionalProperties: false
+      required: [warehouseId, lines]
+      properties:
+        warehouseId: { type: string, minLength: 1, maxLength: 100 }
+        lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/CreateShipmentRequestLine' } }
+    ShipmentRequestLine:
+      allOf:
+        - { $ref: '#/components/schemas/CreateShipmentRequestLine' }
+        - type: object
+          required: [id, productId, reservedQty, postedQty, shortageQty]
+          properties:
+            id: { type: string, format: uuid }
+            productId: { type: string }
+            reservedQty: { $ref: '#/components/schemas/Decimal' }
+            postedQty: { $ref: '#/components/schemas/Decimal' }
+            shortageQty: { $ref: '#/components/schemas/Decimal' }
+            productionDemandId: { type: string, format: uuid }
+            sourceLineRevision: { type: integer, minimum: 1 }
+            promisedDate: { type: string, format: date }
+            allowPartialShipment: { type: boolean }
+    ShipmentRequestDetail:
+      type: object
+      required: [id, requestNo, salesOrderId, warehouseId, orderRevision, workflowStatus, availabilityStatus, replenishmentStatus, postingStatus, lines, version, correlationId, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        requestNo: { type: string }
+        salesOrderId: { type: string, format: uuid }
+        warehouseId: { type: string }
+        orderRevision: { type: integer, minimum: 1 }
+        workflowStatus: { $ref: '#/components/schemas/ShipmentWorkflowStatus' }
+        availabilityStatus: { $ref: '#/components/schemas/ShipmentAvailabilityStatus' }
+        replenishmentStatus: { $ref: '#/components/schemas/ShipmentReplenishmentStatus' }
+        postingStatus: { $ref: '#/components/schemas/ShipmentPostingStatus' }
+        inventoryFactVersion: { type: integer, minimum: 1 }
+        outboundId: { type: string, format: uuid }
+        lines: { type: array, items: { $ref: '#/components/schemas/ShipmentRequestLine' } }
+        version: { type: integer, minimum: 1 }
+        correlationId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    FulfillmentTrace:
+      type: object
+      required: [salesOrderId, correlationId, events]
+      properties:
+        salesOrderId: { type: string, format: uuid }
+        correlationId: { type: string, format: uuid }
+        events:
+          type: array
+          items:
+            type: object
+            required: [eventType, aggregateType, aggregateId, status, occurredAt, traceId]
+            properties:
+              eventType: { type: string }
+              aggregateType: { type: string }
+              aggregateId: { type: string }
+              aggregateCode: { type: string }
+              status: { type: string }
+              occurredAt: { type: string, format: date-time }
+              traceId: { type: string }
+              summary: { type: string }
+    InventoryAvailability:
+      type: object
+      required: [warehouseId, productId, qualifiedOnHandQty, allocatedReservedQty, frozenQty, safetyStockQty, inTransitQty, fulfillableQty, uom, formulaVersion, factVersion, sourceSystem, sourceEventId, asOf]
+      properties:
+        warehouseId: { type: string }
+        productId: { type: string }
+        qualifiedOnHandQty: { $ref: '#/components/schemas/Decimal' }
+        allocatedReservedQty: { $ref: '#/components/schemas/Decimal' }
+        frozenQty: { $ref: '#/components/schemas/Decimal' }
+        safetyStockQty: { $ref: '#/components/schemas/Decimal' }
+        inTransitQty: { $ref: '#/components/schemas/Decimal' }
+        fulfillableQty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+        formulaVersion: { type: string }
+        factVersion: { type: integer, minimum: 1 }
+        sourceSystem: { type: string }
+        sourceEventId: { type: string }
+        asOf: { type: string, format: date-time }
+    EventEnvelope:
+      type: object
+      required: [eventId, eventType, eventVersion, tenantId, aggregateType, aggregateId, aggregateVersion, correlationId, traceId, sourceSystem, occurredAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType: { type: string }
+        eventVersion: { type: integer, minimum: 1 }
+        tenantId: { type: string }
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        aggregateVersion: { type: integer, minimum: 1 }
+        correlationId: { type: string, format: uuid }
+        causationId: { type: string, format: uuid }
+        traceId: { type: string }
+        sourceSystem: { type: string }
+        occurredAt: { type: string, format: date-time }
+    ShipmentRequestedEventLine:
+      type: object
+      additionalProperties: false
+      required: [requestLineId, orderLineId, sourceLineRevision, productId, requestedQty, uom, allowPartialShipment, promisedDate]
+      properties:
+        requestLineId: { type: string, format: uuid }
+        orderLineId: { type: string, format: uuid }
+        sourceLineRevision: { type: integer, minimum: 1 }
+        productId: { type: string }
+        requestedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string }
+        allowPartialShipment: { type: boolean }
+        promisedDate: { type: string, format: date }
+    ShipmentRequestRequestedPayload:
+      type: object
+      additionalProperties: false
+      required: [shipmentRequestId, requestNo, salesOrderId, orderRevision, warehouseId, allowPartialShipment, recipientSnapshot, lines, requestedBy]
+      properties:
+        shipmentRequestId: { type: string, format: uuid }
+        requestNo: { type: string }
+        salesOrderId: { type: string, format: uuid }
+        orderRevision: { type: integer, minimum: 1 }
+        warehouseId: { type: string }
+        allowPartialShipment: { type: boolean }
+        recipientSnapshot: { $ref: '#/components/schemas/EncryptedRecipientSnapshot' }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ShipmentRequestedEventLine' } }
+        requestedBy: { type: string }
+    ShipmentRequestRequestedEvent:
+      x-aggregate-type: SalesShipmentRequest
+      x-aggregate-id-source: payload.shipmentRequestId
+      x-aggregate-version-source: shipment request version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: sales.shipment-request.requested.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/ShipmentRequestRequestedPayload' }
+    ReservationDecisionEventLine:
+      type: object
+      additionalProperties: false
+      required: [reservationId, orderLineId, requestedQty, reservedQty, shortageQty, uom]
+      properties:
+        reservationId: { type: string, format: uuid }
+        orderLineId: { type: string, format: uuid }
+        productId: { type: string }
+        requestedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        reservedQty: { $ref: '#/components/schemas/Decimal' }
+        shortageQty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+    ReservationCreatedPayload:
+      type: object
+      additionalProperties: false
+      required: [shipmentRequestId, salesOrderId, warehouseId, factVersion, formulaVersion, reservations, outboundId]
+      properties:
+        shipmentRequestId: { type: string, format: uuid }
+        salesOrderId: { type: string, format: uuid }
+        warehouseId: { type: string }
+        factVersion: { type: integer, minimum: 1 }
+        formulaVersion: { type: string }
+        reservations: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ReservationDecisionEventLine' } }
+        outboundId: { type: string, format: uuid }
+    ReservationCreatedEvent:
+      x-aggregate-type: InventoryShipmentTask
+      x-aggregate-id-source: envelope aggregateId
+      x-aggregate-version-source: shipment task version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: inventory.reservation.created.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/ReservationCreatedPayload' }
+    ShortageDetectedPayload:
+      type: object
+      additionalProperties: false
+      required: [shipmentRequestId, salesOrderId, warehouseId, factVersion, lines]
+      properties:
+        shipmentRequestId: { type: string, format: uuid }
+        salesOrderId: { type: string, format: uuid }
+        warehouseId: { type: string }
+        factVersion: { type: integer, minimum: 1 }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ReservationDecisionEventLine' } }
+    ShortageDetectedEvent:
+      x-aggregate-type: InventoryShipmentTask
+      x-aggregate-id-source: envelope aggregateId
+      x-aggregate-version-source: shipment task version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: inventory.shortage.detected.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/ShortageDetectedPayload' }
+    ProductionDemandCreatedPayload:
+      type: object
+      additionalProperties: false
+      required: [demandId, demandCode, shipmentRequestId, requestLineId, salesOrderId, orderLineId, sourceRevision, productId, shortageQty, uom, dueDate, factoryResourceId, status]
+      properties:
+        demandId: { type: string, format: uuid }
+        demandCode: { type: string }
+        shipmentRequestId: { type: string, format: uuid }
+        requestLineId: { type: string, format: uuid }
+        salesOrderId: { type: string, format: uuid }
+        orderLineId: { type: string, format: uuid }
+        sourceRevision: { type: integer, minimum: 1 }
+        productId: { type: string }
+        shortageQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string }
+        dueDate: { type: string, format: date }
+        factoryResourceId: { type: string }
+        status: { type: string }
+    ProductionDemandCreatedEvent:
+      x-aggregate-type: Demand
+      x-aggregate-id-source: payload.demandId
+      x-aggregate-version-source: demand version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: production.demand.created.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/ProductionDemandCreatedPayload' }
+    ReservationReleasedEventLine:
+      type: object
+      additionalProperties: false
+      required: [orderLineId, releasedQty, uom]
+      properties:
+        orderLineId: { type: string, format: uuid }
+        releasedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string }
+    ReservationReleasedPayload:
+      type: object
+      additionalProperties: false
+      required: [reservationId, shipmentRequestId, salesOrderId, lines, reasonCode, reason]
+      properties:
+        reservationId: { type: string, format: uuid }
+        shipmentRequestId: { type: string, format: uuid }
+        salesOrderId: { type: string, format: uuid }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ReservationReleasedEventLine' } }
+        reasonCode: { type: string }
+        reason: { type: string }
+        compensationId: { type: string, format: uuid }
+    ReservationReleasedEvent:
+      x-aggregate-type: InventoryReservation
+      x-aggregate-id-source: payload.reservationId
+      x-aggregate-version-source: reservation version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: inventory.reservation.released.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/ReservationReleasedPayload' }
+    SalesOutboundPostedEventLine:
+      type: object
+      additionalProperties: false
+      required: [orderLineId, postedQty, cumulativePostedQty, remainingQty, uom]
+      properties:
+        orderLineId: { type: string, format: uuid }
+        postedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        cumulativePostedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        remainingQty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+    SalesOutboundPostedPayload:
+      type: object
+      additionalProperties: false
+      required: [outboundId, externalTransactionIds, shipmentRequestId, salesOrderId, postedAt, lines]
+      properties:
+        outboundId: { type: string, format: uuid }
+        externalTransactionIds: { type: array, minItems: 1, items: { type: string } }
+        shipmentRequestId: { type: string, format: uuid }
+        salesOrderId: { type: string, format: uuid }
+        postedAt: { type: string, format: date-time }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/SalesOutboundPostedEventLine' } }
+    SalesOutboundPartiallyPostedEvent:
+      x-aggregate-type: SalesOutbound
+      x-aggregate-id-source: payload.outboundId
+      x-aggregate-version-source: outbound version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: inventory.sales-outbound.partially-posted.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/SalesOutboundPostedPayload' }
+    SalesOutboundPostedEvent:
+      x-aggregate-type: SalesOutbound
+      x-aggregate-id-source: payload.outboundId
+      x-aggregate-version-source: outbound version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: inventory.sales-outbound.posted.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/SalesOutboundPostedPayload' }
+    InventoryAvailabilityEvent:
+      x-aggregate-type: InventoryAvailability
+      x-aggregate-id-source: 'availability:{base64url(payload.warehouseId)}:{base64url(payload.productId)}'
+      x-aggregate-version-source: payload.factVersion
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: inventory.availability.changed.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/InventoryAvailability' }
+    InboxProjectionResult:
+      type: object
+      required: [duplicate, projectionResult]
+      properties:
+        duplicate: { type: boolean }
+        projectionResult: { type: string, enum: [INSERTED, UPDATED, STALE, DUPLICATE] }
+        relatedTaskIds: { type: array, items: { type: string, format: uuid } }
+    ShipmentTaskSummary:
+      type: object
+      required: [id, requestNo, salesOrderId, salesOrderNo, warehouseId, workflowStatus, availabilityStatus, replenishmentStatus, postingStatus, version, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        requestNo: { type: string }
+        salesOrderId: { type: string, format: uuid }
+        salesOrderNo: { type: string }
+        warehouseId: { type: string }
+        workflowStatus: { $ref: '#/components/schemas/ShipmentWorkflowStatus' }
+        availabilityStatus: { $ref: '#/components/schemas/ShipmentAvailabilityStatus' }
+        replenishmentStatus: { $ref: '#/components/schemas/ShipmentReplenishmentStatus' }
+        postingStatus: { $ref: '#/components/schemas/ShipmentPostingStatus' }
+        version: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+    ShipmentTaskDetail:
+      allOf:
+        - { $ref: '#/components/schemas/ShipmentTaskSummary' }
+        - type: object
+          required: [orderRevision, allowPartialShipment, recipient, lines, correlationId]
+          properties:
+            orderRevision: { type: integer, minimum: 1 }
+            allowPartialShipment: { type: boolean }
+            factoryResourceId: { type: string, maxLength: 100 }
+            inventoryFactVersion: { type: integer, minimum: 1 }
+            recipient: { $ref: '#/components/schemas/Address' }
+            lines: { type: array, items: { $ref: '#/components/schemas/ShipmentRequestLine' } }
+            correlationId: { type: string, format: uuid }
+            reservationIds: { type: array, items: { type: string, format: uuid } }
+            outboundId: { type: string, format: uuid }
+    ShipmentTaskPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ShipmentTaskSummary' } }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+    ExpectedInventoryFactVersion:
+      type: object
+      additionalProperties: false
+      required: [productId, factVersion]
+      properties:
+        productId: { type: string, minLength: 1, maxLength: 100 }
+        factVersion: { type: integer, minimum: 1 }
+    CheckAndReserveInput:
+      type: object
+      additionalProperties: false
+      required: [shipmentRequestId, orderRevision]
+      properties:
+        shipmentRequestId: { type: string, format: uuid }
+        orderRevision: { type: integer, minimum: 1 }
+        warehouseId: { type: string, minLength: 1, maxLength: 100 }
+        expectedFactVersions: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/ExpectedInventoryFactVersion' } }
+    InventoryReservation:
+      type: object
+      description: WMS 原子预留聚合；一个预留可包含同一发货任务的多条产品行
+      required: [id, shipmentTaskId, warehouseId, externalReservationId, status, factVersion, formulaVersion, reservedQty, consumedQty, releasedQty, uom, lines, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        shipmentTaskId: { type: string, format: uuid }
+        warehouseId: { type: string }
+        externalReservationId: { type: string }
+        reservedQty: { $ref: '#/components/schemas/Decimal' }
+        consumedQty: { $ref: '#/components/schemas/Decimal' }
+        releasedQty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+        status: { $ref: '#/components/schemas/InventoryReservationStatus' }
+        factVersion: { type: integer, minimum: 1 }
+        formulaVersion: { type: string }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [taskLineId, orderLineId, productId, requestedQty, reservedQty, consumedQty, releasedQty, uom]
+            properties:
+              taskLineId: { type: string, format: uuid }
+              orderLineId: { type: string, format: uuid }
+              productId: { type: string }
+              requestedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+              reservedQty: { $ref: '#/components/schemas/Decimal' }
+              consumedQty: { $ref: '#/components/schemas/Decimal' }
+              releasedQty: { $ref: '#/components/schemas/Decimal' }
+              uom: { type: string }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CheckAndReserveResult:
+      type: object
+      required: [task, shipmentTask, reservations, result, traceId]
+      properties:
+        task: { $ref: '#/components/schemas/ShipmentTaskDetail' }
+        shipmentTask: { $ref: '#/components/schemas/ShipmentTaskDetail' }
+        reservations: { type: array, items: { $ref: '#/components/schemas/InventoryReservation' } }
+        outbound: { $ref: '#/components/schemas/SalesOutboundDetail' }
+        result: { type: string, enum: [RESERVED, PARTIALLY_RESERVED, SHORTAGE, PROCESSING_UNKNOWN] }
+        traceId: { type: string }
+    CreateProductionRequestLine:
+      type: object
+      additionalProperties: false
+      required: [shipmentRequestLineId, orderLineId]
+      properties:
+        shipmentRequestLineId: { type: string, format: uuid }
+        orderLineId: { type: string, format: uuid }
+        sourceRevision: { type: integer, minimum: 1 }
+        factoryResourceId: { type: string, minLength: 1, maxLength: 100 }
+        dueDate: { type: string, format: date }
+    CreateProductionRequestInput:
+      type: object
+      additionalProperties: false
+      required: [lines]
+      properties:
+        lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/CreateProductionRequestLine' } }
+    ProductionRequestLink:
+      type: object
+      required: [shipmentRequestLineId, orderLineId, demandId, demandCode, sourceRevision, shortageQty, uom]
+      properties:
+        shipmentRequestLineId: { type: string, format: uuid }
+        orderLineId: { type: string, format: uuid }
+        demandId: { type: string, format: uuid }
+        demandCode: { type: string }
+        sourceRevision: { type: integer, minimum: 1 }
+        shortageQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string }
+    ProductionRequestResult:
+      type: object
+      required: [task, shipmentTask, links, restored, recovered, traceId]
+      properties:
+        task: { $ref: '#/components/schemas/ShipmentTaskDetail' }
+        shipmentTask: { $ref: '#/components/schemas/ShipmentTaskDetail' }
+        links: { type: array, items: { $ref: '#/components/schemas/ProductionRequestLink' } }
+        demands: { type: array, items: { $ref: '#/components/schemas/ProductionDemandCreatedPayload' } }
+        restored: { type: boolean }
+        recovered: { type: boolean }
+        traceId: { type: string }
+    ReleaseReservationInput:
+      type: object
+      additionalProperties: false
+      required: [reason, compensationId]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        compensationId: { type: string, format: uuid }
+    SalesOutboundLine:
+      type: object
+      required: [id, orderLineId, productId, requestedQty, reservedQty, postedQty, uom]
+      properties:
+        id: { type: string, format: uuid }
+        orderLineId: { type: string, format: uuid }
+        productId: { type: string }
+        requestedQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        reservedQty: { $ref: '#/components/schemas/Decimal' }
+        postedQty: { $ref: '#/components/schemas/Decimal' }
+        uom: { type: string }
+        batchAllocations: { type: array, items: { type: object, additionalProperties: true } }
+    SalesOutboundDetail:
+      type: object
+      required: [id, outboundNo, shipmentRequestId, salesOrderId, warehouseId, status, lines, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        outboundNo: { type: string }
+        shipmentRequestId: { type: string, format: uuid }
+        salesOrderId: { type: string, format: uuid }
+        warehouseId: { type: string }
+        status: { $ref: '#/components/schemas/SalesOutboundStatus' }
+        externalOutboundId: { type: string }
+        postingKey: { type: string }
+        lines: { type: array, items: { $ref: '#/components/schemas/SalesOutboundLine' } }
+        postedAt: { type: string, format: date-time }
+        failureCode: { type: string }
+        failureMessage: { type: string }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PostSalesOutboundLineInput:
+      type: object
+      additionalProperties: false
+      required: [outboundLineId, qty, uom]
+      properties:
+        outboundLineId: { type: string, format: uuid }
+        qty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string, minLength: 1, maxLength: 20 }
+    PostSalesOutboundInput:
+      type: object
+      additionalProperties: false
+      required: [lines, shippedAt]
+      description: |
+        本次增量出库；行标识不得重复，数量必须为正且不超过该行未消费预留，单位必须一致。
+        不允许分批的订单/任务必须全量出库。shippedAt 必须为可解析时间戳。
+        网络中断后重试必须复用相同 X-Idempotency-Key、If-Match 和完整请求体，
+        以恢复首次结果，防止重复扣库存或累计销售已发量。
+      properties:
+        lines: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/PostSalesOutboundLineInput' } }
+        carrier: { type: string, maxLength: 100 }
+        trackingNo: { type: string, maxLength: 100 }
+        shippedAt: { type: string, format: date-time }
+    PostSalesOutboundResult:
+      type: object
+      required: [outbound, outcome, adapterKind, result, transactions, traceId]
+      allOf:
+        - if:
+            properties:
+              outcome: { const: SUCCEEDED }
+            required: [outcome]
+          then:
+            required: [task, order, externalTransactionIds]
+      properties:
+        outbound: { $ref: '#/components/schemas/SalesOutboundDetail' }
+        outcome: { type: string, enum: [SUCCEEDED, PROCESSING_UNKNOWN, REJECTED] }
+        adapterKind: { type: string, enum: [REFERENCE] }
+        result: { type: string, enum: [PARTIALLY_POSTED, POSTED, PROCESSING_UNKNOWN, FAILED] }
+        task:
+          $ref: '#/components/schemas/ShipmentTaskDetail'
+          description: SUCCEEDED 时返回的权威任务，包含累计已发、预留及剩余状态。
+        order:
+          $ref: '#/components/schemas/SalesOrderDetail'
+          description: SUCCEEDED 时返回的权威销售订单，前端直接应用，重新进入页面时仍从 API 读取。
+        transactions: { type: array, items: { $ref: '#/components/schemas/InventoryTransaction' } }
+        externalTransactionIds: { type: array, items: { type: string } }
+        traceId: { type: string }
+    InventoryTransaction:
+      type: object
+      required: [id, transactionNo, externalTransactionId, type, warehouseId, productId, qty, uom, sourceType, sourceId, occurredAt]
+      properties:
+        id: { type: string, format: uuid }
+        transactionNo: { type: string }
+        externalTransactionId: { type: string }
+        type: { $ref: '#/components/schemas/InventoryTransactionType' }
+        warehouseId: { type: string }
+        productId: { type: string }
+        qty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string }
+        sourceType: { type: string }
+        sourceId: { type: string }
+        sourceLineId: { type: string }
+        factVersion: { type: integer, minimum: 1 }
+        occurredAt: { type: string, format: date-time }
+        payloadSnapshot: { type: object, additionalProperties: true }
+    InventoryTransactionPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/InventoryTransaction' } }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+    ProductionCompletionPostedPayload:
+      type: object
+      required: [completionId, workOrderId, externalTransactionId, warehouseId, productId, qty, uom, productionDate, allocations]
+      properties:
+        completionId: { type: string, format: uuid }
+        workOrderId: { type: string, format: uuid }
+        externalTransactionId: { type: string }
+        warehouseId: { type: string }
+        productId: { type: string }
+        qty: { $ref: '#/components/schemas/PositiveDecimal' }
+        uom: { type: string }
+        productionDate: { type: string, format: date }
+        inventoryFactVersion: { type: integer, minimum: 1 }
+        allocations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [demandId, qty]
+            properties:
+              demandId: { type: string, format: uuid }
+              qty: { $ref: '#/components/schemas/PositiveDecimal' }
+    ProductionCompletionPostedEvent:
+      x-aggregate-type: Completion
+      x-aggregate-id-source: payload.completionId
+      x-aggregate-version-source: completion version
+      allOf:
+        - { $ref: '#/components/schemas/EventEnvelope' }
+        - type: object
+          required: [payload]
+          properties:
+            eventType: { const: production.completion.posted.v1 }
+            eventVersion: { const: 1 }
+            payload: { $ref: '#/components/schemas/ProductionCompletionPostedPayload' }
+    FulfillmentDomainEvent:
+      oneOf:
+        - { $ref: '#/components/schemas/ShipmentRequestRequestedEvent' }
+        - { $ref: '#/components/schemas/InventoryAvailabilityEvent' }
+        - { $ref: '#/components/schemas/ReservationCreatedEvent' }
+        - { $ref: '#/components/schemas/ShortageDetectedEvent' }
+        - { $ref: '#/components/schemas/ProductionDemandCreatedEvent' }
+        - { $ref: '#/components/schemas/ProductionCompletionPostedEvent' }
+        - { $ref: '#/components/schemas/ReservationReleasedEvent' }
+        - { $ref: '#/components/schemas/SalesOutboundPartiallyPostedEvent' }
+        - { $ref: '#/components/schemas/SalesOutboundPostedEvent' }
+      discriminator:
+        propertyName: eventType
+        mapping:
+          sales.shipment-request.requested.v1: '#/components/schemas/ShipmentRequestRequestedEvent'
+          inventory.availability.changed.v1: '#/components/schemas/InventoryAvailabilityEvent'
+          inventory.reservation.created.v1: '#/components/schemas/ReservationCreatedEvent'
+          inventory.shortage.detected.v1: '#/components/schemas/ShortageDetectedEvent'
+          production.demand.created.v1: '#/components/schemas/ProductionDemandCreatedEvent'
+          production.completion.posted.v1: '#/components/schemas/ProductionCompletionPostedEvent'
+          inventory.reservation.released.v1: '#/components/schemas/ReservationReleasedEvent'
+          inventory.sales-outbound.partially-posted.v1: '#/components/schemas/SalesOutboundPartiallyPostedEvent'
+          inventory.sales-outbound.posted.v1: '#/components/schemas/SalesOutboundPostedEvent'
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, suggestion, retryable, fieldErrors, traceId]
+          properties:
+            code: { type: string, example: INVENTORY_422_QUANTITY_VIOLATION }
+            message: { type: string }
+            suggestion: { type: string }
+            retryable: { type: boolean }
+            fieldErrors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+            details: { type: object, additionalProperties: true }
+            traceId: { type: string }

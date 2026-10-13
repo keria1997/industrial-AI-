@@ -26,6 +26,7 @@ export type ProductionDemandDto = {
   dueDate: string;
   factoryResourceId: string;
   status: string;
+  mrpTaskId?: string;
   correlationId: string;
   version: number;
   source?: DemandTraceability;

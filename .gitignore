@@ -3,7 +3,10 @@ dist/
 .vite/
 .DS_Store
 *.log
+server-java/target/
 .env
 .env.*
 !server/.env.example
+!deploy/.env.production.example
 coverage/
+deploy/artifacts/

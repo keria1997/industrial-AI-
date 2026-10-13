@@ -149,6 +149,13 @@ export default function ProductionOperations({ currentTenant, currentUser }: Pro
 
   const createOrder = (demand: DemandDto, scheduleCandidateId: string) => {
     if (!context) return;
+    const inventoryWarehouseId = demand.source?.payloadSnapshot?.warehouseId
+      || demand.source?.payloadSnapshot?.inventoryWarehouseId
+      || demand.source?.inventoryWarehouseId;
+    if (!inventoryWarehouseId) {
+      setNotice({ type: "error", message: `需求 ${demand.code} 缺少目标成品仓，无法创建工单` });
+      return;
+    }
     const seed = `${context.tenantId}:${demand.id}:${demand.version}`;
     void execute(`order:${demand.id}`, `工单已创建并关联需求 ${demand.code}`, () => productionOperationsApi.createWorkOrder(context, {
       productId: demand.productId,
@@ -164,6 +171,7 @@ export default function ProductionOperations({ currentTenant, currentUser }: Pro
       scheduleCandidateId,
       kittingStatus: "READY",
       correlationId: demand.correlationId,
+      inventoryWarehouseId,
       demandLinks: [{ demandId: demand.id, allocatedQty: demand.qty, promisedDate: demand.dueDate }],
     }, `work-order-create:${seed}`));
   };

@@ -160,7 +160,9 @@ export const platformStorageKey = (tenantId = 'TENANT-SHWS') => `industrial-ai-p
 const workbenchRoleCodeMap: Record<string, string> = {
   '超级管理员': 'TENANT_ADMIN',
   '系统管理员': 'TENANT_ADMIN',
-  '老板': 'PRODUCTION_VIEWER',
+  '管理员': 'TENANT_ADMIN',
+  '老板': 'TENANT_ADMIN',
+  '人事': 'HR_SPECIALIST',
   '计划员': 'PRODUCTION_DIRECTOR',
   '车间': 'PRODUCTION_WORKSHOP',
   '仓管': 'WAREHOUSE_ADMIN',
@@ -307,6 +309,7 @@ const roles: Role[] = [
   { id: 'ROLE-FIN', code: 'FINANCE_STAFF', name: '财务专员', description: '应收应付、凭证和授权金额字段', dataScope: 'org_tree', scopeValues: ['ORG-FIN'], status: 'enabled' },
   { id: 'ROLE-SHOP', code: 'PRODUCTION_WORKSHOP', name: '车间执行人员', description: '授权工厂的工单执行、报工、质量与完工', dataScope: 'factory_set', scopeValues: ['ORG-FAC-01'], status: 'enabled' },
   { id: 'ROLE-PROD-VIEW', code: 'PRODUCTION_VIEWER', name: '生产只读人员', description: '只查看授权工厂的生产业务数据', dataScope: 'factory_set', scopeValues: ['ORG-FAC-01'], status: 'enabled' },
+  { id: 'ROLE-HR', code: 'HR_SPECIALIST', name: '人事专员', description: '管理员工、考勤与技能证书', dataScope: 'tenant_all', scopeValues: [], status: 'enabled' },
 ];
 
 const permissions: PermissionResource[] = [
@@ -325,6 +328,11 @@ const permissions: PermissionResource[] = [
   { id: 'PERM-PROD-VIEW', code: 'production.view', name: '生产管理查看', module: '生产管理', type: 'menu', risk: 'normal' },
   { id: 'PERM-PROD-MASTER', code: 'production.master.manage', name: '生产主数据维护', module: '生产管理', type: 'button', risk: 'sensitive' },
   { id: 'PERM-PROD-DEMAND', code: 'production.demand.manage', name: '生产需求维护', module: '生产管理', type: 'button', risk: 'sensitive' },
+  { id: 'PERM-PROD-DEMAND-REVIEW', code: 'production.demand.review', name: '生产需求校验', module: '生产管理', type: 'api', risk: 'sensitive' },
+  { id: 'PERM-PROD-DEMAND-APPROVE', code: 'production.demand.approve', name: '生产需求审批', module: '生产管理', type: 'api', risk: 'critical' },
+  { id: 'PERM-PROD-DEMAND-CLAIM', code: 'production.demand.claim', name: '生产需求接收', module: '生产管理', type: 'api', risk: 'sensitive' },
+  { id: 'PERM-PROD-MRP-RUN', code: 'production.mrp.run', name: 'MRP展算执行', module: '生产管理', type: 'api', risk: 'sensitive' },
+  { id: 'PERM-PROD-APS-RUN', code: 'production.aps.run', name: 'APS排程执行', module: '生产管理', type: 'api', risk: 'sensitive' },
   { id: 'PERM-PROD-PLAN', code: 'production.plan.manage', name: '生产计划维护', module: '生产管理', type: 'button', risk: 'sensitive' },
   { id: 'PERM-PROD-APS', code: 'production.aps.manage', name: 'APS排产维护', module: '生产管理', type: 'button', risk: 'sensitive' },
   { id: 'PERM-PROD-KITTING', code: 'production.kitting.manage', name: '齐套与投料维护', module: '生产管理', type: 'button', risk: 'sensitive' },
@@ -335,8 +343,21 @@ const permissions: PermissionResource[] = [
   { id: 'PERM-STOCK-EXPORT', code: 'inventory.stock.export', name: '库存导出', module: '库存管理', type: 'export', risk: 'sensitive' },
   { id: 'PERM-COST', code: 'finance.cost.costAmount', name: '成本金额', module: '财务管理', type: 'field', risk: 'critical' },
   { id: 'PERM-RISK', code: 'sales.customer.riskLevel', name: '客户风险等级', module: '销售管理', type: 'field', risk: 'sensitive' },
+  { id: 'PERM-SALES-ORDER-SELF-APPROVE', code: 'sales.order.review.self-approve', name: '销售订单本人审批', module: '销售管理', type: 'api', risk: 'critical' },
   { id: 'PERM-SUP-ATT', code: 'purchase.supplier.attachments', name: '供应商资质附件', module: '采购管理', type: 'field', risk: 'sensitive' },
   { id: 'PERM-AI-RISK', code: 'ai.customerRisk.query', name: 'AI客户风险查询', module: 'AI助手', type: 'ai', risk: 'critical' },
+  { id: 'PERM-WORKBENCH', code: 'workbench.dashboard.read', name: '工作台查看', module: '工作台', type: 'page', risk: 'normal' },
+  { id: 'PERM-HR-EMPLOYEE-READ', code: 'hr.employee.read', name: '员工查看', module: '人员管理', type: 'page', risk: 'normal' },
+  { id: 'PERM-HR-EMPLOYEE-CREATE', code: 'hr.employee.create', name: '员工新增', module: '人员管理', type: 'button', risk: 'sensitive' },
+  { id: 'PERM-HR-EMPLOYEE-UPDATE', code: 'hr.employee.update', name: '员工维护', module: '人员管理', type: 'button', risk: 'sensitive' },
+  { id: 'PERM-HR-EMPLOYEE-DELETE', code: 'hr.employee.delete', name: '员工删除', module: '人员管理', type: 'button', risk: 'critical' },
+  { id: 'PERM-HR-ATTENDANCE-READ', code: 'hr.attendance.read', name: '考勤查看', module: '人员管理', type: 'page', risk: 'normal' },
+  { id: 'PERM-HR-ATTENDANCE-CREATE', code: 'hr.attendance.create', name: '考勤登记', module: '人员管理', type: 'button', risk: 'sensitive' },
+  { id: 'PERM-HR-ATTENDANCE-UPDATE', code: 'hr.attendance.update', name: '考勤维护', module: '人员管理', type: 'button', risk: 'sensitive' },
+  { id: 'PERM-HR-SKILL-READ', code: 'hr.skill.read', name: '技能证书查看', module: '人员管理', type: 'page', risk: 'normal' },
+  { id: 'PERM-HR-SKILL-CREATE', code: 'hr.skill.create', name: '技能证书新增', module: '人员管理', type: 'button', risk: 'sensitive' },
+  { id: 'PERM-HR-SKILL-UPDATE', code: 'hr.skill.update', name: '技能证书维护', module: '人员管理', type: 'button', risk: 'sensitive' },
+  { id: 'PERM-HR-SKILL-RENEW', code: 'hr.skill.renew', name: '技能证书续期', module: '人员管理', type: 'button', risk: 'sensitive' },
 ];
 
 export const createPlatformSeed = (tenant?: { id?: string; code?: string; name?: string }): PlatformState => {
@@ -409,6 +430,11 @@ export const createPlatformSeed = (tenant?: { id?: string; code?: string; name?:
     ...permissions.map(permission => ({ roleId: 'ROLE-ADMIN', permissionId: permission.id, effect: 'allow' as const })),
     { roleId: 'ROLE-MFG', permissionId: 'PERM-MPS', effect: 'allow' },
     { roleId: 'ROLE-MFG', permissionId: 'PERM-MRP', effect: 'allow' },
+    { roleId: 'ROLE-MFG', permissionId: 'PERM-PROD-DEMAND-REVIEW', effect: 'allow' },
+    { roleId: 'ROLE-MFG', permissionId: 'PERM-PROD-DEMAND-APPROVE', effect: 'allow' },
+    { roleId: 'ROLE-MFG', permissionId: 'PERM-PROD-DEMAND-CLAIM', effect: 'allow' },
+    { roleId: 'ROLE-MFG', permissionId: 'PERM-PROD-MRP-RUN', effect: 'allow' },
+    { roleId: 'ROLE-MFG', permissionId: 'PERM-PROD-APS-RUN', effect: 'allow' },
     { roleId: 'ROLE-MFG', permissionId: 'PERM-COST', effect: 'deny', fieldMode: 'hidden' },
     { roleId: 'ROLE-WMS', permissionId: 'PERM-STOCK-EXPORT', effect: 'allow' },
     { roleId: 'ROLE-SALE', permissionId: 'PERM-RISK', effect: 'allow', fieldMode: 'masked' },
@@ -419,6 +445,8 @@ export const createPlatformSeed = (tenant?: { id?: string; code?: string; name?:
     { roleId: 'ROLE-PROD-VIEW', permissionId: 'PERM-PROD-VIEW', effect: 'allow' },
     { roleId: 'ROLE-WMS', permissionId: 'PERM-PROD-VIEW', effect: 'allow' },
     { roleId: 'ROLE-WMS', permissionId: 'PERM-PROD-KITTING', effect: 'allow' },
+    ...permissions.filter(item => item.module === '人员管理' || item.code === 'workbench.dashboard.read')
+      .map(permission => ({ roleId: 'ROLE-HR', permissionId: permission.id, effect: 'allow' as const })),
   ],
   adapters: [
     { id: 'ADP-001', permissionCode: 'production.demandPool.createMps', permissionName: '生产需求池生成MPS', module: '生产管理', legacyRoleCode: 'PRODUCTION_DIRECTOR', legacyScope: 'production_org', status: 'synced', lastSyncAt: '2026-07-21 14:21:05', errorMessage: '' },

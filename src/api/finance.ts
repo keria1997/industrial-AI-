@@ -187,6 +187,29 @@ export type RegisterPaymentInput = {
   remark?: string;
 };
 
+export type SettlementInput = {
+  paymentMethod?: PaymentMethod;
+  paymentDate: string;
+  referenceNo?: string;
+  remark?: string;
+};
+
+export type ReceivableSettlementResult = {
+  document: Receivable;
+  payment?: Payment;
+  invoice?: Invoice;
+  voucher?: Voucher;
+  alreadySettled?: boolean;
+};
+
+export type PayableSettlementResult = {
+  document: Payable;
+  payment?: Payment;
+  invoice?: Invoice;
+  voucher?: Voucher;
+  alreadySettled?: boolean;
+};
+
 export type CreateInvoiceInput = {
   invoiceType: InvoiceType;
   receivableId?: string;
@@ -232,6 +255,7 @@ export type CreateCostAccountingInput = {
 export type FinanceListFilter = {
   status?: string;
   search?: string;
+  sourceOrder?: string;
   page?: number;
   pageSize?: number;
 };
@@ -243,6 +267,7 @@ const buildQuery = (filter?: FinanceListFilter) => {
   const params = new URLSearchParams();
   if (filter.status) params.set("status", filter.status);
   if (filter.search) params.set("search", filter.search);
+  if (filter.sourceOrder) params.set("sourceOrder", filter.sourceOrder);
   if (filter.page) params.set("page", String(filter.page));
   if (filter.pageSize) params.set("pageSize", String(filter.pageSize));
   const qs = params.toString();
@@ -262,12 +287,26 @@ export const listReceivables = (context: ApiContext, filter?: FinanceListFilter)
 export const getReceivable = (context: ApiContext, id: string) =>
   apiRequest<Receivable>(`/api/v1/finance/receivables/${encodeURIComponent(id)}`, context, { method: "GET" });
 
+export const settleReceivable = (context: ApiContext, id: string, input: SettlementInput) =>
+  apiRequest<ReceivableSettlementResult>(`/api/v1/finance/receivables/${encodeURIComponent(id)}/settlement`, context, {
+    method: "POST",
+    headers: { "X-Idempotency-Key": `finance-receivable-settlement:${id}:${input.paymentDate}` },
+    body: JSON.stringify(input),
+  });
+
 // Payables
 export const listPayables = (context: ApiContext, filter?: FinanceListFilter) =>
   apiRequest<{ items: Payable[]; total: number }>(`/api/v1/finance/payables${buildQuery(filter)}`, context, { method: "GET" });
 
 export const getPayable = (context: ApiContext, id: string) =>
   apiRequest<Payable>(`/api/v1/finance/payables/${encodeURIComponent(id)}`, context, { method: "GET" });
+
+export const settlePayable = (context: ApiContext, id: string, input: SettlementInput) =>
+  apiRequest<PayableSettlementResult>(`/api/v1/finance/payables/${encodeURIComponent(id)}/settlement`, context, {
+    method: "POST",
+    headers: { "X-Idempotency-Key": `finance-payable-settlement:${id}:${input.paymentDate}` },
+    body: JSON.stringify(input),
+  });
 
 // Payments
 export const listPayments = (context: ApiContext, filter?: FinanceListFilter) =>

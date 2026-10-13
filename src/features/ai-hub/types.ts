@@ -60,7 +60,7 @@ export interface QuickPrompt {
   intent: 'query' | 'action' | 'prediction';
 }
 
-export type DomainId = 'all' | 'inventory' | 'sales' | 'production' | 'procurement';
+export type DomainId = 'inventory' | 'sales' | 'production' | 'procurement';
 
 export interface DomainCategory {
   id: DomainId;
@@ -205,7 +205,6 @@ export const defaultQuickPrompts: QuickPrompt[] = [
 ];
 
 export const defaultDomainCategories: DomainCategory[] = [
-  { id: 'all', label: '全部', features: [] },
   { id: 'inventory', label: '库存域', features: ['低库存物料查询', '缺料风险', '安全水位', '库存账龄', '呆滞料识别'] },
   { id: 'sales', label: '销售域', features: ['订单状态查询', '发货进度跟进', '待确认订单', '客户档案'] },
   { id: 'production', label: '生产域', features: ['工单状态', '排产计划', '报工进度', '完工入库', 'FQC检验通过率'] },

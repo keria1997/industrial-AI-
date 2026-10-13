@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
 import { SidebarItem } from './app/SidebarItem';
 import { tenantOptions, useAppRuntime } from './app/AppRuntimeProvider';
@@ -11,8 +11,12 @@ import {
 } from './api/production/salesProduction';
 import { productionOperationsApi } from './api/production/operations';
 import { procurementApi } from './api/procurement';
-import { clearAuthenticatedSession, loginWithPassword, saveAuthenticatedSession } from './api/session';
+import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, registerTenant, requestLoginCaptcha, requestPasswordReset, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
 import * as financeApi from './api/finance';
+import { messagesApi } from "./api/messages";
+import { personnelApi } from "./api/personnel";
+import { supplyChainApi } from "./api/supply-chain";
+import { workbenchApi, type WorkbenchDashboardDto, type WorkbenchRole } from './api/workbench';
 import { AIHubManagement as AIHubManagementV2, AIAssistantDrawer } from './features/ai-hub';
 import {
   approveFulfillmentOrder,
@@ -23,9 +27,13 @@ import {
   createFulfillmentShipmentRequest,
   createProductionRequestForTask,
   getFulfillmentOutbound,
+  getFulfillmentOrder,
   listFulfillmentOrders,
   listFulfillmentShipmentTasks,
   postFulfillmentOutbound,
+  inventoryApi,
+  type FulfillmentOrder,
+  type FulfillmentShipmentTask,
 } from './api/fulfillment';
 import {
   createPendingSalesOrderFromQuote,
@@ -39,15 +47,18 @@ import {
   validateShipmentDeliveryDate,
 } from './features/sales/model/salesRules';
 import { SalesShipmentOrderEditModal } from './features/sales/components/SalesShipmentOrderEditModal';
+import { confirmSalesOrderContents, mergeFormalSalesOrders, mergePersistedSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
+import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
 import {
   completeSalesOutbound,
   createInventoryTabUrl,
   createInventoryWarehouseUrl,
   createSalesOutboundNavigationQuery,
+  formatSalesOutboundDateTime,
   loadSalesOutboundTasks,
+  removeSalesOutboundBySource,
   cancelSalesOutbound,
   recordWarehouseProductionResult,
-  requestSalesOutbound,
   resolveInventoryTab,
   resolveInventoryWarehouseId,
   resolveSalesOutboundOrderId,
@@ -55,6 +66,19 @@ import {
 import { InventoryMasterDataPanel } from './features/inventory/pages/InventoryMasterDataPanel';
 import { InventoryStockQueryPanel } from './features/inventory/pages/InventoryStockQueryPanel';
 import { loadInventoryMasterData } from './features/inventory/model/inventoryMasterData';
+import { mapInventoryMasterToQuoteOptions } from './features/sales/model/salesInventoryOptions';
+import { classifyOutboundShipment } from './features/inventory/model/outboundShipmentAction';
+import { mapFormalShipmentStatus } from './features/inventory/model/formalShipmentStatus';
+import { postFormalOutbound, prepareFormalOutbound } from './features/inventory/model/formalOutboundWorkflow';
+import { formalShipmentStock } from './features/inventory/model/formalShipmentStock';
+import { compareQuantity, subtractQuantity } from './shared/decimal';
+import {
+  mapProductionDemandStatus,
+  planningMaterialShortages,
+  recoverMpsFromPlannedDemand,
+  planningResultCoversDemand,
+  scheduleResultCoversDemand,
+} from './features/production/model/productionPlanStatus';
 import {
   completeProductionMaterialIssueTask,
   createInventoryProductionPlan,
@@ -78,7 +102,7 @@ import {
   platformStorageKey,
 } from './platform/platformSeed';
 import { 
-  LayoutDashboard, Database, BrainCircuit, Server, Cpu, Settings, Bell, Search, User, Plus, UploadCloud, Play, FileText, Activity, AlertTriangle, CheckCircle2, Clock, ChevronRight, MoreVertical, Zap, TrendingUp, Factory, Package, ShoppingCart, Wallet, Users, Network, MessageSquare, Target, TrendingDown, ChevronDown, Filter, Download, Box, Edit2, Trash2, X, BookOpen, Eye, Copy, Check, File, Calendar, CalendarDays, Briefcase, Phone, Send, MessageCircle, Calculator, CalendarRange, ClipboardList, Hammer, ShieldCheck, Route, MonitorCog, Bot, PlayCircle, RefreshCcw, RotateCcw, AlertCircle, Layers, CalendarCheck, GitCommit, Truck, ArrowRight, FileOutput, List, GitMerge, ScanLine, ClipboardCheck, RefreshCw, ListChecks, Microscope, Microchip, Inbox, Import, Workflow, MapPin, Timer, Coffee, FileSpreadsheet, ArrowUpCircle, ListTodo, Info, ArrowDownToLine, ArrowUpFromLine, Warehouse, ArrowRightLeft, BadgeDollarSign, FilePlus, Store, Landmark, Receipt, CreditCard, Coins, PieChart, HardHat, Fingerprint, Award, UserCheck, ShieldAlert, Link, Share2, Sparkles, Mic, Power, Wrench, Building, Key, Gauge
+  LayoutDashboard, Database, BrainCircuit, Server, Cpu, Settings, Bell, Search, User, Plus, UploadCloud, Play, FileText, Activity, AlertTriangle, CheckCircle2, Clock, ChevronRight, MoreVertical, Zap, TrendingUp, Factory, Package, ShoppingCart, Wallet, Users, Network, MessageSquare, Target, TrendingDown, ChevronDown, Filter, Download, Box, Edit2, Trash2, X, BookOpen, Eye, Copy, Check, File, Calendar, CalendarDays, Briefcase, Phone, Send, MessageCircle, Calculator, CalendarRange, ClipboardList, Hammer, ShieldCheck, Route, MonitorCog, Bot, PlayCircle, RefreshCcw, RotateCcw, AlertCircle, Layers, CalendarCheck, GitCommit, Truck, ArrowRight, ArrowLeft, FileOutput, List, GitMerge, ScanLine, ClipboardCheck, RefreshCw, ListChecks, Microscope, Microchip, Inbox, Import, Workflow, MapPin, Timer, Coffee, FileSpreadsheet, ArrowUpCircle, ListTodo, Info, ArrowDownToLine, ArrowUpFromLine, Warehouse, ArrowRightLeft, BadgeDollarSign, FilePlus, Store, Landmark, Receipt, CreditCard, Coins, PieChart, HardHat, Fingerprint, Award, UserCheck, ShieldAlert, Link, Share2, Sparkles, Mic, Power, Wrench, Building, Key, Gauge, XCircle, Loader2, Move
 } from 'lucide-react';
 
 // ==========================================
@@ -111,11 +135,13 @@ const StatCard = ({ title, value, unit, icon: Icon, trend, trendValue, theme = "
           <span className="text-3xl font-bold text-slate-800 tracking-tight leading-none">{value}</span>
           {unit && <span className="text-slate-500 ml-1 text-sm font-medium">{unit}</span>}
         </div>
-        <div className={`text-[12px] mt-3 flex items-center font-bold ${trend === 'up' ? 'text-emerald-600' : trend === 'down' ? 'text-rose-600' : 'text-slate-500'}`}>
-          {trend === 'up' && <Activity size={14} className="mr-1" />}
-          {trend === 'down' && <AlertTriangle size={14} className="mr-1" />}
-          <span>{trendValue} <span className="font-normal text-slate-400">较昨日</span></span>
-        </div>
+        {trendValue && (
+          <div className={`text-[12px] mt-3 flex items-center font-bold ${trend === 'up' ? 'text-emerald-600' : trend === 'down' ? 'text-rose-600' : 'text-slate-500'}`}>
+            {trend === 'up' && <Activity size={14} className="mr-1" />}
+            {trend === 'down' && <AlertTriangle size={14} className="mr-1" />}
+            <span>{trendValue}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -130,37 +156,58 @@ const monitorToneMap = {
   slate: { shell: 'bg-slate-50 text-slate-600 border-slate-100', button: 'bg-slate-800 hover:bg-slate-900 text-white', soft: '#f8fafc', stroke: '#64748b' },
 };
 
-const makeCaptcha = () => {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-  return Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-};
-
-const LoginPage = ({ onLogin }) => {
+const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
   const [mode, setMode] = useState('account');
-  const [account, setAccount] = useState('admin');
-  const [password, setPassword] = useState('123456');
+  const [account, setAccount] = useState('');
+  const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [smsCode, setSmsCode] = useState('');
-  const [sentSmsCode, setSentSmsCode] = useState('');
-  const [captcha, setCaptcha] = useState(makeCaptcha);
-  const [captchaInput, setCaptchaInput] = useState('');
+  const [captcha, setCaptcha] = useState<LoginCaptcha | null>(null);
+  const [captchaCode, setCaptchaCode] = useState('');
+  const [captchaLoading, setCaptchaLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [smsSent, setSmsSent] = useState(false);
+  const [smsCountdown, setSmsCountdown] = useState(0);
 
-  const refreshCaptcha = () => {
-    setCaptcha(makeCaptcha());
-    setCaptchaInput('');
+  const refreshCaptcha = async (reportError = true) => {
+    setCaptchaCode('');
+    setCaptchaLoading(true);
+    try {
+      setCaptcha(await requestLoginCaptcha());
+    } catch (captchaError) {
+      setCaptcha(null);
+      if (reportError) setError(captchaError instanceof Error ? captchaError.message : '验证码加载失败，请刷新重试');
+    } finally {
+      setCaptchaLoading(false);
+    }
   };
 
-  const sendSmsCode = () => {
+  useEffect(() => {
+    void refreshCaptcha();
+  }, []);
+
+  useEffect(() => {
+    if (smsCountdown <= 0) return;
+    const timer = setTimeout(() => setSmsCountdown(prev => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [smsCountdown]);
+
+  const handleSendSmsCode = async () => {
     if (!/^1[3-9]\d{9}$/.test(phone)) {
       setError('请输入有效手机号');
       return;
     }
-    setSentSmsCode('2606');
-    setSmsCode('2606');
-    setError('验证码已发送，演示验证码为 2606');
+    setError('');
+    try {
+      const result = await sendSmsCode(phone);
+      setSmsSent(true);
+      setSmsCountdown(60);
+      setError(result.devCode ? `开发模式验证码: ${result.devCode}` : '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证码发送失败，请稍后重试');
+    }
   };
 
   const submitLogin = async () => {
@@ -170,22 +217,35 @@ const LoginPage = ({ onLogin }) => {
         setError('请输入账号和密码');
         return;
       }
-      if (captchaInput.trim().toUpperCase() !== captcha) {
-        setError('验证码不正确，请重新输入');
-        refreshCaptcha();
+      if (!captcha) {
+        setError('验证码未加载，请刷新验证码');
+        return;
+      }
+      if (!captchaCode.trim()) {
+        setError('请输入图形验证码');
         return;
       }
     } else {
-      setError('短信登录尚未接入可信认证服务，请使用账号登录');
-      return;
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        setError('请输入有效手机号');
+        return;
+      }
+      if (!smsCode.trim()) {
+        setError('请输入短信验证码');
+        return;
+      }
     }
     setLoading(true);
     try {
-      await onLogin({ account: account.trim(), password });
+      if (mode === 'account') {
+        await onLogin({ account: account.trim(), password, captchaId: captcha.captchaId, captchaCode: captchaCode.trim() });
+      } else {
+        await onLogin({ phone: phone.trim(), smsCode: smsCode.trim() });
+      }
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : '登录失败，请稍后重试');
       setPassword('');
-      refreshCaptcha();
+      if (mode === 'account') await refreshCaptcha(false);
     } finally {
       setLoading(false);
     }
@@ -218,27 +278,29 @@ const LoginPage = ({ onLogin }) => {
         <section className="w-full max-w-[430px] ml-auto bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
           <div className="grid grid-cols-2 bg-white/6 rounded-lg p-1 mb-6">
             <button onClick={() => { setMode('account'); setError(''); }} className={`h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 transition-colors ${mode === 'account' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}><User size={14} />账号登录</button>
-            <button disabled title="短信认证服务尚未接入" onClick={() => { setMode('phone'); setError('短信登录尚未接入可信认证服务，请使用账号登录'); }} className="h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 text-slate-500 cursor-not-allowed"><Phone size={14} />手机号登录</button>
+            <button onClick={() => { setMode('phone'); setError(''); }} className={`h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 transition-colors ${mode === 'phone' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}><Phone size={14} />手机号登录</button>
           </div>
 
           {mode === 'account' ? (
             <div className="space-y-4">
               <label className="block">
                 <span className="block text-[12px] text-slate-300 font-bold mb-2">账号 (Account)</span>
-                <input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="请输入账号" className="w-full h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[13px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+                <input value={account} onChange={(e) => setAccount(e.target.value)} autoComplete="off" placeholder="请输入账号" className="w-full h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[13px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
               </label>
               <label className="block">
                 <span className="block text-[12px] text-slate-300 font-bold mb-2">密码 (Password)</span>
                 <div className="relative">
-                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" className="w-full h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 pr-10 text-[13px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="请输入密码" className="w-full h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 pr-10 text-[13px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
                   <button type="button" onClick={() => setShowPassword(prev => !prev)} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300 hover:text-white"><Eye size={15} /></button>
                 </div>
               </label>
               <label className="block">
                 <span className="block text-[12px] text-slate-300 font-bold mb-2">验证码 (Captcha)</span>
                 <div className="flex gap-2">
-                  <input value={captchaInput} onChange={(e) => setCaptchaInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submitLogin()} placeholder="请输入验证码" className="flex-1 h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[13px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
-                  <button type="button" onClick={refreshCaptcha} className="w-24 h-10 rounded-md bg-[#081221] border border-slate-600 text-[22px] font-black tracking-[0.18em] text-emerald-300 italic overflow-hidden">{captcha}</button>
+                  <input value={captchaCode} onChange={(e) => setCaptchaCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && submitLogin()} maxLength={4} autoComplete="off" placeholder="请输入验证码" className="flex-1 h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[13px] uppercase outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+                  <button type="button" onClick={() => refreshCaptcha()} disabled={captchaLoading || loading} aria-label="刷新验证码" title="刷新验证码" className="h-10 w-[122px] rounded-md overflow-hidden border border-slate-500/40 bg-[#273353] flex items-center justify-center hover:border-blue-400 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+                    {captchaLoading ? <Loader2 size={18} className="animate-spin text-blue-300" /> : captcha ? <img src={captcha.image} alt="" className="w-full h-full" draggable={false} /> : <RefreshCw size={16} className="text-blue-300" />}
+                  </button>
                 </div>
               </label>
             </div>
@@ -255,7 +317,9 @@ const LoginPage = ({ onLogin }) => {
                 <span className="block text-[12px] text-slate-300 font-bold mb-2">短信验证码 (SMS Code)</span>
                 <div className="flex gap-2">
                   <input value={smsCode} onChange={(e) => setSmsCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submitLogin()} placeholder="请输入短信验证码" className="flex-1 h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[13px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
-                  <button type="button" onClick={sendSmsCode} className="w-24 h-10 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-[12px] font-bold transition-colors">获取验证码</button>
+                  <button type="button" disabled={smsCountdown > 0 || loading} onClick={handleSendSmsCode} className="w-24 h-10 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[12px] font-bold transition-colors">
+                    {smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
+                  </button>
                 </div>
               </label>
             </div>
@@ -267,13 +331,266 @@ const LoginPage = ({ onLogin }) => {
             {loading ? '登录中...' : '立即登录'}
           </button>
           <div className="mt-4 text-center text-[12px] text-blue-300/70">
-            <button className="hover:text-white">忘记密码？</button>
+            <button onClick={onForgotPassword} className="hover:text-white transition-colors">忘记密码？</button>
             <span className="mx-3 text-slate-500">|</span>
-            <button className="hover:text-white">注册账号</button>
+            <button onClick={onRegister} className="hover:text-white transition-colors">注册账号</button>
           </div>
         </section>
       </div>
     </div>
+  );
+};
+
+const LoginShell = ({ children }) => (
+  <div className="min-h-screen relative overflow-hidden bg-[#050913] text-white">
+    <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_42%,rgba(59,130,246,0.24),transparent_22%),radial-gradient(circle_at_34%_76%,rgba(245,158,11,0.22),transparent_18%),linear-gradient(180deg,#04070d_0%,#081424_52%,#02050b_100%)]"></div>
+    <div className="absolute inset-x-[-10%] bottom-[-36%] h-[72%] rounded-[50%] bg-[radial-gradient(circle_at_50%_18%,rgba(96,165,250,0.24),rgba(15,23,42,0.94)_34%,rgba(2,6,23,1)_70%)] shadow-[0_-28px_70px_rgba(59,130,246,0.20)]"></div>
+    <div className="absolute inset-0 opacity-55" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.7) 1px, transparent 1px)', backgroundSize: '46px 46px' }}></div>
+    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.72)_0%,rgba(2,6,23,0.25)_48%,rgba(2,6,23,0.80)_100%)]"></div>
+    <div className="relative z-10 min-h-screen flex items-center justify-center px-6">
+      {children}
+    </div>
+  </div>
+);
+
+const ForgotPasswordPage = ({ onBack, onSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setError('');
+    setSuccess('');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('请输入有效邮箱地址');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await requestPasswordReset(email);
+      if (result.resetToken) {
+        onSuccess(result.resetToken);
+      } else {
+        setSuccess(result.message || '如果该邮箱已注册，重置链接已发送');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '请求失败，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <LoginShell>
+      <div className="w-full max-w-[420px] bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-[13px] text-blue-300 hover:text-white mb-6 transition-colors">
+          <ArrowLeft size={15} />返回登录
+        </button>
+        <h2 className="text-[22px] font-bold text-center mb-2">忘记密码</h2>
+        <p className="text-[13px] text-slate-400 text-center mb-8">请输入您注册时填写的邮箱地址</p>
+        <label className="block mb-5">
+          <span className="block text-[12px] text-slate-300 font-bold mb-2">邮箱 (Email)</span>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder="请输入注册邮箱" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+        </label>
+        {error && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-rose-400/10 border-rose-400/30 text-rose-200">{error}</div>}
+        {success && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-emerald-400/10 border-emerald-400/30 text-emerald-200">{success}</div>}
+        <button onClick={submit} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
+          {loading ? '发送中...' : '发送重置链接'}
+        </button>
+      </div>
+    </LoginShell>
+  );
+};
+
+const FirstLoginPage = ({ account, tempPassword, onComplete, onLogout }) => {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setError('');
+    if (newPassword.length < 8) { setError('密码至少 8 位，须包含字母和数字'); return; }
+    if (!/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) { setError('密码必须同时包含字母和数字'); return; }
+    if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
+    setLoading(true);
+    try {
+      await completeFirstLogin({ account, currentPassword: tempPassword, newPassword });
+      onComplete();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '设置失败，请重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <LoginShell>
+      <div className="w-full max-w-[420px] bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
+        <h2 className="text-[22px] font-bold text-center mb-2">设置新密码</h2>
+        <p className="text-[13px] text-slate-400 text-center mb-8">首次登录，请设置您的专属密码</p>
+        <label className="block mb-5">
+          <span className="block text-[12px] text-slate-300 font-bold mb-2">新密码</span>
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 位，包含字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+        </label>
+        <label className="block mb-5">
+          <span className="block text-[12px] text-slate-300 font-bold mb-2">确认新密码</span>
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder="请再次输入新密码" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+        </label>
+        {error && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-rose-400/10 border-rose-400/30 text-rose-200">{error}</div>}
+        <button onClick={submit} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
+          {loading ? '设置中...' : '确认设置'}
+        </button>
+        <button onClick={onLogout} className="mt-4 w-full text-center text-[13px] text-slate-400 hover:text-white transition-colors">返回登录</button>
+      </div>
+    </LoginShell>
+  );
+};
+
+const ResetPasswordPage = ({ token, onBack, onSuccess }) => {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setError('');
+    if (newPassword.length < 8) { setError('密码至少 8 位，须包含字母和数字'); return; }
+    if (!/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) { setError('密码必须同时包含字母和数字'); return; }
+    if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
+    setLoading(true);
+    try {
+      const { resetPassword } = await import('./api/session');
+      await resetPassword(token, newPassword);
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '重置失败，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <LoginShell>
+      <div className="w-full max-w-[420px] bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-[13px] text-blue-300 hover:text-white mb-6 transition-colors">
+          <ArrowLeft size={15} />返回登录
+        </button>
+        <h2 className="text-[22px] font-bold text-center mb-2">重置密码</h2>
+        <p className="text-[13px] text-slate-400 text-center mb-8">请设置新密码</p>
+        <label className="block mb-5">
+          <span className="block text-[12px] text-slate-300 font-bold mb-2">新密码</span>
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 位，包含字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+        </label>
+        <label className="block mb-5">
+          <span className="block text-[12px] text-slate-300 font-bold mb-2">确认新密码</span>
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder="请再次输入新密码" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+        </label>
+        {error && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-rose-400/10 border-rose-400/30 text-rose-200">{error}</div>}
+        <button onClick={submit} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
+          {loading ? '重置中...' : '确认重置'}
+        </button>
+      </div>
+    </LoginShell>
+  );
+};
+
+const INDUSTRY_OPTIONS = ['制造业', '电子信息', '汽车工业', '装备制造', '生物医药', '新能源', '新材料', '化工', '食品加工', '纺织服装', '其他'];
+
+const RegisterPage = ({ onBack, onRegistered }) => {
+  const [form, setForm] = useState({ tenantName: '', industry: '', email: '', phone: '', account: '', password: '', confirmPassword: '', name: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const setField = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+
+  const submit = async () => {
+    setError('');
+    if (!form.tenantName.trim()) { setError('请输入公司/租户名称'); return; }
+    if (!form.industry) { setError('请选择所属行业'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) { setError('请输入有效邮箱地址'); return; }
+    if (!/^1[3-9]\d{9}$/.test(form.phone)) { setError('请输入有效手机号'); return; }
+    if (!form.account.trim() || form.account.trim().length < 2) { setError('账号至少 2 个字符'); return; }
+    if (!form.name.trim()) { setError('请输入管理员姓名'); return; }
+    if (form.password.length < 8) { setError('密码至少 8 位，须包含字母和数字'); return; }
+    if (!/[A-Za-z]/.test(form.password) || !/[0-9]/.test(form.password)) { setError('密码必须同时包含字母和数字'); return; }
+    if (form.password !== form.confirmPassword) { setError('两次输入的密码不一致'); return; }
+    setLoading(true);
+    try {
+      const session = await registerTenant({
+        account: form.account.trim(),
+        password: form.password,
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        tenantName: form.tenantName.trim(),
+        industry: form.industry,
+      });
+      onRegistered(session);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '注册失败，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <LoginShell>
+      <div className="w-full max-w-[480px] bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-[13px] text-blue-300 hover:text-white mb-6 transition-colors">
+          <ArrowLeft size={15} />返回登录
+        </button>
+        <h2 className="text-[22px] font-bold text-center mb-8">租户注册</h2>
+        <div className="space-y-4">
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">租户名称 (Name) <span className="text-rose-400">*</span></span>
+            <input value={form.tenantName} onChange={(e) => setField('tenantName', e.target.value)} placeholder="请输入公司/租户名称" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          </label>
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">所属行业 (Industry) <span className="text-rose-400">*</span></span>
+            <select value={form.industry} onChange={(e) => setField('industry', e.target.value)} className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white [&>option]:bg-[#1d2743]">
+              <option value="">请选择所属行业</option>
+              {INDUSTRY_OPTIONS.map(item => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">管理员姓名 <span className="text-rose-400">*</span></span>
+            <input value={form.name} onChange={(e) => setField('name', e.target.value)} placeholder="请输入管理员姓名" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          </label>
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">登录账号 <span className="text-rose-400">*</span></span>
+            <input value={form.account} onChange={(e) => setField('account', e.target.value)} placeholder="请输入登录账号" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          </label>
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">邮箱 (Email) <span className="text-rose-400">*</span></span>
+            <input type="email" value={form.email} onChange={(e) => setField('email', e.target.value)} placeholder="请输入邮箱" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          </label>
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">手机号 (Phone) <span className="text-rose-400">*</span></span>
+            <div className="flex h-11 rounded-md bg-[#273353] border border-slate-500/40 focus-within:border-blue-400 overflow-hidden">
+              <span className="w-16 flex items-center justify-center border-r border-slate-500/30 text-[13px] text-slate-400">+86</span>
+              <input value={form.phone} onChange={(e) => setField('phone', e.target.value)} placeholder="请输入手机号" className="flex-1 bg-transparent px-3 text-[14px] outline-none text-white placeholder:text-slate-500" />
+            </div>
+          </label>
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">设置密码 <span className="text-rose-400">*</span></span>
+            <input type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="至少 8 位，包含字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          </label>
+          <label className="block">
+            <span className="block text-[12px] text-slate-300 font-bold mb-2">确认密码 <span className="text-rose-400">*</span></span>
+            <input type="password" value={form.confirmPassword} onChange={(e) => setField('confirmPassword', e.target.value)} placeholder="请再次输入密码" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          </label>
+        </div>
+        {error && <div className="mt-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-rose-400/10 border-rose-400/30 text-rose-200">{error}</div>}
+        <button onClick={submit} disabled={loading} className="mt-6 w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
+          {loading ? '注册中...' : '立即注册'}
+        </button>
+        <div className="mt-4 text-center text-[13px] text-slate-400">
+          已有账户？<button onClick={onBack} className="text-blue-300 hover:text-white ml-1 transition-colors">立即登录</button>
+        </div>
+      </div>
+    </LoginShell>
   );
 };
 
@@ -829,7 +1146,7 @@ const businessFlowActionMap = {
   finishedInbound: { label: '销售出库并确认发货', action: 'shipSales', tone: 'blue' },
   delivery: { label: '生成应收/应付单据', action: 'generateFinanceDocs', tone: 'purple' },
   financeDocs: { label: '完成收付款与开票', action: 'settleFinance', tone: 'emerald' },
-  settlement: { label: '重新开启一条演示流程', action: 'resetFlow', tone: 'slate' },
+  settlement: { label: '关闭流程上下文', action: 'resetFlow', tone: 'slate' },
 };
 
 const getLinkedFlowStepIndex = (stepKey) => Math.max(0, linkedFlowSteps.findIndex(step => step.key === stepKey));
@@ -946,22 +1263,20 @@ const BusinessFlowDock = ({ moduleName, flow, onAction }: any) => {
 };
 
 const createInitialBusinessFlow = () => ({
-  id: 'FLOW-20260622-001',
-  opportunityId: 'OPP-20260622-001',
-  orderId: 'SO-LINK-20260622-001',
-  customer: '商洛墨翠宝石开发有限公司',
-  product: 'FG001 工业控制器顶配版',
-  qty: 80,
-  amount: '¥25,000.00',
-  availableStock: 30,
-  shortage: 50,
+  id: '',
+  opportunityId: '',
+  orderId: '',
+  customer: '',
+  product: '',
+  qty: 0,
+  amount: '0',
+  availableStock: 0,
+  shortage: 0,
   currentStep: 'opportunity',
   completed: [],
   stockEnough: false,
   issuesFixed: linkedFlowIssueFixes,
-  ledger: [
-    { module: '销售管理', text: '已创建演示商机，等待订单审批' }
-  ],
+  ledger: [],
 });
 
 const Pagination = ({ total, page, limit, onPageChange = null, onLimitChange = null }) => {
@@ -1368,18 +1683,18 @@ const Sales_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
 
 // --- 子组件区 ---
 const Sales_QuickOrderModal = ({ onClose, onCreate }) => {
-  const [hasProduct, setHasProduct] = useState(true);
-  const [client, setClient] = useState('商洛墨翠宝石开发有限公司');
+  const [hasProduct, setHasProduct] = useState(false);
+  const [client, setClient] = useState('');
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
-  const [deliveryDate, setDeliveryDate] = useState(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
-  const [productName, setProductName] = useState('FG001 工业控制器顶配版');
-  const [spec, setSpec] = useState('标准型');
-  const [unit, setUnit] = useState('件');
-  const [quantity, setQuantity] = useState(150);
-  const [unitPrice, setUnitPrice] = useState(500);
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [productName, setProductName] = useState('');
+  const [spec, setSpec] = useState('');
+  const [unit, setUnit] = useState('');
+  const [quantity, setQuantity] = useState(0);
+  const [unitPrice, setUnitPrice] = useState(0);
   const [discountRate, setDiscountRate] = useState(100);
   const [discountAmount, setDiscountAmount] = useState(0);
-  const [remark, setRemark] = useState('客户要求按约定交期交付，缺货部分转生产计划。');
+  const [remark, setRemark] = useState('');
   const [error, setError] = useState('');
   const availableStock = resolveOrderAvailQty({ productName, productId: '' });
   const subtotal = Math.max(0, Number(quantity) * Number(unitPrice));
@@ -2031,7 +2346,7 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
   );
 };
 
-const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], products = [], onClose, onCreate }) => {
+const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], warehouses = [], products = [], onClose, onCreate }) => {
   const editing = mode === 'edit';
   const [client, setClient] = useState(record?.client || '');
   const [quoteDate, setQuoteDate] = useState(record?.date || new Date().toISOString().slice(0, 10));
@@ -2058,10 +2373,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
   const updateLine = (key, field, value) => setLines(prev => prev.map(line => line.key === key ? { ...line, [field]: value } : line));
   const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), warehouseId: '', productName: '', productId: '', spec: '', unit: '件', available: null, quantity: 1, unitPrice: 0 }]);
   const removeLine = (key) => setLines(prev => prev.filter(line => line.key !== key));
-  const warehouseOptions = products.reduce((acc, p) => {
-    if (p.warehouseId && !acc.find((w) => w.warehouseId === p.warehouseId)) acc.push({ warehouseId: p.warehouseId, warehouse: p.warehouse });
-    return acc;
-  }, []);
+  const warehouseOptions = warehouses;
 
   const handleCreate = () => {
       if (!client.trim() || !quoteDate || !validUntil) {
@@ -2072,9 +2384,9 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           setError('请至少添加一个产品');
           return;
       }
-      const invalidLine = lines.find(line => !line.productName.trim() || Number(line.quantity) <= 0 || Number(line.unitPrice) <= 0);
+      const invalidLine = lines.find(line => !line.warehouseId || !line.productName.trim() || Number(line.quantity) <= 0 || Number(line.unitPrice) <= 0);
       if (invalidLine) {
-          setError('每个产品需填写名称、数量和单价');
+          setError('每个产品需选择仓库并填写名称、数量和单价');
           return;
       }
       const productSummary = lines.length === 1
@@ -2190,7 +2502,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                                               </select>
                                           </td>
                                           <td className="px-3 py-3">
-                                              <select value={line.productId} disabled={!line.warehouseId} onChange={(e) => { const pid = e.target.value; const matched = products.find((p) => p.id === pid); if (matched) { setLines(prev => prev.map(l => l.key === line.key ? { ...l, productId: matched.id, productName: matched.name, spec: matched.id, unit: matched.unit === 'PCS' ? '件' : matched.unit === '台' ? '台' : '套', available: Number(matched.availQty ?? 0), quantity: 1, unitPrice: Number(matched.unitPrice || 0) } : l)); } }} className="w-44 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400">
+                                              <select value={line.productId} disabled={!line.warehouseId} onChange={(e) => { const pid = e.target.value; const matched = products.find((p) => p.id === pid); if (matched) { setLines(prev => prev.map(l => l.key === line.key ? { ...l, productId: matched.id, productName: matched.name, spec: matched.spec || '', unit: matched.unit === 'PCS' ? '件' : matched.unit, available: Number(matched.availQty ?? 0), quantity: 1, unitPrice: Number(matched.unitPrice || 0) } : l)); } }} className="w-44 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400">
                                                   <option value="">{line.warehouseId ? '选择产品' : '先选仓库'}</option>
                                                   {warehouseProducts.map((p) => <option key={p.id} value={p.id}>{p.id} {p.name}</option>)}
                                               </select>
@@ -2306,7 +2618,7 @@ const Sales_QuoteDetailModal = ({ quote, onClose }) => {
   );
 };
 
-const Sales_QuotesView = ({ quotes, setQuotes, customers, onToast, onAudit, onApproveAndConvert, onOpenOrder }) => {
+const Sales_QuotesView = ({ quotes, setQuotes, customers, quoteWarehouses, quoteProducts, onToast, onAudit, onApproveAndConvert, onOpenOrder }) => {
   const [isCreateQuoteModalOpen, setIsCreateQuoteModalOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState('全部');
   const [searchTerm, setSearchTerm] = useState(() => new URLSearchParams(window.location.search).get('focusOrder') || '');
@@ -2404,9 +2716,9 @@ const Sales_QuotesView = ({ quotes, setQuotes, customers, onToast, onAudit, onAp
               </div>
               <Pagination total={visibleQuotes.length} page={currentPage} limit={limit} onPageChange={setPage} onLimitChange={setLimit} />
           </div>
-          {isCreateQuoteModalOpen && <Sales_QuoteCreateModal customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} onClose={() => setIsCreateQuoteModalOpen(false)} onCreate={handleCreateQuote} />}
+          {isCreateQuoteModalOpen && <Sales_QuoteCreateModal customers={customers} warehouses={quoteWarehouses} products={quoteProducts} onClose={() => setIsCreateQuoteModalOpen(false)} onCreate={handleCreateQuote} />}
           {recordModal?.mode === 'view' && <Sales_QuoteDetailModal quote={recordModal.record} onClose={() => setRecordModal(null)} />}
-          {recordModal?.mode === 'edit' && <Sales_QuoteCreateModal mode="edit" record={recordModal.record} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} onClose={() => setRecordModal(null)} onCreate={handleSaveQuote} />}
+          {recordModal?.mode === 'edit' && <Sales_QuoteCreateModal mode="edit" record={recordModal.record} customers={customers} warehouses={quoteWarehouses} products={quoteProducts} onClose={() => setRecordModal(null)} onCreate={handleSaveQuote} />}
           {conversionQuote && (
               <Sales_ConfirmModal
                   title="审批确认产品报价"
@@ -2444,7 +2756,7 @@ const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel
   const detailLines = Array.isArray(order.lines) && order.lines.length > 0
     ? order.lines
     : [{ productName: order.productName, spec: order.spec, unit: order.unit, quantity: Number(order.qty || 0), unitPrice: Number(order.unitPrice || sales_parseMoney(order.amount) / Math.max(1, Number(order.qty || 1))) }];
-  const orderOriginalAmount = detailLines.reduce(
+  const orderOriginalAmount = order.originalAmount ?? detailLines.reduce(
     (total, line) => total + Number(line.quantity ?? line.qty ?? 0) * Number(line.unitPrice || 0),
     0,
   );
@@ -2525,8 +2837,8 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   const [menuAnchor, setMenuAnchor] = useState(null);
   const orderMenuRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const savedLinkedOrder = businessFlow ? orders.find(row => row.id === businessFlow.orderId) : null;
-  const linkedOrder = businessFlow ? {
+  const savedLinkedOrder = businessFlow ? orders.find(row => row.id === businessFlow.orderId || row.localOrderId === businessFlow.orderId) : null;
+  const linkedOrder = businessFlow && !savedLinkedOrder?.aggregateId ? {
       ...savedLinkedOrder,
       id: businessFlow.orderId,
       client: savedLinkedOrder?.client ?? businessFlow.customer,
@@ -2547,7 +2859,7 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   const orderRows = linkedOrder ? [linkedOrder, ...orders.filter(row => row.id !== linkedOrder.id)] : orders;
   const visibleOrders = orderRows.filter(row => {
       const keyword = searchTerm.trim().toLowerCase();
-      const matchSearch = !keyword || `${row.id} ${row.client} ${row.product}`.toLowerCase().includes(keyword);
+      const matchSearch = !keyword || `${row.id} ${row.aggregateId || ''} ${row.localOrderId || ''} ${row.client} ${row.product}`.toLowerCase().includes(keyword);
       const normalizedStatus = row.status === '生产补货中' ? '生产中' : row.status;
       const matchStatus = statusFilter === '全部' || normalizedStatus === statusFilter;
       const matchCustomer = customerFilter === '全部客户' || row.client === customerFilter;
@@ -2617,22 +2929,18 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   const submitShipmentOrderEdit = async (order) => {
       setIsSubmitting(true);
       try {
-          if (!order.aggregateId) {
-              const visibleOrder = { ...order, status: '已确认', outStatus: '未发货', confirmedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-              setOrders(prev => prev.map(item => item.id === order.id ? visibleOrder : item));
-              onAudit('确认销售发货内容', order.id);
-              setRecordModal(null);
-              onBusinessFlowAction?.('confirmSalesOrder', visibleOrder);
-              onToast('订单已确认', `${order.id} 已进入已确认，可继续去发货`);
-              return;
-          }
           const updatedOrder = await onConfirmFormalOrder(order);
-          const visibleOrder = updatedOrder
-              ? { ...updatedOrder, deliveryDate: order.deliveryDate }
-              : { ...order, status: '已确认', outStatus: '未发货' };
-          setOrders(prev => prev.map(item => item.id === order.id || (order.aggregateId && item.aggregateId === order.aggregateId) ? visibleOrder : item));
-          onToast('订单已确认', `${order.id} 已进入已确认，可继续去发货`);
-          onAudit('确认销售发货内容', order.id);
+          if (!updatedOrder) throw new Error('未取得订单确认结果，请刷新后重试');
+          setOrders(prev => upsertSalesOrder(prev, updatedOrder, order.id));
+          setStatusFilter('已确认');
+          if (searchTerm.trim() === order.id) setSearchTerm(updatedOrder.id);
+          const searchParams = new URLSearchParams(window.location.search);
+          if (searchParams.get('focusOrder') === order.id && updatedOrder.id !== order.id) {
+              searchParams.set('focusOrder', updatedOrder.id);
+              window.history.replaceState({}, '', `${window.location.pathname}?${searchParams.toString()}${window.location.hash}`);
+          }
+          onToast('订单已确认', `${updatedOrder.id} 已进入已确认，可继续去发货`);
+          onAudit('确认销售发货内容', updatedOrder.id);
           setRecordModal(null);
       } catch (error) {
           onToast('确认订单失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
@@ -2735,7 +3043,6 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   };
 
   const navigateToOutbound = (row) => {
-      onAudit('从销售订单进入库存出库', row.id);
       onRequestOutbound(row);
   };
 
@@ -3220,7 +3527,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
   );
 };
 
-const Sales_OutboundRequestModal = ({ request, onClose }) => {
+const Sales_OutboundRequestModal = ({ request, onClose, onNavigateOutbound }) => {
   if (!request) return null;
   const { order, task, status } = request;
   const productLines = order?.lines && Array.isArray(order.lines) && order.lines.length > 0
@@ -3228,18 +3535,18 @@ const Sales_OutboundRequestModal = ({ request, onClose }) => {
     : order?.productName ? [{ productName: order.productName, spec: order.spec, unit: order.unit, qty: order.qty, unitPrice: order.unitPrice }] : [];
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
-      <div className="bg-white rounded-2xl shadow-2xl w-[620px] max-h-[92vh] overflow-hidden flex flex-col border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+      <div role="dialog" aria-modal="true" aria-labelledby="sales-outbound-request-title" className="bg-white rounded-2xl shadow-2xl w-[620px] max-w-full max-h-[92vh] overflow-hidden flex flex-col border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-emerald-50/50 shrink-0">
           <div className="flex gap-3">
             <div className="w-10 h-10 rounded-xl border bg-emerald-50 border-emerald-100 flex items-center justify-center text-emerald-600">
               <Truck size={18} />
             </div>
             <div>
-              <h3 className="font-bold text-slate-800 text-[15px]">已通知仓库准备发货</h3>
+              <h3 id="sales-outbound-request-title" className="font-bold text-slate-800 text-[15px]">已通知仓库准备发货</h3>
               <p className="text-[12px] text-slate-500 mt-1">仓库人员将处理此订单的出库事宜</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg transition-colors"><X size={16}/></button>
+          <button aria-label="关闭发货申请弹窗" onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg transition-colors"><X size={16}/></button>
         </div>
         <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -3304,8 +3611,9 @@ const Sales_OutboundRequestModal = ({ request, onClose }) => {
             </ul>
           </div>
         </div>
-        <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50 shrink-0">
-          <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors">我知道了</button>
+        <div className="p-4 border-t border-slate-100 flex flex-wrap justify-end gap-3 bg-slate-50/50 shrink-0">
+          <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors">我知道了</button>
+          <button onClick={onNavigateOutbound} className="inline-flex items-center gap-2 px-5 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"><ArrowUpFromLine size={14}/>进入出库管理</button>
         </div>
       </div>
     </div>
@@ -3326,20 +3634,63 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const [reminderAt, setReminderAt] = useState(() => persistedWorkspace?.reminderAt || null);
   const [toast, setToast] = useState(null);
   const [outboundRequestModal, setOutboundRequestModal] = useState(null);
+  const [salesWarehouseList, setSalesWarehouseList] = useState([]);
+  const [inventoryMasterData, setInventoryMasterData] = useState(
+    () => loadInventoryMasterData(window.localStorage, currentTenant?.id),
+  );
 
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
-  const mapFormalOrder = (order) => ({
+
+  useEffect(() => {
+    if (!formalContext) return;
+    inventoryApi.listWarehouses(formalContext)
+      .then((response) => setSalesWarehouseList((response.items || []).filter((warehouse) => warehouse.status === 'active')))
+      .catch(() => setSalesWarehouseList([]));
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  useEffect(() => {
+    setInventoryMasterData(loadInventoryMasterData(window.localStorage, currentTenant?.id));
+  }, [currentTenant?.id, resetSignal]);
+
+  useEffect(() => {
+    const handleChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ tenantId?: string }>).detail;
+      if (!detail?.tenantId || detail.tenantId === currentTenant?.id) {
+        setInventoryMasterData(loadInventoryMasterData(window.localStorage, currentTenant?.id));
+      }
+    };
+    window.addEventListener('inventory-master-data-changed', handleChange);
+    return () => window.removeEventListener('inventory-master-data-changed', handleChange);
+  }, [currentTenant?.id]);
+
+  const quoteOptions = useMemo(
+    () => mapInventoryMasterToQuoteOptions(inventoryMasterData, inv_stockData),
+    [inventoryMasterData],
+  );
+
+  const mapFormalOrder = (order) => {
+      const orderLines = (order.lines || []).filter(line => line.lineStatus !== 'CANCELED');
+      return {
       id: order.orderNo,
       aggregateId: order.id,
       formalOrder: order,
       client: order.customerName || order.customerId,
       salesman: order.ownerEmployeeId,
-      product: order.lines.map((line) => `${line.productId} × ${line.orderedQty} ${line.uom}`).join('；'),
-      productName: order.lines[0]?.productId || '-',
-      productId: order.lines[0]?.productId,
-      unit: order.lines[0]?.uom || 'PCS',
-      qty: Number(order.lines[0]?.orderedQty || 0),
-      unitPrice: Number(order.lines[0]?.unitPrice || 0),
+      product: orderLines.map((line) => `${line.productId} × ${line.orderedQty} ${line.uom}`).join('；'),
+      productName: orderLines[0]?.productId || '-',
+      productId: orderLines[0]?.productId,
+      unit: orderLines[0]?.uom || 'PCS',
+      qty: Number(orderLines[0]?.orderedQty || 0),
+      unitPrice: Number(orderLines[0]?.unitPrice || 0),
+      discountRate: order.discountRate ?? '100',
+      discountAmount: order.discountAmount ?? '0',
+      originalAmount: order.originalAmount,
+      lines: orderLines.map(line => ({
+          productId: line.productId, productName: line.productId,
+          warehouseId: order.fulfillmentWarehouseId, unit: line.uom,
+          quantity: Number(line.orderedQty), unitPrice: Number(line.unitPrice),
+          shippedQty: Number(line.shippedQty), remainingQty: Number(line.remainingQty),
+      })),
       amount: sales_formatMoney(Number(order.totalAmount || 0)),
       receivable: order.shipmentStatus === 'SHIPPED' ? sales_formatMoney(Number(order.totalAmount || 0)) : '待生成',
       date: order.createdAt?.slice(0, 10),
@@ -3349,23 +3700,34 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       status: order.overallStatus === 'SHIPPED' ? '已发货' : order.overallStatus === 'PARTIALLY_SHIPPED' ? '部分发货' : order.overallStatus === 'REPLENISHING' ? '生产中' : order.overallStatus === 'CONFIRMED' ? '已确认' : order.overallStatus === 'CANCELED' ? '已取消' : '待发货',
       reviewStatus: order.reviewStatus,
       confirmationStatus: order.reviewStatus === 'APPROVED' ? '已审批' : order.reviewStatus === 'NOT_REQUIRED' ? '无需审批' : order.reviewStatus === 'PENDING' ? '待复核' : order.reviewStatus,
-      shippedQty: order.lines.reduce((total, line) => total + Number(line.shippedQty), 0),
-      remainingQty: order.lines.reduce((total, line) => total + Number(line.remainingQty), 0),
-      canRequestRemainingShipment: order.overallStatus === 'PARTIALLY_SHIPPED' && order.lines.some((line) => Number(line.remainingQty) > Number(line.activeRequestedQty)),
+      shippedQty: orderLines.reduce((total, line) => total + Number(line.shippedQty), 0),
+      remainingQty: orderLines.reduce((total, line) => total + Number(line.remainingQty), 0),
+      canRequestRemainingShipment: order.overallStatus === 'PARTIALLY_SHIPPED' && orderLines.some((line) => Number(line.remainingQty) > Number(line.activeRequestedQty)),
       version: order.version,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
-  });
+      };
+  };
 
   const refreshFormalOrders = async () => {
       if (!formalContext) return;
       const response = await listFulfillmentOrders(formalContext);
       const formal = response.items.map(mapFormalOrder);
-      setOrders((previous) => [...formal, ...previous.filter((item) => !item.aggregateId && !formal.some((serverOrder) => serverOrder.id === item.id))]);
+      setOrders((previous) => mergeFormalSalesOrders(previous, formal));
   };
 
   useEffect(() => {
       refreshFormalOrders().catch((error) => showToast('正式订单加载失败', error instanceof Error ? error.message : '请稍后重试', 'danger'));
+  }, [formalContext?.tenantId, formalContext?.accessToken, resetSignal]);
+
+  useEffect(() => {
+      const refresh = () => refreshFormalOrders().catch(() => {});
+      window.addEventListener('focus', refresh);
+      window.addEventListener('sales-fulfillment-changed', refresh);
+      return () => {
+          window.removeEventListener('focus', refresh);
+          window.removeEventListener('sales-fulfillment-changed', refresh);
+      };
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
   useEffect(() => {
@@ -3387,13 +3749,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   // 当从其他模块切回销售管理时，从 localStorage 重新加载订单数据（同步库存模块的部分发货回写）
   useEffect(() => {
       if (!persistedWorkspace?.orders) return;
-      setOrders(prev => {
-          // 合并策略：以 localStorage 中的订单为基础，保留当前会话中新创建的订单
-          const localStorageOrders = persistedWorkspace.orders;
-          const localIds = new Set(localStorageOrders.map(o => o.id));
-          const newOrders = prev.filter(o => !localIds.has(o.id));
-          return [...newOrders, ...localStorageOrders];
-      });
+      setOrders(prev => mergePersistedSalesOrders(prev, persistedWorkspace.orders));
   }, [persistedWorkspace]);
 
   useEffect(() => {
@@ -3474,9 +3830,11 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       }
   };
 
-  const requestOutbound = async (order) => {
-      try {
-          if (!order.aggregateId) {
+  const ensureFormalSalesOrder = async (order) => {
+          if (!formalContext) throw new Error('请先登录正式会话后再操作');
+          if (order.aggregateId) return getFulfillmentOrder(formalContext, order.aggregateId);
+          const promotedOrder = orders.find(item => item.localOrderId === order.id && item.aggregateId);
+          if (promotedOrder) return getFulfillmentOrder(formalContext, promotedOrder.aggregateId);
               const orderLines = Array.isArray(order.lines) && order.lines.length > 0
                   ? order.lines.map((line) => ({
                       productId: line.productId || String(line.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || '',
@@ -3494,46 +3852,85 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                       unit: order.unit || '件',
                       unitPrice: Number(order.unitPrice || 0),
                     }];
-              const task = requestSalesOutbound(window.localStorage, currentTenant?.id, {
-                  orderId: order.id,
-                  customer: order.client,
-                  item: orderLines.length === 1 ? orderLines[0].productName : `${orderLines[0].productName} 等 ${orderLines.length} 项产品`,
-                  qty: orderLines.reduce((sum, l) => sum + l.qty, 0),
-                  unit: orderLines[0]?.unit || '件',
-                  amount: order.amount,
-                  warehouse: order.warehouse || '成品主仓',
-                  productId: orderLines[0]?.productId,
-                  dueDate: order.deliveryDate,
-                  availableQty: resolveOrderAvailQty(order),
-                  sourceRevision: Number(order.version || 1),
-                  operator: currentUser?.name || currentUser?.account || '当前销售人员',
-                  lines: orderLines,
-              });
-              setOrders(prev => prev.map(item => item.id === order.id ? { ...item, outStatus: task.status } : item));
-              addAudit('已通知仓库准备发货', order.id);
-              setOutboundRequestModal({ order: { ...order, outStatus: task.status }, task, status: 'submitted' });
-              return;
+              const warehouseId = order.warehouseId || order.warehouse || order.lines?.[0]?.warehouseId || '';
+              const fulfillmentWarehouse = salesWarehouseList.find((warehouse) => warehouse.id === warehouseId || warehouse.name === warehouseId)
+                  || salesWarehouseList[0];
+              if (!fulfillmentWarehouse) throw new Error('请先在库存管理创建并启用发货仓库');
+              const customer = customers.find((item) => item.name === order.client) || customers[0];
+              const created = await createFulfillmentOrder(formalContext, {
+                  ...salesOrderPricingInput(order),
+                  customerId: customer?.id || order.client,
+                  customerName: order.client,
+                  ownerEmployeeId: currentUser?.account || 'sales-owner',
+                  fulfillmentWarehouseId: fulfillmentWarehouse.id,
+                  factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
+                  requestedDeliveryDate: order.deliveryDate,
+                  allowPartialShipment: true,
+                  currency: 'CNY',
+                  recipient: {
+                      name: customer?.contact || '待补充收货人',
+                      phone: customer?.phone && customer.phone !== '-' ? customer.phone : '13800000000',
+                      country: '中国', province: '上海', city: '上海', address: customer?.address || '待补充收货地址',
+                  },
+                  lines: orderLines.map((line, index) => ({
+                      lineNo: index + 1,
+                      productId: line.productId,
+                      orderedQty: String(line.qty),
+                      uom: 'PCS',
+                      unitPrice: String(line.unitPrice || 0),
+                      taxRate: '0',
+                      promisedDate: order.deliveryDate,
+                      allowPartialShipment: true,
+                  })),
+              }, `sales-order:${order.id}`);
+              const createdOrder = { ...mapFormalOrder(created), localOrderId: order.id };
+              setOrders(prev => upsertSalesOrder(prev, createdOrder, order.id));
+              setQuotes(prev => prev.map(quote => quote.convertedOrderId === order.id
+                  ? { ...quote, convertedOrderId: createdOrder.id } : quote));
+              removeSalesOutboundBySource(window.localStorage, currentTenant?.id, order.id);
+              return getFulfillmentOrder(formalContext, created.id);
+  };
+
+  const requestOutbound = async (order) => {
+      try {
+          let formalOrder = await ensureFormalSalesOrder(order);
+          const localOrderId = order.localOrderId || (!order.aggregateId ? order.id : undefined);
+          const updateOrder = (updated: FulfillmentOrder) => {
+              const mapped = { ...mapFormalOrder(updated), localOrderId };
+              setOrders(prev => upsertSalesOrder(prev, mapped, order.id));
+              return mapped;
+          };
+          if (formalOrder.overallStatus === 'PENDING_CONFIRMATION') {
+              formalOrder = await confirmSalesOrderContents(formalContext, formalOrder.id, order.deliveryDate, true, updateOrder);
           }
-          if (!formalContext) {
-              showToast('请先登录', '请先登录正式会话后再操作', 'danger');
-              return;
-          }
-          let workingOrder = order;
+          let workingOrder = updateOrder(formalOrder);
           if (workingOrder.formalOrder && ['NOT_REQUESTED', 'PARTIALLY_SHIPPED'].includes(workingOrder.formalOrder.shipmentStatus)) {
-              await createFulfillmentShipmentRequest(formalContext, workingOrder.formalOrder);
-              const response = await listFulfillmentOrders(formalContext);
-              const refreshed = response.items.find((item) => item.id === workingOrder.aggregateId);
-              if (refreshed) {
-                  const mapped = mapFormalOrder(refreshed);
-                  setOrders(prev => prev.map(item => item.aggregateId === workingOrder.aggregateId ? mapped : item));
-                  workingOrder = mapped;
-              }
+              workingOrder = updateOrder(await requestSalesShipment(formalContext, workingOrder.aggregateId));
               addAudit('已通知仓库准备发货', workingOrder.id);
           }
           setOutboundRequestModal({ order: workingOrder, status: 'submitted' });
       } catch (error) {
+          if (order.aggregateId) {
+              try {
+                  const current = mapFormalOrder(await getFulfillmentOrder(formalContext, order.aggregateId));
+                  setOrders(prev => [
+                      current,
+                      ...prev.filter(item => item.id !== order.id && item.aggregateId !== current.aggregateId),
+                  ]);
+              } catch {
+                  // Keep the original toast visible if the recovery fetch also fails.
+              }
+          }
           showToast('发货申请失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
       }
+  };
+
+  const navigateToRequestedOutbound = () => {
+      if (!outboundRequestModal) return;
+      const orderId = outboundRequestModal.order.aggregateId || outboundRequestModal.order.id;
+      addAudit('从销售订单进入库存出库', orderId);
+      setOutboundRequestModal(null);
+      onNavigateModule?.('库存管理', { query: createSalesOutboundNavigationQuery(orderId) });
   };
 
   const handleQuickOrderCreate = async (order) => {
@@ -3542,13 +3939,17 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
           return;
       }
       try {
+        const fulfillmentWarehouse = salesWarehouseList.find((warehouse) => warehouse.id === order.warehouseId)
+          || salesWarehouseList[0];
+        if (!fulfillmentWarehouse) throw new Error('请先在库存管理创建并启用发货仓库');
           const customer = customers.find((item) => item.name === order.client) || customers[0];
           const productId = order.productId || String(order.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || 'FG001';
           const created = await createFulfillmentOrder(formalContext, {
+              ...salesOrderPricingInput(order),
               customerId: customer?.id || order.client,
               customerName: order.client,
               ownerEmployeeId: currentUser?.account || 'sales-owner',
-              fulfillmentWarehouseId: 'WH-FG-01',
+              fulfillmentWarehouseId: fulfillmentWarehouse.id,
               factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
               requestedDeliveryDate: order.deliveryDate,
               allowPartialShipment: true,
@@ -3574,24 +3975,24 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const reviewFormalOrder = async (row) => {
       if (!formalContext || !row.formalOrder) return null;
       if (row.formalOrder.reviewStatus !== 'PENDING') throw new Error('订单当前不在待复核状态');
-      return mapFormalOrder(await approveFulfillmentOrder(formalContext, row.formalOrder));
+      return { ...row, ...mapFormalOrder(await approveFulfillmentOrder(formalContext, row.formalOrder)) };
   };
 
   const confirmFormalOrder = async (row) => {
-      if (!formalContext || !row.formalOrder) return null;
-      if (!['APPROVED', 'NOT_REQUIRED'].includes(row.formalOrder.reviewStatus)) throw new Error('订单尚未完成复核或审批');
-      return mapFormalOrder(await confirmFulfillmentOrder(formalContext, row.formalOrder, row.deliveryDate));
+      const formalOrder = await ensureFormalSalesOrder(row);
+      const localOrderId = row.localOrderId || (!row.aggregateId ? row.id : undefined);
+      const updateOrder = (updated: FulfillmentOrder) => {
+          const mapped = { ...mapFormalOrder(updated), localOrderId };
+          setOrders(prev => upsertSalesOrder(prev, mapped, row.id));
+          return mapped;
+      };
+      const confirmed = await confirmSalesOrderContents(formalContext, formalOrder.id, row.deliveryDate, !row.aggregateId, updateOrder);
+      return updateOrder(confirmed);
   };
 
   const requestFormalShipment = async (row) => {
       if (!formalContext || !row.formalOrder) return null;
-      const order = row.formalOrder;
-      if (!['APPROVED', 'NOT_REQUIRED'].includes(order.reviewStatus)) throw new Error('订单尚未完成复核或审批');
-      if (!['NOT_REQUESTED', 'PARTIALLY_SHIPPED'].includes(order.shipmentStatus)) throw new Error('订单已有未完成的发货任务，请前往出库管理继续处理');
-      await createFulfillmentShipmentRequest(formalContext, order);
-      const response = await listFulfillmentOrders(formalContext);
-      const refreshed = response.items.find((item) => item.id === order.id) || order;
-      return mapFormalOrder(refreshed);
+      return mapFormalOrder(await requestSalesShipment(formalContext, row.aggregateId));
   };
 
   const cancelFormal = async (row) => {
@@ -3658,7 +4059,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
 
               <div className="w-full">
                   {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} onCreateQuote={(quote) => setQuotes(prev => [quote, ...prev])} onOpenOrders={() => navigateSalesTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
-                  {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
+                  {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
                   {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} />}
                   {activeTab === 'customers' && <Sales_CustomersView customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
                   {activeTab === 'basic-data' && <Sales_BaseDataView levels={levels} setLevels={setLevels} industries={industries} setIndustries={setIndustries} customers={customers} outreachSettings={outreachSettings} setOutreachSettings={setOutreachSettings} onToast={showToast} onAudit={addAudit} />}
@@ -3666,7 +4067,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
               
               {isQuickOrderModalOpen && <Sales_QuickOrderModal onClose={() => setIsQuickOrderModalOpen(false)} onCreate={handleQuickOrderCreate} />}
               <Sales_Toast toast={toast} onClose={() => setToast(null)} />
-              {outboundRequestModal && <Sales_OutboundRequestModal request={outboundRequestModal} onClose={() => setOutboundRequestModal(null)} />}
+              {outboundRequestModal && <Sales_OutboundRequestModal request={outboundRequestModal} onClose={() => setOutboundRequestModal(null)} onNavigateOutbound={navigateToRequestedOutbound} />}
           </div>
       </div>
   );
@@ -4264,13 +4665,20 @@ const mpsDemandSourceMeta = {
 const mpsStatusClassMap = {
     '草稿': 'bg-slate-100 text-slate-600 border-slate-200',
     '待确认': 'bg-amber-50 text-amber-700 border-amber-200',
+    '待接收': 'bg-orange-50 text-orange-700 border-orange-200',
     '已审批': 'bg-blue-50 text-blue-600 border-blue-100',
     '待展算': 'bg-amber-50 text-amber-600 border-amber-100',
+    '已推展算': 'bg-blue-50 text-blue-700 border-blue-200',
     '已展算': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    '已推排程': 'bg-purple-50 text-purple-700 border-purple-200',
+    '已排程': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    '已建工单': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    '展算失败': 'bg-rose-50 text-rose-700 border-rose-200',
+    '排程失败': 'bg-rose-50 text-rose-700 border-rose-200',
     '已下发': 'bg-blue-50 text-blue-600 border-blue-100',
 };
 
-const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps, onUpdateMps, onDeleteMps, onCalcMrp, onValidateDemand, onApproveDemand, onCreateMpsFromDemand, onHoldDemand, onMergeDemand, onViewDemandSource, showToast, canCalcMrp = true, canCreateMps = true }) => {
+const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps, onUpdateMps, onDeleteMps, onCalcMrp, onValidateDemand, onApproveDemand, onClaimDemand, onCreateMpsFromDemand, onRunAps, onCreateFormalOrder, onHoldDemand, onMergeDemand, onViewDemandSource, showToast, canCalcMrp = true, canValidateDemand = true, canApproveDemandAction = true, canClaimDemand = true, canCreateMps = true, canRunAps = true, canCreateWorkOrder = true, onConfirmMps, onConfirmDemandToMps }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [defaultPriority, setDefaultPriority] = useState('普通');
     const [defaultDemandSource, setDefaultDemandSource] = useState('普通生产');
@@ -4287,7 +4695,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
             product: d.product,
             quantity: d.shortage,
             date: d.requiredDate,
-            status: d.apiStatus === 'APPROVED' ? '待确认' : '草稿',
+            status: mapProductionDemandStatus(d.formalDemand || { status: d.apiStatus }),
             priority: d.priority,
             sourceSalesOrder: d.sourceSalesOrder,
             sourceFactVersion: d.sourceFactVersion,
@@ -4298,7 +4706,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
             rawDemand: d,
         }));
     const allRows = [...draftRows, ...mps];
-    const pendingCount = draftRows.filter(r => r.status === '草稿' || r.status === '待确认').length;
+    const pendingCount = draftRows.filter(r => ['草稿', '待接收'].includes(r.status)).length;
     const urgentCount = allRows.filter(r => ['紧急', '特急VIP'].includes(r.priority)).length;
 
     return (
@@ -4323,7 +4731,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                 <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center shrink-0 bg-slate-50/50">
                     <div>
                         <h4 className="font-bold text-[14px] text-slate-800 flex items-center gap-2"><ListTodo size={16} className="text-blue-600"/> 主生产计划列表 (MPS)</h4>
-                        <p className="text-[12px] text-slate-500 mt-1">草稿与待确认条目来自销售缺货/订单加急，审批后进入计划下推。</p>
+                <p className="text-[12px] text-slate-500 mt-1">草稿、待审批、待接收和待展算条目来自销售缺货/订单加急；接收后才能推送 MRP。</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                         <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 text-[12px] font-bold">待处理 {pendingCount}</span>
@@ -4341,9 +4749,10 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                                 const meta = mpsDemandSourceMeta[ds] || mpsDemandSourceMeta['普通生产'];
                                 const SourceIcon = meta.icon;
                                 const isDraft = r.isDraft;
-                                const canApprove = isDraft && r.apiStatus === 'APPROVED';
+                                const canRunMrp = isDraft && r.apiStatus === 'APPROVED' && !!r.rawDemand?.formalDemand?.acceptedAt;
                                 const canValidate = isDraft && (r.apiStatus === 'RECEIVED' || r.apiStatus === 'BLOCKED');
                                 const canReview = isDraft && r.apiStatus === 'PENDING_REVIEW';
+                                const canClaim = isDraft && r.apiStatus === 'APPROVED' && !r.rawDemand?.formalDemand?.acceptedAt;
                                 return (
                                     <tr key={r.id} aria-current={r.id === focusMps ? 'true' : undefined} className={`transition-colors group ${r.id === focusMps ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
                                         <td className="px-5 py-4 font-mono font-bold text-blue-600">{r.id}</td>
@@ -4352,20 +4761,24 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                                         <td className="px-5 py-4 font-bold text-slate-800">{r.product}</td>
                                         <td className="px-5 py-4 text-right font-mono font-bold text-slate-800">{r.quantity} {r.unit || 'PCS'}</td>
                                         <td className="px-5 py-4 text-slate-500 font-mono">{r.date}</td>
-                                        <td className="px-5 py-4">{r.sourceSalesOrder ? <div className="text-[11px] text-blue-500 font-mono">SO: {String(r.sourceSalesOrder).slice(0, 12)}{r.sourceFactVersion != null ? ` \u00b7 v${r.sourceFactVersion}` : ''}</div> : <div className="text-[11px] text-slate-400">{r.source || '-'}</div>}{r.sourceCustomer && <div className="text-[11px] text-slate-400 mt-0.5">{r.sourceCustomer}</div>}</td>
+                                        <td className="px-5 py-4">{r.sourceSalesOrder ? <div className="text-[11px] text-blue-500 font-mono">SO: {String(r.sourceSalesOrder).slice(0, 12)}{r.sourceFactVersion != null ? ` \u00b7 v${r.sourceFactVersion}` : ''}</div> : <div className="text-[11px] text-slate-400">{r.source || '-'}</div>}{r.sourceCustomer && <div className="text-[11px] text-slate-400 mt-0.5">{r.sourceCustomer}</div>}{r.rawDemand?.formalDemand?.handlerRole && <div className="text-[11px] text-slate-500 mt-0.5">{r.rawDemand.formalDemand.handlerRole === 'PRODUCTION_PLANNER' ? '接收池：生产计划员' : `处理角色：${r.rawDemand.formalDemand.handlerRole}`}{r.rawDemand.formalDemand.handlerId ? ` \u00b7 ${r.rawDemand.formalDemand.handlerId}` : ''}</div>}</td>
                                         <td className="px-5 py-4"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${mpsStatusClassMap[r.status] || mpsStatusClassMap['草稿']}`}>{r.status === '已下发' ? '已推MRP' : r.status}</span></td>
                                         <td className="px-5 py-4 text-right">
                                             <div className="flex items-center justify-end space-x-1.5">
                                                 {isDraft ? <>
                                                     <button onClick={() => onViewDemandSource?.(r.rawDemand)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看来源"><Eye size={16}/></button>
-                                                    {canValidate && <button onClick={() => onValidateDemand?.(r.id)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="需求校验"><CheckCircle2 size={16}/></button>}
-                                                    {canReview && <button onClick={() => onApproveDemand?.(r.id)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="异人审批"><ShieldCheck size={16}/></button>}
-                                                    {canApprove && <button onClick={() => onCreateMpsFromDemand?.(r.id)} disabled={!canCreateMps} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canCreateMps ? '生成MPS' : '无创建权限'}><Plus size={16}/></button>}
+                                                    {r.status === '草稿' && <button onClick={() => onConfirmDemandToMps?.(r.id)} className="text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 p-1.5 rounded-lg transition-colors shadow-sm" title="确认需求，进入待展算"><CheckCircle2 size={16}/></button>}
+                                                    {canValidate && <button onClick={() => onValidateDemand?.(r.id)} disabled={!canValidateDemand} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canValidateDemand ? '需求校验' : '无需求校验权限'}><CheckCircle2 size={16}/></button>}
+                                                    {canReview && <button onClick={() => onApproveDemand?.(r.id)} disabled={!canApproveDemandAction} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canApproveDemandAction ? '异人审批' : '无需求审批权限'}><ShieldCheck size={16}/></button>}
+                                                    {canClaim && <button onClick={() => onClaimDemand?.(r.id)} disabled={!canClaimDemand} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canClaimDemand ? '计划员接收需求' : '无需求接收权限'}><Inbox size={16}/></button>}
+                                                    {canRunMrp && <button onClick={() => onCreateMpsFromDemand?.(r.id)} disabled={!canCalcMrp} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canCalcMrp ? '接收后推送 MRP 展算' : '无 MRP 展算权限'}><PlayCircle size={16}/></button>}
                                                     <button onClick={() => onHoldDemand?.(r.id)} disabled={!r.demandId} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="暂缓"><Clock size={16}/></button>
                                                 </> : <>
                                                     <button onClick={() => setRecordModal({ mode: 'view', record: r })} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看计划"><Eye size={16}/></button>
                                                     <button onClick={() => setRecordModal({ mode: 'edit', record: r })} disabled={r.status === '已下发'} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="编辑计划"><Edit2 size={16}/></button>
-                                                    {r.status === '待展算' ? <button onClick={() => onCalcMrp(r.id)} disabled={!canCalcMrp} className="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 p-1.5 rounded-lg transition-colors shadow-sm disabled:opacity-30 disabled:cursor-not-allowed" title={canCalcMrp ? '下推 MRP 展算' : '无 MRP 展算权限'}><PlayCircle size={16}/></button> : <button disabled className="p-1.5 text-slate-300 cursor-not-allowed"><Check size={16}/></button>}
+{r.status === '待展算' ? <button onClick={() => onCalcMrp(r.id)} disabled={!canCalcMrp} className="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 p-1.5 rounded-lg transition-colors shadow-sm disabled:opacity-30 disabled:cursor-not-allowed" title={canCalcMrp ? '下推 MRP 展算' : '无 MRP 展算权限'}><PlayCircle size={16}/></button> : <button disabled className="p-1.5 text-slate-300 cursor-not-allowed"><Check size={16}/></button>}
+                                                    {r.status === '已展算' && <button onClick={() => onRunAps?.(r.id)} disabled={!canRunAps} className="text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-200 p-1.5 rounded-lg transition-colors shadow-sm disabled:opacity-30 disabled:cursor-not-allowed" title={canRunAps ? '运行 APS 排程' : '无 APS 排程权限'}><PlayCircle size={16}/></button>}
+                                                    {r.status === '已排程' && <button onClick={() => onCreateFormalOrder?.(r.id)} disabled={!canCreateWorkOrder} className="text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 p-1.5 rounded-lg transition-colors shadow-sm disabled:opacity-30 disabled:cursor-not-allowed" title={canCreateWorkOrder ? '基于成功排程创建工单' : '无创建工单权限'}><Factory size={16}/></button>}
                                                     <button onClick={() => setDeleteTarget(r)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="删除计划"><Trash2 size={16}/></button>
                                                 </>}
                                             </div>
@@ -4433,40 +4846,288 @@ const Prod_MrpView = ({ mrp, onIssueMrp, showToast }) => {
     );
 };
 
-const Prod_ApsView = ({ onOptimize }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full flex flex-col animate-in fade-in duration-300">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
-            <div><h3 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CalendarRange className="w-4.5 h-4.5 text-blue-600"/> 智能排产甘特图 (APS)</h3><p className="text-[12px] text-slate-500 mt-1">自动平衡设备负荷的车间级排期视图</p></div>
-            <button onClick={onOptimize} className="bg-blue-600 hover:bg-blue-700 text-white text-[12px] px-4 py-2 rounded-lg font-bold shadow-sm transition-all flex items-center gap-1"><Sparkles size={14}/> 执行AI优化平衡</button>
-        </div>
-        <div className="p-6 flex-1 bg-slate-50/50 overflow-auto custom-scrollbar">
-            <div className="flex border-b border-slate-200 pb-3 text-[12px] font-bold text-slate-400 uppercase">
-                <div className="w-32 shrink-0">设备资产中心</div>
-                <div className="flex-1 min-w-[500px] grid grid-cols-5 text-center"><div>周一 (Mon)</div><div>周二 (Tue)</div><div>周三 (Wed)</div><div>周四 (Thu)</div><div>周五 (Fri)</div></div>
+const Prod_ApsView = ({ orders, equipments, onUpdateOrder, showToast }) => {
+    const [draggingId, setDraggingId] = useState(null);
+    const [highlightedIds, setHighlightedIds] = useState([]);
+    const [optimizing, setOptimizing] = useState(false);
+    const [optimizationResult, setOptimizationResult] = useState(null);
+    const [dragOverMachine, setDragOverMachine] = useState(null);
+
+    const WEEK_DAYS = ['周一 (Mon)', '周二 (Tue)', '周三 (Wed)', '周四 (Thu)', '周五 (Fri)'];
+
+    const getDaySlot = (dateStr) => {
+        if (!dateStr) return 0;
+        const d = new Date(dateStr);
+        const day = d.getDay();
+        return Math.max(0, Math.min(4, day - 1));
+    };
+
+    const getDuration = (startStr, endStr) => {
+        if (!startStr || !endStr) return 1;
+        const start = new Date(startStr);
+        const end = new Date(endStr);
+        const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        return Math.max(1, Math.min(5, diff));
+    };
+
+    const getOrderMachine = (order, index) => {
+        if (order.assignedMachine) return order.assignedMachine;
+        if (!equipments || equipments.length === 0) return 'SMT-M01';
+        return equipments[index % equipments.length]?.id || equipments[0]?.id;
+    };
+
+    const machineOrders = useMemo(() => {
+        const groups = {};
+        (equipments || []).forEach(eq => { groups[eq.id] = []; });
+        orders.forEach((order, idx) => {
+            const mid = getOrderMachine(order, idx);
+            if (!groups[mid]) groups[mid] = [];
+            groups[mid].push(order);
+        });
+        return groups;
+    }, [orders, equipments]);
+
+    const handleDragStart = (e, orderId) => {
+        setDraggingId(orderId);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', orderId);
+    };
+
+    const handleDragOver = (e, machineId) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragOverMachine !== machineId) setDragOverMachine(machineId);
+    };
+
+    const handleDrop = (e, machineId) => {
+        e.preventDefault();
+        if (!draggingId) { setDragOverMachine(null); return; }
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const width = rect.offsetWidth;
+        const slotWidth = width / 5;
+        const newSlot = Math.max(0, Math.min(4, Math.floor(x / slotWidth)));
+        
+        const order = orders.find(o => o.id === draggingId);
+        if (!order) { setDraggingId(null); setDragOverMachine(null); return; }
+        
+        const duration = getDuration(order.startDate, order.endDate);
+        const today = new Date();
+        const dayOfWeek = today.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const baseDate = new Date(today);
+        baseDate.setDate(today.getDate() + mondayOffset);
+        
+        const newStart = new Date(baseDate);
+        newStart.setDate(baseDate.getDate() + newSlot);
+        const newEnd = new Date(newStart);
+        newEnd.setDate(newStart.getDate() + duration - 1);
+        
+        onUpdateOrder({
+            ...order,
+            startDate: newStart.toISOString().slice(0, 10),
+            endDate: newEnd.toISOString().slice(0, 10),
+            assignedMachine: machineId,
+        });
+        
+        showToast(`工单 ${draggingId} 已拖拽调整到 ${machineId} · 第${newSlot + 1}天`, 'success');
+        setDraggingId(null);
+        setDragOverMachine(null);
+    };
+
+    const handleOptimize = () => {
+        if (optimizing) return;
+        setOptimizing(true);
+        setOptimizationResult(null);
+        
+        setTimeout(() => {
+            const machines = (equipments && equipments.length > 0) ? equipments : [{ id: 'SMT-M01', name: 'SMT-M01', oee: '88%', type: 'SMT' }];
+            const machineLoads = {};
+            machines.forEach(m => { machineLoads[m.id] = 0; });
+            
+            const statusPriority = { '执行中': 0, '齐套待下发': 1, '待检查': 2, '已完工': 3 };
+            const sortedOrders = [...orders].sort((a, b) => {
+                const pa = statusPriority[a.status] ?? 9;
+                const pb = statusPriority[b.status] ?? 9;
+                if (pa !== pb) return pa - pb;
+                return (b.quantity || 0) - (a.quantity || 0);
+            });
+            
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            const baseDate = new Date(today);
+            baseDate.setDate(today.getDate() + mondayOffset);
+            
+            const movedIds = [];
+            const optimizedOrders = sortedOrders.map((order) => {
+                const duration = getDuration(order.startDate, order.endDate);
+                let leastMachine = machines[0];
+                let minLoad = Infinity;
+                machines.forEach(m => {
+                    if (machineLoads[m.id] < minLoad) {
+                        minLoad = machineLoads[m.id];
+                        leastMachine = m;
+                    }
+                });
+                
+                const slot = Math.min(4, machineLoads[leastMachine.id]);
+                machineLoads[leastMachine.id] += duration;
+                
+                const newStart = new Date(baseDate);
+                newStart.setDate(baseDate.getDate() + slot);
+                const newEnd = new Date(newStart);
+                newEnd.setDate(newStart.getDate() + duration - 1);
+                
+                const newStartDate = newStart.toISOString().slice(0, 10);
+                const newEndDate = newEnd.toISOString().slice(0, 10);
+                const oldMachine = order.assignedMachine || '';
+                const oldStart = order.startDate || '';
+                
+                if (oldStart !== newStartDate || oldMachine !== leastMachine.id) {
+                    movedIds.push(order.id);
+                }
+                
+                return {
+                    ...order,
+                    startDate: newStartDate,
+                    endDate: newEndDate,
+                    assignedMachine: leastMachine.id,
+                };
+            });
+            
+            optimizedOrders.forEach(o => onUpdateOrder(o));
+            
+            setHighlightedIds(movedIds);
+            setOptimizationResult({
+                totalOrders: optimizedOrders.length,
+                movedCount: movedIds.length,
+                machineLoads,
+                machines: machines.map(m => ({ id: m.id, name: m.name || m.id, load: machineLoads[m.id] })),
+            });
+            
+            setOptimizing(false);
+            showToast(`AI优化平衡完成：${movedIds.length}/${optimizedOrders.length} 个工单已重新排期，设备负载已均衡`, 'success');
+            
+            setTimeout(() => setHighlightedIds([]), 3000);
+        }, 1500);
+    };
+
+    const machineRows = useMemo(() => {
+        if (equipments && equipments.length > 0) return equipments;
+        return [
+            { id: 'SMT-M01', name: 'SMT-M01', type: 'SMT', status: '运行正常', oee: '88%' },
+            { id: 'ASSY-W02', name: 'ASSY-W02', type: 'Assembly', status: '闲置待产', oee: '92%' },
+            { id: 'TEST-T01', name: '测试线-T01', type: 'Test', status: '运行正常', oee: '85%' },
+        ];
+    }, [equipments]);
+
+    const getStatusColor = (status) => {
+        if (status === '执行中') return 'bg-blue-500 hover:bg-blue-600';
+        if (status === '齐套待下发') return 'bg-emerald-500 hover:bg-emerald-600';
+        if (status === '待检查') return 'bg-amber-500 hover:bg-amber-600';
+        if (status === '已完工') return 'bg-slate-400 hover:bg-slate-500';
+        return 'bg-purple-500 hover:bg-purple-600';
+    };
+
+    return (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full flex flex-col animate-in fade-in duration-300">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
+                <div><h3 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CalendarRange className="w-4.5 h-4.5 text-blue-600"/> 智能排产甘特图 (APS)</h3><p className="text-[12px] text-slate-500 mt-1">拖拽工单色块调整时段，点击AI优化平衡自动排程</p></div>
+                <button 
+                    onClick={handleOptimize} 
+                    disabled={optimizing}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-[12px] px-4 py-2 rounded-lg font-bold shadow-sm transition-all flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                    {optimizing ? <><Loader2 size={14} className="animate-spin"/> AI优化中...</> : <><Sparkles size={14}/> 执行AI优化平衡</>}
+                </button>
             </div>
-            <div className="mt-4 space-y-5">
-                <div className="flex items-center">
-                    <div className="w-32 font-bold text-[13px] text-slate-700 shrink-0">SMT-M01</div>
-                    <div className="flex-1 min-w-[500px] grid grid-cols-5 gap-1 relative h-10 bg-white rounded-lg border border-slate-200 shadow-sm">
-                        <div className="absolute left-[0%] w-[40%] top-1 bottom-1 bg-blue-500 rounded-md text-white text-[11px] font-bold flex items-center px-2 cursor-pointer hover:bg-blue-600 transition-colors shadow-sm">WO-260101 (加工)</div>
+            
+            {optimizationResult && (
+                <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-4 text-[12px] flex-wrap">
+                    <span className="text-blue-700 font-bold flex items-center gap-1"><CheckCircle2 size={14}/> 优化完成</span>
+                    <span className="text-slate-600">工单总数: <strong className="text-slate-800">{optimizationResult.totalOrders}</strong></span>
+                    <span className="text-slate-600">调整工单: <strong className="text-amber-600">{optimizationResult.movedCount}</strong></span>
+                    <div className="flex items-center gap-2 ml-auto">
+                        {optimizationResult.machines.map(m => (
+                            <span key={m.id} className="text-[11px] bg-white border border-slate-200 px-2 py-0.5 rounded-full">
+                                {m.name}: <strong className="text-blue-600">{m.load}天</strong>
+                            </span>
+                        ))}
                     </div>
                 </div>
-                <div className="flex items-center">
-                    <div className="w-32 font-bold text-[13px] text-slate-700 shrink-0">ASSY-W02</div>
-                    <div className="flex-1 min-w-[500px] grid grid-cols-5 gap-1 relative h-10 bg-white rounded-lg border border-slate-200 shadow-sm">
-                        <div className="absolute left-[40%] w-[40%] top-1 bottom-1 bg-emerald-500 rounded-md text-white text-[11px] font-bold flex items-center px-2 cursor-pointer hover:bg-emerald-600 transition-colors shadow-sm">WO-260101 (组装)</div>
+            )}
+            
+            <div className="p-6 flex-1 bg-slate-50/50 overflow-auto custom-scrollbar">
+                <div className="flex border-b border-slate-200 pb-3 text-[12px] font-bold text-slate-400 uppercase">
+                    <div className="w-32 shrink-0">设备资产中心</div>
+                    <div className="flex-1 min-w-[500px] grid grid-cols-5 text-center">
+                        {WEEK_DAYS.map(day => <div key={day}>{day}</div>)}
                     </div>
                 </div>
-                <div className="flex items-center">
-                    <div className="w-32 font-bold text-[13px] text-slate-700 shrink-0">测试线-T01</div>
-                    <div className="flex-1 min-w-[500px] grid grid-cols-5 gap-1 relative h-10 bg-white rounded-lg border border-slate-200 shadow-sm">
-                        <div className="absolute left-[80%] w-[20%] top-1 bottom-1 bg-purple-500 rounded-md text-white text-[11px] font-bold flex items-center px-2 cursor-pointer hover:bg-purple-600 transition-colors shadow-sm">WO-101 终检</div>
-                    </div>
+                
+                <div className="mt-4 space-y-5">
+                    {machineRows.map((machine) => {
+                        const machineId = machine.id;
+                        const machineName = machine.name || machine.id;
+                        const rowOrders = machineOrders[machineId] || [];
+                        
+                        return (
+                            <div key={machineId} className="flex items-center group">
+                                <div className="w-32 shrink-0">
+                                    <div className="font-bold text-[13px] text-slate-700">{machineName}</div>
+                                    <div className="text-[10px] text-slate-400 mt-0.5">{machine.type || ''} · OEE {machine.oee || '-'}</div>
+                                </div>
+                                <div 
+                                    className={`flex-1 min-w-[500px] grid grid-cols-5 gap-1 relative h-12 bg-white rounded-lg border-2 transition-colors ${dragOverMachine === machineId ? 'border-blue-400 bg-blue-50/30' : 'border-slate-200 shadow-sm'}`}
+                                    onDragOver={(e) => handleDragOver(e, machineId)}
+                                    onDragLeave={() => setDragOverMachine(null)}
+                                    onDrop={(e) => handleDrop(e, machineId)}
+                                >
+                                    {[0, 1, 2, 3, 4].map(i => (
+                                        <div key={i} className="border-r border-slate-100 last:border-r-0"></div>
+                                    ))}
+                                    
+                                    {rowOrders.map((order) => {
+                                        const slot = getDaySlot(order.startDate);
+                                        const duration = getDuration(order.startDate, order.endDate);
+                                        const leftPct = (slot / 5) * 100;
+                                        const widthPct = (duration / 5) * 100;
+                                        const isHighlighted = highlightedIds.includes(order.id);
+                                        const isDragging = draggingId === order.id;
+                                        
+                                        return (
+                                            <div
+                                                key={order.id}
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, order.id)}
+                                                onDragEnd={() => { setDraggingId(null); setDragOverMachine(null); }}
+                                                className={`absolute top-1.5 bottom-1.5 ${getStatusColor(order.status)} rounded-md text-white text-[11px] font-bold flex items-center px-2 cursor-move shadow-sm transition-all ${isDragging ? 'opacity-40 scale-95' : ''} ${isHighlighted ? 'ring-2 ring-yellow-400 animate-pulse' : ''}`}
+                                                style={{ left: `${leftPct}%`, width: `calc(${widthPct}% - 4px)` }}
+                                                title={`${order.id} | ${order.product} | ${order.startDate} ~ ${order.endDate} | ${order.status}`}
+                                            >
+                                                <span className="truncate">{order.id} · {order.product?.split(' - ')[0] || order.product}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+                
+                <div className="mt-6 flex items-center gap-4 text-[11px] text-slate-400 flex-wrap">
+                    <span className="flex items-center gap-1"><Move size={12}/> 拖拽色块调整时段</span>
+                    <span className="flex items-center gap-1"><Sparkles size={12}/> AI优化自动平衡设备负载</span>
+                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded"></div>执行中</span>
+                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-emerald-500 rounded"></div>齐套待下发</span>
+                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-amber-500 rounded"></div>待检查</span>
+                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-slate-400 rounded"></div>已完工</span>
                 </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 const Prod_OrdersView = ({ orders, onCheckKit, onDispatch, onUpdateOrder, onDeleteOrder, showToast }) => {
     const [recordModal, setRecordModal] = useState(null);
@@ -5167,12 +5828,13 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   }, [legacyStorageKey]);
   const [activeTab, setActiveTab] = useState(() => {
       const requested = new URLSearchParams(window.location.search).get('production');
+      if (requested === 'plan') return 'mps';
       return legacyTabs.includes(requested) ? requested : 'dashboard';
   });
   
   // 状态管理中心
   const [mps, setMps] = useState(savedProduction?.mps || initial_mpsData);
-  const [productionDemands, setProductionDemands] = useState(savedProduction?.productionDemands || initial_productionDemandData);
+  const [productionDemands, setProductionDemands] = useState(savedProduction?.productionDemands?.length ? savedProduction.productionDemands : initial_productionDemandData);
   const [mrp, setMrp] = useState(() => (savedProduction?.mrp || initial_mrpResults).map(row => ({ ...row, pegging: (row.pegging || []).map((item, index) => ({ ...item, icon: item.icon || [Target, Warehouse, Truck, Calculator, AlertTriangle][index % 5] })) })));
   const [orders, setOrders] = useState(savedProduction?.orders || initial_orderData);
   const [jobs, setJobs] = useState(savedProduction?.jobs || initial_operationJobs);
@@ -5257,16 +5919,8 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       shortage: Number(demand.qty),
       requiredDate: demand.dueDate,
       priority: '紧急',
-      status: ['RECEIVED', 'BLOCKED'].includes(demand.status)
-        ? '待校验'
-        : demand.status === 'PENDING_REVIEW'
-          ? '待审批'
-          : demand.status === 'APPROVED'
-            ? '待生成MPS'
-            : demand.status === 'PLANNED'
-              ? '已生成MPS'
-              : demand.status,
-      owner: demand.createdBy || '生产服务',
+      status: mapProductionDemandStatus(demand),
+      owner: demand.acceptedAt ? `${demand.handlerRole || '生产计划员'} · ${demand.handlerId || demand.createdBy}` : demand.createdBy || '生产服务',
       reason: `需求版本 v${demand.version} · ${demand.correlationId}`,
       };
   };
@@ -5276,14 +5930,57 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       listProductionDemands({
           tenantId: currentTenant?.id || 'TENANT-SHWS',
           accessToken: currentUser?.accessToken || '',
-      }).then((result) => {
+      }).then(async (result) => {
           if (cancelled) return;
           setProductionDemands(result.items.map(mapFormalDemandRow));
+          const planned = result.items.filter((item) => item.status === 'PLANNED' && item.mrpTaskId);
+          const tasks = await Promise.allSettled(planned.map((item) => productionOperationsApi.getTask({
+              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              accessToken: currentUser?.accessToken || '',
+          }, item.mrpTaskId)));
+          const recovered = planned.flatMap((demand, index) => {
+              if (tasks[index].status !== 'fulfilled') return [];
+              const row = recoverMpsFromPlannedDemand(demand, tasks[index].value);
+              return row ? [{ row, demand, task: tasks[index].value }] : [];
+          });
+          const recoveredRows = recovered.map(item => item.row);
+          if (recoveredRows.length) {
+              setMps(prev => [
+                  ...recoveredRows,
+                  ...prev.filter(item => !recoveredRows.some(row => row.demandId === item.demandId)),
+              ]);
+              const shortageRows = recovered.flatMap(({ row, task }) => (planningMaterialShortages(task.result).map((shortage) => ({
+                  id: `MRP-${task.id.slice(0, 8)}-${shortage.materialId}`,
+                  mrpTaskId: task.id,
+                  demandId: shortage.demandId,
+                  source: row.id,
+                  itemCode: shortage.materialId,
+                  itemName: shortage.materialName || shortage.materialId,
+                  type: '采购件',
+                  grossReq: Number(shortage.grossRequiredQty),
+                  stock: Number(shortage.availableQty),
+                  onWay: 0,
+                  netReq: Number(shortage.shortageQty),
+                  plannedQty: Number(shortage.shortageQty),
+                  lotRule: '按需(L4L)',
+                  status: '待转采购',
+                  pegging: [],
+              }))));
+              if (shortageRows.length) {
+                  setMrp(prev => [...shortageRows, ...prev.filter(item => !shortageRows.some(row => row.mrpTaskId === item.mrpTaskId && row.itemCode === item.itemCode))]);
+              }
+              onBusinessFlowAction?.('formalMrpCompleted', {
+                  mrpTaskId: recovered[0].task.id,
+                  demandId: recovered[0].demand.id,
+                  productionDemandCode: recovered[0].demand.code,
+                  materialShortages: planningMaterialShortages(recovered[0].task.result),
+              });
+          }
       }).catch((error) => {
           if (!cancelled) showToast(error instanceof Error ? `生产需求同步失败：${error.message}` : '生产需求同步失败', 'error');
       });
       return () => { cancelled = true; };
-  }, [currentTenant?.id, currentUser?.account]);
+  }, [currentTenant?.id, currentUser?.account, currentUser?.accessToken]);
 
   useEffect(() => {
       if (!formalCtx) return;
@@ -5340,7 +6037,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               reason: `销售订单库存不足，库存事实 v${businessFlow.inventoryFactVersion || '-'}，生产需求已持久化`
           };
           setProductionDemands(prev => prev.some(item => item.id === linkedDemand.id || item.apiId === linkedDemand.apiId) ? prev.map(item => item.id === linkedDemand.id || item.apiId === linkedDemand.apiId ? { ...item, ...linkedDemand } : item) : [linkedDemand, ...prev]);
-          setActiveTab('mps');
       }
       if (isLinkedFlowAtLeast(businessFlow, 'mpsMrp')) {
           const linkedMps = {
@@ -5372,7 +6068,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               status: isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? '已转采购' : '待下达',
               pegging: []
           }, ...prev]);
-          setActiveTab(isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? 'mrp' : 'mps');
       }
       if (isLinkedFlowAtLeast(businessFlow, 'production')) {
           const linkedOrder = {
@@ -5397,7 +6092,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               ngQty: 0,
               result: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '全良品' : null
           }, ...prev]);
-          setActiveTab(isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? 'qc_cost' : 'orders');
       }
   }, [businessFlow?.currentStep]);
 
@@ -5426,24 +6120,98 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               accessToken: currentUser?.accessToken || '',
           }, targetDemand.formalDemand);
           setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
-          showToast(`生产需求 [${demandId}] 已审批，可生成 MPS/MRP`, 'success');
+          showToast(`生产需求 [${demandId}] 已审批，等待计划员接收`, 'success');
       } catch (error) {
           showToast(error instanceof Error ? `需求审批失败：${error.message}` : '需求审批失败', 'error');
       }
   };
 
+  const handleClaimDemand = async (demandId) => {
+      const targetDemand = productionDemands.find(item => item.id === demandId);
+      if (!targetDemand?.formalDemand) return;
+      try {
+          const updated = await productionOperationsApi.claimDemand({
+              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              accessToken: currentUser?.accessToken || '',
+          }, targetDemand.formalDemand);
+          setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
+          showToast(`生产需求 [${demandId}] 已接收，可推送 MRP`, 'success');
+      } catch (error) {
+          showToast(error instanceof Error ? `需求接收失败：${error.message}` : '需求接收失败', 'error');
+      }
+  };
+
   const handleCreateMpsFromDemand = async (demandId) => {
       const targetDemand = productionDemands.find(item => item.id === demandId);
-      if (!targetDemand?.apiId || targetDemand.apiStatus !== 'APPROVED') return;
+      if (!targetDemand) return;
+      // 本地回退：无 formalDemand 时直接创建 MPS（待展算状态）
+      if (!targetDemand.formalDemand || !targetDemand.apiId || targetDemand.apiStatus !== 'APPROVED' || !targetDemand.formalDemand.acceptedAt) {
+          if (!targetDemand.formalDemand) {
+              const newMpsId = `MPS-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
+              const newMps = {
+                  id: newMpsId,
+                  demandSource: targetDemand.type === '销售缺货' ? '销售缺货' : targetDemand.type === '客户加急' ? '订单加急' : '普通生产',
+                  source: targetDemand.source,
+                  product: targetDemand.product,
+                  quantity: targetDemand.shortage,
+                  date: targetDemand.requiredDate,
+                  status: '待展算',
+                  priority: targetDemand.priority,
+                  sourceSalesOrder: targetDemand.sourceSalesOrder,
+                  sourceCustomer: targetDemand.customer,
+                  demandId: targetDemand.apiId || targetDemand.id,
+              };
+              setMps(prev => [newMps, ...prev]);
+              setProductionDemands(prev => prev.map(item => item.id === demandId ? {
+                  ...item,
+                  apiId: item.apiId || item.id,
+                  apiStatus: 'PLANNED',
+                  status: '已生成MPS',
+              } : item));
+              try {
+                  const prodStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || 'TENANT-SHWS'}`;
+                  const rawProd = window.localStorage.getItem(prodStorageKey);
+                  const prodData = rawProd ? JSON.parse(rawProd) : {};
+                  if (!Array.isArray(prodData.mps)) prodData.mps = [];
+                  prodData.mps.unshift(newMps);
+                  if (!Array.isArray(prodData.productionDemands)) prodData.productionDemands = [];
+                  prodData.productionDemands = prodData.productionDemands.map(item =>
+                      item.id === demandId ? { ...item, apiId: item.apiId || item.id, apiStatus: 'PLANNED', status: '已生成MPS' } : item
+                  );
+                  window.localStorage.setItem(prodStorageKey, JSON.stringify(prodData));
+              } catch (e) { /* ignore */ }
+              showToast(`MPS主计划 [${newMpsId}] 已创建，进入待展算状态`, 'success');
+              return;
+          }
+          return;
+      }
+      const formalMpsId = `MPS-${targetDemand.apiId.slice(0, 8)}`;
+      const pendingMps = {
+          id: formalMpsId,
+          demandSource: targetDemand.type === '销售缺货' ? '销售缺货' : targetDemand.type === '客户加急' ? '订单加急' : '普通生产',
+          source: `${targetDemand.type} (${targetDemand.source})`,
+          product: targetDemand.product,
+          quantity: targetDemand.shortage,
+          date: targetDemand.requiredDate,
+          status: '已推展算',
+          priority: targetDemand.priority,
+          sourceSalesOrder: targetDemand.sourceSalesOrder,
+          sourceFactVersion: targetDemand.sourceFactVersion,
+          sourceCustomer: targetDemand.customer,
+          demandId: targetDemand.apiId,
+      };
+      setMps(prev => [pendingMps, ...prev.filter(item => item.demandId !== targetDemand.apiId)]);
       try {
           const result = await productionOperationsApi.startPlanningTask({
               tenantId: currentTenant?.id || 'TENANT-SHWS',
               accessToken: currentUser?.accessToken || '',
           }, 'MRP', [targetDemand.apiId], `${targetDemand.apiId}:${targetDemand.formalDemand?.version || 1}`);
           const mpsLine = result.result?.mpsLines?.find((line) => line.demandId === targetDemand.apiId);
-          if (result.status !== 'SUCCEEDED' || !mpsLine) throw new Error('计划任务未返回覆盖当前需求的 MPS 结果');
+          if (result.status !== 'SUCCEEDED' || !mpsLine || !planningResultCoversDemand(result.result, targetDemand.apiId)) {
+              throw new Error('计划任务未返回覆盖当前需求的 MPS 结果');
+          }
           const nextMps = {
-              id: `MPS-${result.taskId.slice(0, 8)}`,
+              id: formalMpsId,
               taskId: result.taskId,
               demandSource: targetDemand.type === '销售缺货' ? '销售缺货' : targetDemand.type === '客户加急' ? '订单加急' : '普通生产',
               source: `${targetDemand.type} (${targetDemand.source})`,
@@ -5451,13 +6219,14 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               quantity: Number(mpsLine.plannedQty),
               date: mpsLine.dueDate,
               status: '已展算',
+          formalMps: true,
               priority: targetDemand.priority,
               sourceSalesOrder: targetDemand.sourceSalesOrder,
               sourceFactVersion: targetDemand.sourceFactVersion,
               sourceCustomer: targetDemand.customer,
               demandId: targetDemand.apiId,
           };
-          setMps(prev => [nextMps, ...prev.filter(item => item.taskId !== result.taskId)]);
+          setMps(prev => [nextMps, ...prev.filter(item => item.demandId !== targetDemand.apiId)]);
           const shortages = result.result?.materialShortages || [];
           if (shortages.length) {
               const rows = shortages.map((shortage) => ({
@@ -5483,14 +6252,98 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           setProductionDemands(prev => prev.map(item => item.id === demandId ? {
               ...item,
               apiStatus: 'PLANNED',
-              status: '已生成MPS',
+              status: '已展算',
               reason: `计划任务 ${result.taskId} · ${result.result?.solver || 'Reference MRP'}`,
               formalDemand: { ...item.formalDemand, status: 'PLANNED' },
           } : item));
           onBusinessFlowAction?.('formalMrpCompleted', { mrpTaskId: result.taskId, demandId: targetDemand.apiId, materialShortages: shortages });
           showToast(shortages.length ? `MPS/MRP 任务 [${result.taskId}] 已完成，发现 ${shortages.length} 项采购缺料` : `MPS/MRP 任务 [${result.taskId}] 已完成且物料齐套`, shortages.length ? 'warning' : 'success');
       } catch (error) {
+          setMps(prev => prev.map(item => item.demandId === targetDemand.apiId ? { ...item, status: '展算失败', reason: error instanceof Error ? error.message : 'MRP 计算失败' } : item));
           showToast(error instanceof Error ? `MPS/MRP 计算失败：${error.message}` : 'MPS/MRP 计算失败', 'error');
+      }
+  };
+
+  const handleRunApsFromMps = async (mpsId) => {
+      const targetMps = mps.find(item => item.id === mpsId);
+      const targetDemand = productionDemands.find(item => item.apiId === targetMps?.demandId);
+      if (!targetMps?.formalMps || targetMps.status !== '已展算' || targetDemand?.apiStatus !== 'PLANNED') {
+          showToast('只有 MRP 成功且结果覆盖需求的生产主计划才能运行 APS', 'warning');
+          return;
+      }
+      if (!formalCtx) {
+          showToast('请先登录正式会话后再运行 APS', 'warning');
+          return;
+      }
+      setMps(prev => prev.map(item => item.id === mpsId ? { ...item, status: '已推排程' } : item));
+      try {
+          const result = await productionOperationsApi.startPlanningTask(formalCtx, 'APS', [targetMps.demandId], `${targetMps.demandId}:aps:${targetMps.taskId || 'mrp'}`);
+          const candidate = result.result?.scheduleCandidates?.find(item => (item.demandIds || []).includes(targetMps.demandId));
+          if (result.status !== 'SUCCEEDED' || !candidate || !scheduleResultCoversDemand(result.result, targetMps.demandId)) {
+              throw new Error('排程任务未返回覆盖当前需求的正式候选');
+          }
+          setMps(prev => prev.map(item => item.id === mpsId ? {
+              ...item,
+              status: '已排程',
+              scheduleCandidateId: candidate.id,
+              plannedStart: candidate.startAt,
+              plannedDue: candidate.dueDate,
+              reason: `APS 任务 ${result.taskId}`,
+          } : item));
+          showToast(`APS 任务 [${result.taskId}] 已完成，可以创建正式工单`, 'success');
+      } catch (error) {
+          setMps(prev => prev.map(item => item.id === mpsId ? { ...item, status: '排程失败', reason: error instanceof Error ? error.message : 'APS 排程失败' } : item));
+          showToast(error instanceof Error ? `APS 排程失败：${error.message}` : 'APS 排程失败', 'error');
+      }
+  };
+
+  const handleCreateFormalOrderFromMps = async (mpsId) => {
+      const targetMps = mps.find(item => item.id === mpsId);
+      const targetDemand = productionDemands.find(item => item.apiId === targetMps?.demandId);
+      if (!targetMps?.scheduleCandidateId || targetMps.status !== '已排程' || targetDemand?.apiStatus !== 'PLANNED') {
+          showToast('只有覆盖当前需求的成功 APS 候选才能创建工单', 'warning');
+          return;
+      }
+      if (!formalCtx) {
+          showToast('请先登录正式会话后再创建工单', 'warning');
+          return;
+      }
+      const seed = `${currentTenant?.id || 'TENANT-SHWS'}:${targetMps.demandId}:${targetMps.scheduleCandidateId}`;
+      setMps(prev => prev.map(item => item.id === mpsId ? { ...item, status: '创建工单中' } : item));
+      try {
+          const order = await productionOperationsApi.createWorkOrder(formalCtx, {
+              productId: targetDemand.formalDemand.productId,
+              productName: targetDemand.formalDemand.productName,
+              factoryResourceId: targetDemand.formalDemand.factoryResourceId,
+              workCenterResourceId: targetDemand.formalDemand.factoryResourceId === 'FAC-SZ-01' ? 'WC-SZ-ASSY-01' : 'WC-SH-ASSY-01',
+              plannedQty: targetDemand.formalDemand.qty,
+              inputQty: targetDemand.formalDemand.qty,
+              uom: targetDemand.formalDemand.uom,
+              dueDate: targetDemand.formalDemand.dueDate,
+              bomSnapshotId: crypto.randomUUID(),
+              routingSnapshotId: crypto.randomUUID(),
+              scheduleCandidateId: targetMps.scheduleCandidateId,
+              kittingStatus: 'READY',
+              correlationId: targetDemand.formalDemand.correlationId,
+              demandLinks: [{
+                  demandId: targetMps.demandId,
+                  allocatedQty: targetDemand.formalDemand.qty,
+                  promisedDate: targetDemand.formalDemand.dueDate,
+              }],
+          }, `work-order-create:${seed}`);
+          const mapped = mapFormalWorkOrder(order);
+          setOrders(prev => [mapped, ...prev.filter(item => item.apiId !== order.id)]);
+          setMps(prev => prev.map(item => item.id === mpsId ? {
+              ...item,
+              status: '已建工单',
+              workOrderId: order.id,
+              workOrderCode: order.code,
+          } : item));
+          setActiveTab('orders');
+          showToast(`正式工单 [${order.code}] 已创建并关联生产需求`, 'success');
+      } catch (error) {
+          setMps(prev => prev.map(item => item.id === mpsId ? { ...item, status: '排程失败', reason: error instanceof Error ? error.message : '创建工单失败' } : item));
+          showToast(error instanceof Error ? `创建正式工单失败：${error.message}` : '创建正式工单失败', 'error');
       }
   };
 
@@ -5525,7 +6378,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   const handleMergeDemandToPlan = (demandId) => {
       const targetDemand = productionDemands.find(item => item.id === demandId);
-      if (!targetDemand || targetDemand.apiStatus !== 'APPROVED') return;
+      if (!targetDemand || targetDemand.apiStatus !== 'APPROVED' || !targetDemand.formalDemand?.acceptedAt) return;
       const targetMps = mps.find(item => item.product === targetDemand.product && item.status !== '已下发');
       if (!targetMps) {
           void handleCreateMpsFromDemand(demandId);
@@ -5566,6 +6419,59 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   };
 
   // --- MPS 交互 ---
+  const handleConfirmMps = (mpsId) => {
+      setMps(prev => prev.map(m => m.id === mpsId ? { ...m, status: "待展算" } : m));
+      try {
+          const prodStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || "TENANT-SHWS"}`;
+          const rawProd = window.localStorage.getItem(prodStorageKey);
+          if (rawProd) {
+              const prodData = JSON.parse(rawProd);
+              if (Array.isArray(prodData.mps)) {
+                  prodData.mps = prodData.mps.map(item => item.id === mpsId ? { ...item, status: "待展算" } : item);
+                  window.localStorage.setItem(prodStorageKey, JSON.stringify(prodData));
+              }
+          }
+      } catch (e) { /* ignore */ }
+      showToast(`MPS计划 [${mpsId}] 已确认，可进行 MRP 展算`, "success");
+  };
+  const handleConfirmDemandToMps = (demandId) => {
+      const targetDemand = productionDemands.find(item => item.id === demandId);
+      if (!targetDemand) return;
+      const newMpsId = `MPS-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
+      const newMps = {
+          id: newMpsId,
+          demandSource: targetDemand.type === '销售缺货' ? '销售缺货' : targetDemand.type === '客户加急' ? '订单加急' : '普通生产',
+          source: targetDemand.source,
+          product: targetDemand.product,
+          quantity: targetDemand.shortage,
+          date: targetDemand.requiredDate,
+          status: '待展算',
+          priority: targetDemand.priority,
+          sourceSalesOrder: targetDemand.sourceSalesOrder,
+          sourceCustomer: targetDemand.customer,
+          demandId: targetDemand.apiId || targetDemand.id,
+      };
+      setMps(prev => [newMps, ...prev]);
+      setProductionDemands(prev => prev.map(item => item.id === demandId ? {
+          ...item,
+          apiId: item.apiId || item.id,
+          apiStatus: 'PLANNED',
+          status: '已生成MPS',
+      } : item));
+      try {
+          const prodStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || "TENANT-SHWS"}`;
+          const rawProd = window.localStorage.getItem(prodStorageKey);
+          const prodData = rawProd ? JSON.parse(rawProd) : {};
+          if (!Array.isArray(prodData.mps)) prodData.mps = [];
+          prodData.mps.unshift(newMps);
+          if (!Array.isArray(prodData.productionDemands)) prodData.productionDemands = [];
+          prodData.productionDemands = prodData.productionDemands.map(item =>
+              item.id === demandId ? { ...item, apiId: item.apiId || item.id, apiStatus: 'PLANNED', status: '已生成MPS' } : item
+          );
+          window.localStorage.setItem(prodStorageKey, JSON.stringify(prodData));
+      } catch (e) { /* ignore */ }
+      showToast(`需求 [${demandId}] 已确认，生成 MPS [${newMpsId}] 进入待展算`, "success");
+  };
   const handleAddMps = (data) => {
       setMps(prev => [data, ...prev]);
       showToast(`MPS主计划 [${data.id}] 已成功制定！`, 'success');
@@ -5579,15 +6485,13 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       showToast(`MPS 计划单 [${id}] 已删除`, 'success');
   };
   const handleCalcMrp = (mpsId) => {
-      setMps(mps.map(m => m.id === mpsId ? { ...m, status: '已下发' } : m));
       const targetMps = mps.find(m => m.id === mpsId);
-      const netQty = Math.max(0, targetMps.quantity - 150);
-      setMrp(prev => [{
-          id: `MRP-${Date.now().toString().slice(-4)}`, source: targetMps.id, itemCode: targetMps.product.split(' - ')[0], itemName: targetMps.product.split(' - ')[1], type: '自制件', 
-          grossReq: targetMps.quantity, stock: 150, onWay: 0, netReq: netQty, plannedQty: netQty, lotRule: '按需(L4L)', status: '待下达', pegging: []
-      }, ...prev]);
-      showToast(`MPS主干计划 [${mpsId}] 已推入MRP运算控制台！`, 'success');
-      setActiveTab('mrp');
+      const targetDemand = productionDemands.find(item => item.apiId === targetMps?.demandId);
+      if (!targetDemand?.formalDemand || !targetDemand.formalDemand.acceptedAt) {
+          showToast('该 MPS 未关联已接收的正式生产需求，不能推送 MRP', 'warning');
+          return;
+      }
+      void handleCreateMpsFromDemand(targetDemand.id);
   };
 
   // --- MRP 交互 ---
@@ -5929,7 +6833,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	  };
 
 	  const permissionCodes = currentUser?.permissions || [];
-	  const isPermissionAdmin = ['超级管理员', '系统管理员'].includes(currentUser?.role);
+	  const isPermissionAdmin = ['超级管理员', '系统管理员', '管理员'].includes(currentUser?.role);
 	  const hasPermission = (code) => isPermissionAdmin || permissionCodes.includes(code);
 
 	  return (
@@ -5978,9 +6882,9 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	          <main className="relative mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-8 pb-8">
 	              <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar relative pr-2 pb-6">
 	                  <BusinessFlowDock moduleName="生产管理" flow={businessFlow} onAction={handleProductionFlowAction} onNavigate={onNavigateModule} />
-	                  {activeTab === 'dashboard' && <Prod_DashboardView onAutoReschedule={() => openProdAction('reschedule')} onTransferLine={() => openProdAction('transfer')} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mps.calcMrp')} canCreateMps={hasPermission('production.demandPool.createMps')} />}
+	                  {activeTab === 'dashboard' && <Prod_DashboardView onAutoReschedule={() => openProdAction('reschedule')} onTransferLine={() => openProdAction('transfer')} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')} canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')} canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')} canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
                   {activeTab === 'mrp' && <Prod_MrpView mrp={mrp} onIssueMrp={handleIssueMrp} showToast={showToast} />}
-                  {activeTab === 'aps' && <Prod_ApsView onOptimize={() => showToast('AI APS多目标排程引擎演算完成，已重新分配瓶颈工位。', 'success')} />}
+                  {activeTab === 'aps' && <Prod_ApsView orders={orders} equipments={equipments} onUpdateOrder={handleUpdateOrder} showToast={showToast} />}
                   {activeTab === 'orders' && <Prod_OrdersView orders={orders} onCheckKit={handleCheckKit} onDispatch={handleDispatch} onUpdateOrder={handleUpdateOrder} onDeleteOrder={handleDeleteOrder} showToast={showToast} />}
                   {activeTab === 'execution' && <Prod_ExecutionView jobs={jobs} onStartJob={handleStartJob} onReportJob={handleReportJob} onMaterialReq={handleMaterialReq} onReturnMaterial={handleReturnMaterial} onSendOutsource={handleSendOutsource} onReceiveOutsource={handleReceiveOutsource} onReworkOrder={handleReworkOrder} showToast={showToast} />}
 	                  {activeTab === 'qc_cost' && <Prod_QcView qc={qc} onQcComplete={handleQcComplete} onConfirmInbound={handleConfirmInbound} showToast={showToast} />}
@@ -6199,11 +7103,53 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
   );
 };
 
-const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false }) => {
+const Inv_ActionReviewModal = ({
+  action,
+  onCancel,
+  onConfirm,
+  onGapProduction,
+  onWarehouseRequired,
+  submitting = false,
+  warehouses = [],
+  warehouseName: resolveWarehouseName,
+  onWarehouseChange,
+  stockState = { status: 'idle' } as OutboundStockState,
+  warehouseLoadError = '',
+}) => {
   const [values, setValues] = useState(() => Object.fromEntries([
     ...(action.quantityFields || []).map((field) => [field.id, String(field.value)]),
     ...(action.dateFields || []).map((field) => [field.id, String(field.value)]),
   ]));
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
+  const [isSwitchingWarehouse, setIsSwitchingWarehouse] = useState(false);
+  const requiresWarehouse = ['processOutbound', 'partialShipment'].includes(action.kind);
+  const hasWarehouseOptions = warehouses.length > 0;
+  const warehouseUnavailable = requiresWarehouse && !hasWarehouseOptions;
+  const showWarehouseSelector = requiresWarehouse && hasWarehouseOptions;
+
+  useEffect(() => {
+    if (selectedWarehouseId && !warehouses.some((w) => w.id === selectedWarehouseId)) setSelectedWarehouseId('');
+  }, [selectedWarehouseId, warehouses]);
+
+  useEffect(() => {
+    if (!requiresWarehouse || !selectedWarehouseId || !Array.isArray(action.lineStockInfo)) return;
+    const nextValues = Object.fromEntries(action.lineStockInfo
+      .filter((item) => Number(item.availQty) > 0)
+      .map((item) => {
+        const fieldId = `shipQty_${item.lineId || item.productId}`;
+        const maxQty = Math.min(Number(item.remainingQty ?? item.qty), Number(item.availQty));
+        return [fieldId, String(maxQty)];
+      }));
+    setValues(nextValues);
+  }, [action.lineStockInfo, requiresWarehouse, selectedWarehouseId]);
+
+  const handleWarehouseSwitch = async (newWarehouseId) => {
+    setSelectedWarehouseId(newWarehouseId);
+    if (onWarehouseChange) {
+      setIsSwitchingWarehouse(true);
+      try { await onWarehouseChange(newWarehouseId); } finally { setIsSwitchingWarehouse(false); }
+    }
+  };
   const toneMap = {
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
@@ -6219,10 +7165,27 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
   const tone = action.tone || 'blue';
   const Icon = action.icon || ClipboardCheck;
 
-  // 部分发货：计算所有可发货产品的数量是否都有效（>0 且 <= 实际可用）
-  const partialShipmentValid = ['partialShipment', 'processOutbound'].includes(action.kind) && action.lineStockInfo
-    ? action.lineStockInfo.filter(ls => ls.availQty > 0).every(ls => {
-        const fieldId = `shipQty_${ls.productId}`;
+  const stockReady = requiresWarehouse
+    && Boolean(selectedWarehouseId)
+    && stockState.status === 'ready'
+    && stockState.warehouseId === selectedWarehouseId
+    && Array.isArray(action.lineStockInfo)
+    && action.lineStockInfo.length > 0;
+  const shipmentDecision = classifyOutboundShipment(stockReady ? action.lineStockInfo : [], {
+    allowPartialShipment: action.record?.formalTask
+      ? Boolean(action.record.formalTask.allowPartialShipment)
+      : true,
+  });
+  const activeStockLines = shipmentDecision.activeLines;
+  const shippableStockLines = shipmentDecision.shippableLines;
+  const shortageStockLines = shipmentDecision.shortageLines;
+  const allowPartial = shipmentDecision.allowPartial;
+  const isPartialShipmentMode = stockReady && shipmentDecision.action === 'partial-shipment';
+  const isProductionOnlyMode = stockReady && shipmentDecision.action === 'production-only';
+  const missingWarehouse = requiresWarehouse && !selectedWarehouseId;
+  const partialShipmentValid = stockReady
+    ? shippableStockLines.every(ls => {
+        const fieldId = `shipQty_${ls.lineId || ls.productId}`;
         const maxQty = Math.min(ls.remainingQty ?? ls.qty, ls.availQty);
         const raw = values[fieldId];
         if (raw == null || raw === '') return false;
@@ -6240,12 +7203,35 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
       })
     : true;
 
-  const confirmDisabled = submitting || !partialShipmentValid || !productionRequestValid;
+  const stockNotLoaded = requiresWarehouse && (
+    missingWarehouse
+    || stockState.status !== 'ready'
+    || stockState.warehouseId !== selectedWarehouseId
+    || !action.lineStockInfo?.length
+    || shipmentDecision.action === 'not-loaded'
+  );
+  const confirmDisabled = submitting || warehouseUnavailable || stockNotLoaded || !partialShipmentValid || !productionRequestValid;
+  const confirmLabel = isProductionOnlyMode
+    ? '去生产'
+    : isPartialShipmentMode
+      ? '部分发货'
+      : shipmentDecision.action === 'ship'
+        ? '去发货'
+      : action.confirmText || '确认执行';
+  const stockFieldId = (item) => `shipQty_${item.lineId || item.productId}`;
+
+  const handleConfirm = () => {
+    if (missingWarehouse) {
+      onWarehouseRequired?.();
+      return;
+    }
+    onConfirm(values, selectedWarehouseId);
+  };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-[860px] overflow-hidden flex flex-col border border-slate-100">
-        <div className="p-5 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[860px] max-h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-48px)] overflow-hidden flex flex-col border border-slate-100">
+        <div className="p-5 shrink-0 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
           <div className="flex gap-3">
             <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${toneMap[tone] || toneMap.blue}`}>
               <Icon size={18} />
@@ -6257,7 +7243,44 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
           </div>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg transition-colors"><X size={16}/></button>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6 min-h-0 overflow-y-auto">
+          {warehouseUnavailable && (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+              <div className="shrink-0 text-[12px] font-bold text-amber-700">{warehouseLoadError ? '仓库列表不可用' : '暂无可用仓库'}</div>
+              <div className="text-[12px] text-amber-700">{warehouseLoadError || '当前租户还没有启用的发货仓库，请先在“库存管理 / 仓库”中创建或启用仓库。'}</div>
+            </div>
+          )}
+          {showWarehouseSelector && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+              <div className="shrink-0 text-[12px] font-bold text-slate-600">发货仓库</div>
+              <select
+                value={selectedWarehouseId}
+                onChange={(e) => handleWarehouseSwitch(e.target.value)}
+                disabled={isSwitchingWarehouse || submitting}
+                className="min-w-0 w-full sm:w-auto sm:max-w-[320px] rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 outline-none focus:border-blue-400"
+              >
+                <option value="">请选择发货仓库</option>
+                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+              </select>
+              <div className="min-w-0 break-words sm:ml-auto text-[11px] text-blue-600 font-bold">
+                {selectedWarehouseId
+                  ? `确认后将从 ${resolveWarehouseName ? resolveWarehouseName(selectedWarehouseId) : selectedWarehouseId} 扣减库存`
+                  : '请选择仓库后加载真实可用量'}
+              </div>
+            </div>
+          )}
+          {requiresWarehouse && selectedWarehouseId && stockState.status === 'loading' && (
+            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[12px] font-bold text-blue-700">正在读取选定仓库的真实可用量...</div>
+          )}
+          {requiresWarehouse && selectedWarehouseId && stockState.status === 'error' && (
+            <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-700">{stockState.error || '仓库可用量读取失败，请重新选择仓库'}</div>
+          )}
+          {requiresWarehouse && selectedWarehouseId && stockState.status === 'missing-product' && (
+            <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] font-bold text-amber-700">{stockState.error}</div>
+          )}
+          {requiresWarehouse && selectedWarehouseId && !stockReady && stockState.status !== 'loading' && stockState.status !== 'error' && (
+            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-[12px] font-bold text-slate-600">请重新选择发货仓库以加载真实可用量</div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             {(action.details || []).map(item => (
               <div key={item.label} className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
@@ -6266,7 +7289,7 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
               </div>
             ))}
           </div>
-          {action.record?.lines && action.record.lines.length > 0 && action.kind !== 'partialShipment' && action.kind !== 'productionRequest' && (
+          {action.record?.lines && action.record.lines.length > 0 && action.kind !== 'partialShipment' && action.kind !== 'productionRequest' && (!requiresWarehouse || stockReady) && (
             <div className="mt-4 border-t border-slate-100 pt-4">
               <div className="text-[12px] font-bold text-slate-500 mb-2">销售订单产品明细</div>
               <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -6297,7 +7320,7 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
               </div>
             </div>
           )}
-          {action.record?.formalTask?.lines && action.record.lines == null && action.record.formalTask.lines.length > 0 && action.kind !== 'partialShipment' && action.kind !== 'productionRequest' && (
+          {action.record?.formalTask?.lines && action.record.lines == null && action.record.formalTask.lines.length > 0 && action.kind !== 'partialShipment' && action.kind !== 'productionRequest' && (!requiresWarehouse || stockReady) && (
             <div className="mt-4 border-t border-slate-100 pt-4">
               <div className="text-[12px] font-bold text-slate-500 mb-2">销售订单产品明细</div>
               <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -6324,8 +7347,8 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
               </div>
             </div>
           )}
-          {['partialShipment', 'processOutbound'].includes(action.kind) && action.lineStockInfo?.length > 0 && <div className="mt-4 border-t border-slate-100 pt-4">
-            <div className="text-[12px] font-bold text-slate-700 mb-2">{action.kind === 'partialShipment' ? '部分发货产品明细' : '发货产品明细'} <span className="text-slate-400 font-normal">（availQty 大于0 时可编辑发货数量，不可为0或超过 min(剩余待发, 实际可用)）</span></div>
+          {['partialShipment', 'processOutbound'].includes(action.kind) && stockReady && action.lineStockInfo?.length > 0 && <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="text-[12px] font-bold text-slate-700 mb-2">{action.kind === 'partialShipment' ? '部分发货产品明细' : '发货产品明细'}</div>
             <div className="border border-slate-200 rounded-lg overflow-x-auto">
               <table className="w-full min-w-[760px] text-left text-[12px]">
                 <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
@@ -6344,8 +7367,9 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
                 </thead>
                 <tbody>
                   {action.lineStockInfo.map((ls, idx) => {
+                    if (Number(ls.remainingQty ?? ls.qty) <= 0) return null;
                     const isShippable = ls.availQty > 0;
-                    const fieldId = `shipQty_${ls.productId}`;
+                    const fieldId = stockFieldId(ls);
                     const maxQty = Math.min(ls.remainingQty ?? ls.qty, ls.availQty);
                     const rawVal = values[fieldId];
                     const currentVal = (rawVal == null || rawVal === '') ? NaN : Number(rawVal);
@@ -6357,13 +7381,17 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
                       <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{ls.qty}</td>
                       <td className="px-3 py-2.5 text-center font-mono text-slate-500">{ls.shippedQty ?? 0}</td>
                       <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-700">{ls.remainingQty ?? ls.qty}</td>
-                      <td className="px-3 py-2.5 text-center font-mono text-slate-500">{ls.availQty}{ls.shortage > 0 && <span className="text-rose-500 ml-1">(缺口{ls.shortage})</span>}</td>
-                      <td className="px-3 py-2.5 text-center text-slate-500">{(() => { const si = action.record?.lines?.find(l => l.productId === ls.productId); return si?.unit || '件'; })()}</td>
+                      <td className="px-3 py-2.5 text-center font-mono text-slate-500">
+                        {ls.availQty}
+                        {ls.shortage > 0 && <span className="text-rose-500 ml-1">(缺口{ls.shortage}{ls.allowPartialShipment === false ? ' · 禁止分批' : ''})</span>}
+                        {ls.factVersion != null && <div className="text-[10px] text-slate-400">v{ls.factVersion}</div>}
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-slate-500">{ls.uom || ls.unit || action.record?.lines?.find(l => l.productId === ls.productId)?.unit || '件'}</td>
                       <td className="px-3 py-2.5 text-center">
                         {isShippable
                           ? <div className="flex flex-col items-center">
-                              <input type="number" min={1} max={maxQty} step={1} value={values[fieldId] ?? maxQty} onChange={(event) => { const raw = event.target.value; if (raw === '') { setValues((current) => ({ ...current, [fieldId]: '' })); return; } let v = Number(raw); if (isNaN(v)) return; if (v < 0) v = 0; if (v > maxQty) v = maxQty; setValues((current) => ({ ...current, [fieldId]: String(v) })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
-                              {!isValid && <span className="text-[10px] text-rose-500 mt-0.5 whitespace-nowrap">1~{maxQty}</span>}
+                              <input type="number" aria-label={`${ls.productId} 本次发货数量`} min={0.000001} max={maxQty} step={0.000001} value={values[fieldId] ?? maxQty} onChange={(event) => { const raw = event.target.value; if (raw === '') { setValues((current) => ({ ...current, [fieldId]: '' })); return; } const v = Number(raw); if (!Number.isFinite(v)) return; setValues((current) => ({ ...current, [fieldId]: v < 0 ? '0' : v > maxQty ? String(maxQty) : raw })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
+                              {!isValid && <span className="text-[10px] text-rose-500 mt-0.5 whitespace-nowrap">大于0且不超过{maxQty}</span>}
                             </div>
                           : <span className="text-slate-400">-</span>}
                       </td>
@@ -6375,7 +7403,10 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
             </div>
           </div>}
           {action.kind === 'productionRequest' && action.lineStockInfo?.length > 0 && <div className="mt-4 border-t border-slate-100 pt-4">
-            <div className="text-[12px] font-bold text-slate-700 mb-2">缺口产品生产数量 <span className="text-slate-400 font-normal">（默认为缺口数，如需更多可手动调整，不可少于缺口数）</span></div>
+            <div className="text-[12px] font-bold text-slate-700 mb-2">
+              {action.record?.formalTask ? '服务端复核生产缺口' : '缺口产品生产数量'}
+              <span className="text-slate-400 font-normal">{action.record?.formalTask ? '（正式任务按剩余待发量和选定仓库真实可用量计算，不能手工改大）' : '（默认为缺口数，如需更多可手动调整，不可少于缺口数）'}</span>
+            </div>
             <div className="border border-slate-200 rounded-lg overflow-hidden">
               <table className="w-full text-left text-[12px]">
                 <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
@@ -6405,8 +7436,14 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
                       <td className="px-3 py-2.5 text-center font-mono font-bold text-rose-600">{ls.shortage}</td>
                       <td className="px-3 py-2.5 text-center text-slate-500">{(() => { const si = action.record?.lines?.find(l => l.productId === ls.productId); return si?.unit || '件'; })()}</td>
                       <td className="px-3 py-2.5 text-center">
-                        <input type="number" min={ls.shortage} step={1} value={values[fieldId] ?? defaultVal} onChange={(event) => { let v = Number(event.target.value); setValues((current) => ({ ...current, [fieldId]: String(v) })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
-                        {!isValid && <div className="text-[10px] text-rose-500 mt-0.5">不可少于{ls.shortage}</div>}
+                        {action.record?.formalTask ? (
+                          <span className="font-mono font-bold text-slate-800">{ls.shortage}</span>
+                        ) : (
+                          <>
+                            <input type="number" min={ls.shortage} step={1} value={values[fieldId] ?? defaultVal} onChange={(event) => { let v = Number(event.target.value); setValues((current) => ({ ...current, [fieldId]: String(v) })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
+                            {!isValid && <div className="text-[10px] text-rose-500 mt-0.5">不可少于{ls.shortage}</div>}
+                          </>
+                        )}
                       </td>
                     </tr>;
                   })}
@@ -6421,17 +7458,43 @@ const Inv_ActionReviewModal = ({ action, onCancel, onConfirm, submitting = false
               <input type="number" min="0.000001" max={field.max} step="any" value={values[field.id] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} className="h-9 rounded-lg border border-slate-200 px-3 text-right font-mono text-[13px] outline-none focus:border-blue-500" />
             </label>)}
           </div>}
+          {action.productionFields?.length > 0 && <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+            <div className="text-[12px] font-bold text-slate-700">生产数量（默认为缺口数，可调整）</div>
+            {action.productionFields.map((field) => <label key={field.id} className="grid grid-cols-[1fr_150px] items-center gap-4 text-[12px]">
+              <span className="min-w-0 text-slate-600">{field.label}{field.min != null && <span className="ml-2 text-[11px] text-slate-400">最少 {field.min} {field.uom}</span>}</span>
+              <input type="number" min={field.min || 1} step="any" value={values[field.id] ?? field.value ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} className="h-9 rounded-lg border border-slate-200 px-3 text-right font-mono text-[13px] outline-none focus:border-blue-500" />
+            </label>)}
+          </div>}
           {action.dateFields?.length > 0 && <div className="mt-3 space-y-3">
             {action.dateFields.map((field) => <label key={field.id} className="grid grid-cols-[1fr_150px] items-center gap-4 text-[12px]">
               <span className="text-slate-600">{field.label}</span>
               <input type="date" min={field.min} value={values[field.id] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} className="h-9 rounded-lg border border-slate-200 px-3 font-mono text-[12px] outline-none focus:border-blue-500" />
             </label>)}
           </div>}
-          {action.note && <div className="mt-4 bg-amber-50 border border-amber-100 text-amber-700 rounded-xl px-4 py-3 text-[12px] leading-relaxed font-medium">{action.note}</div>}
+          {action.note && !(action.kind === 'processOutbound' && !missingWarehouse) && <div className="mt-4 bg-amber-50 border border-amber-100 text-amber-700 rounded-xl px-4 py-3 text-[12px] leading-relaxed font-medium">{action.note}</div>}
         </div>
-        <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
+        <div className="p-4 shrink-0 border-t border-slate-100 flex flex-wrap justify-end gap-3 bg-slate-50/50">
           <button disabled={submitting} onClick={onCancel} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl disabled:cursor-not-allowed disabled:opacity-50">{action.readOnly ? '关闭' : '取消'}</button>
-          {!action.readOnly && <button disabled={confirmDisabled} onClick={() => onConfirm(values)} className={`px-5 py-2 text-[13px] font-bold text-white rounded-xl flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-60 ${buttonMap[tone] || buttonMap.blue}`}><Check size={16}/> {submitting ? '提交中...' : action.confirmText || '确认执行'}</button>}
+          {!action.readOnly && (
+            <div className="flex items-center gap-3">
+              {isPartialShipmentMode && onGapProduction && (
+                <button
+                  disabled={submitting || isSwitchingWarehouse}
+                  onClick={() => onGapProduction(values, selectedWarehouseId)}
+                  className="px-5 py-2 text-[13px] font-bold text-amber-700 bg-white border border-amber-200 hover:bg-amber-50 rounded-xl flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Factory size={16}/> 去生产
+                </button>
+              )}
+              <button
+                disabled={confirmDisabled || isSwitchingWarehouse}
+                onClick={handleConfirm}
+                className={`px-5 py-2 text-[13px] font-bold text-white rounded-xl flex items-center gap-1.5 ${missingWarehouse ? 'cursor-not-allowed opacity-60' : 'hover:brightness-95'} disabled:cursor-not-allowed disabled:opacity-60 ${buttonMap[isProductionOnlyMode ? 'amber' : tone] || buttonMap.blue}`}
+              >
+                <Check size={16}/> {submitting ? '提交中...' : confirmLabel}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -6472,12 +7535,94 @@ const formatOutboundProductSummary = (row) => {
   return item || productId || '-';
 };
 
+// 下载出库凭证：生成 HTML 文件并触发下载
+const downloadOutboundVoucher = (row) => {
+  const voucherDate = new Date().toISOString().slice(0, 10);
+  const shippedAt = row.shippedAt ? new Date(row.shippedAt).toLocaleString('zh-CN') : voucherDate;
+  const lines = row.lines || [];
+  const linesHtml = lines.length > 0
+    ? `<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:13px;">
+        <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+          <th style="padding:8px;text-align:left;">产品编码</th>
+          <th style="padding:8px;text-align:left;">产品名称</th>
+          <th style="padding:8px;text-align:center;">数量</th>
+          <th style="padding:8px;text-align:center;">单位</th>
+          <th style="padding:8px;text-align:right;">单价</th>
+          <th style="padding:8px;text-align:right;">金额</th>
+        </tr></thead>
+        <tbody>
+          ${lines.map(l => `<tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px;font-family:monospace;">${l.productId || '-'}</td>
+            <td style="padding:8px;">${l.productName || '-'}</td>
+            <td style="padding:8px;text-align:center;font-family:monospace;">${l.qty || l.requestedQty || '-'}</td>
+            <td style="padding:8px;text-align:center;">${l.unit || l.uom || '件'}</td>
+            <td style="padding:8px;text-align:right;">${l.unitPrice ? '¥' + Number(l.unitPrice).toFixed(2) : '-'}</td>
+            <td style="padding:8px;text-align:right;font-family:monospace;">${l.unitPrice ? '¥' + (Number(l.qty || 0) * Number(l.unitPrice)).toFixed(2) : '-'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`
+    : `<p style="margin-top:12px;color:#64748b;">产品：${row.item || '-'}　数量：${row.qty || '-'} ${row.unit || ''}</p>`;
+  const shipmentDetailsHtml = row.shipmentDetails && row.shipmentDetails.length > 0
+    ? `<div style="margin-top:12px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:12px;">
+        <strong>已发明细：</strong>${row.shipmentDetails.map(s => `${s.productId}×${s.shipQty}`).join('、')}
+      </div>`
+    : '';
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>出库凭证_${row.id}_${voucherDate}</title>
+    <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:800px;margin:40px auto;padding:0 24px;color:#1e293b;}
+    .header{text-align:center;border-bottom:3px solid #2563eb;padding-bottom:16px;margin-bottom:24px;}
+    .header h1{font-size:24px;color:#1e40af;margin:0;}
+    .header p{font-size:12px;color:#64748b;margin:4px 0 0;}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+    .info-item{background:#f8fafc;padding:10px 14px;border-radius:6px;border:1px solid #e2e8f0;}
+    .info-label{font-size:11px;color:#94a3b8;margin-bottom:2px;}
+    .info-value{font-size:14px;font-weight:bold;color:#1e293b;}
+    .footer{margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8;}
+    </style></head><body>
+    <div class="header"><h1>出库凭证</h1><p>凭证生成日期：${voucherDate}</p></div>
+    <div class="info-grid">
+      <div class="info-item"><div class="info-label">出库单号</div><div class="info-value">${row.id}</div></div>
+      <div class="info-item"><div class="info-label">来源订单</div><div class="info-value">${row.source || '-'}</div></div>
+      <div class="info-item"><div class="info-label">业务类型</div><div class="info-value">${row.type || '销售发货'}</div></div>
+      <div class="info-item"><div class="info-label">出库状态</div><div class="info-value">${row.status || '已出库'}</div></div>
+      <div class="info-item"><div class="info-label">操作人</div><div class="info-value">${row.operator || '-'}</div></div>
+      <div class="info-item"><div class="info-label">发货时间</div><div class="info-value">${shippedAt}</div></div>
+    </div>
+    ${linesHtml}${shipmentDetailsHtml}
+    <div class="footer">本凭证由工业AI平台自动生成，仅供出库确认参考。</div>
+    </body></html>`;
+  try {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `出库凭证_${row.id}_${voucherDate}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); }
+  }
+};
+
+type OutboundStockState = {
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'missing-product';
+  warehouseId?: string;
+  factVersions?: Record<string, number>;
+  error?: string;
+};
+
 const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState(() => resolveInventoryTab(window.location.search));
   const [requestedSalesOrderId, setRequestedSalesOrderId] = useState(() => resolveSalesOutboundOrderId(window.location.search));
+  const [outboundSourceSearch, setOutboundSourceSearch] = useState('');
+  const outboundSourceSearchRef = useRef<HTMLInputElement>(null);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(() => resolveInventoryWarehouseId(window.location.search));
   const [stockData, setStockData] = useState(inv_stockData);
   const [inboundData, setInboundData] = useState(inv_inboundData);
+  const [warehouseList, setWarehouseList] = useState([]);
+  const [warehouseLoadError, setWarehouseLoadError] = useState('');
 
   // 出库管理的可用量统一取库存管理-产品中的"实际可用"(availQty)
   const resolveOutboundAvailQty = (row) => {
@@ -6492,8 +7637,35 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   };
   // 按产品明细逐行判断库存，返回每个产品的库存状态
   const resolveOutboundLineStockStatus = (row) => {
+    if (row?.formalTask?.lines?.length) {
+      const lineStatuses = row.formalTask.lines.map(line => {
+        const needQty = Number(line.requestedQty || 0);
+        const shippedQty = Number(line.postedQty || 0);
+        const remainingQty = Math.max(0, needQty - shippedQty);
+        const availQty = Math.max(0, Number(line.reservedQty || 0) - shippedQty);
+        return {
+          productId: line.productId,
+          productName: line.productName || '',
+          qty: needQty,
+          availQty,
+          shortage: Number(line.shortageQty || 0),
+          shippedQty,
+          remainingQty,
+        };
+      });
+      const activeStatuses = lineStatuses.filter(line => line.remainingQty > 0);
+      return {
+        lineStatuses,
+        totalShortage: activeStatuses.reduce((total, line) => total + line.shortage, 0),
+        allSufficient: activeStatuses.every(line => line.shortage === 0),
+        allInsufficient: activeStatuses.length > 0 && activeStatuses.every(line => line.availQty === 0),
+        partialSufficient: activeStatuses.some(line => line.availQty > 0)
+          && activeStatuses.some(line => line.shortage > 0),
+        hasRemaining: activeStatuses.length > 0,
+      };
+    }
     const lines = row?.lines || [];
-    if (lines.length === 0 && !row?.formalTask?.lines) {
+    if (lines.length === 0) {
       const availQty = resolveOutboundAvailQty(row);
       const qty = Number(row?.qty || 0);
       const shippedQty = Number(row?.shippedQty || 0);
@@ -6540,22 +7712,99 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     return [...localTasks, ...inv_outboundData.filter((seed) => !localTasks.some((task) => task.id === seed.id))];
   };
   const [outboundData, setOutboundData] = useState(() => readLocalOutboundRows());
+  const filteredOutboundData = useMemo(() => {
+    const keyword = outboundSourceSearch.trim().toLowerCase();
+    return outboundData.filter(row => !keyword || String(row.source || '').toLowerCase().includes(keyword));
+  }, [outboundData, outboundSourceSearch]);
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+
+  const loadOutboundWarehouses = useCallback(async () => {
+    if (!formalContext) return;
+    setWarehouseLoadError('');
+    try {
+      const response = await inventoryApi.listWarehouses(formalContext);
+      setWarehouseList((response.items || []).filter(w => w.status === 'active'));
+    } catch (error) {
+      setWarehouseLoadError(error instanceof Error ? error.message : '仓库列表加载失败，请稍后重试');
+    }
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  useEffect(() => {
+    void loadOutboundWarehouses();
+  }, [loadOutboundWarehouses]);
+
+  const warehouseName = (id) => warehouseList.find(w => w.id === id)?.name || id;
+
+  const getOutboundSourceLines = (row) => {
+    if (row?.formalTask?.lines?.length) return row.formalTask.lines;
+    if (row?.lines?.length) return row.lines;
+    const productId = row?.productId || String(row?.item || '').match(/[A-Z]{2,}\d+/)?.[0] || '';
+    if (!productId) return [];
+    return [{
+      id: `${row?.id || row?.taskId || 'local'}:${productId}`,
+      orderLineId: `${row?.id || row?.taskId || 'local'}:${productId}`,
+      productId,
+      productName: row?.item,
+      requestedQty: row?.qty || 0,
+      postedQty: row?.shippedQty || 0,
+      reservedQty: 0,
+      uom: row?.unit || '件',
+      unit: row?.unit || '件',
+      unitPrice: row?.unitPrice,
+      allowPartialShipment: true,
+    }];
+  };
+
+  const buildOutboundLineStock = (row, facts = []) => {
+    const task = row.formalTask || (row.shipmentRequestId ? row : undefined);
+    if (task) return formalShipmentStock(task, facts);
+    const factMap = new Map((facts || []).map(fact => [fact.productId, fact]));
+    return getOutboundSourceLines(row).map(line => {
+      const productId = line.productId;
+      const needQty = Number(line.qty ?? line.requestedQty ?? 0);
+      const shippedQty = Number(line.shippedQty ?? line.postedQty ?? 0);
+      const remainingQty = Math.max(0, needQty - shippedQty);
+      const fact = factMap.get(productId);
+      const factQty = fact ? Number(fact.fulfillableQty) : 0;
+      const reservedRemaining = Math.max(0, Number(line.reservedQty ?? 0) - shippedQty);
+      const availQty = reservedRemaining > 0 ? reservedRemaining : factQty;
+      const shortage = Math.max(0, remainingQty - availQty);
+      const sourceLine = row?.lines?.find(item => item.productId === productId);
+      return {
+        lineId: line.id,
+        orderLineId: line.orderLineId,
+        productId,
+        productName: line.productName || sourceLine?.productName || row?.item || productId,
+        qty: needQty,
+        availQty,
+        shortage,
+        shippedQty,
+        remainingQty,
+        uom: line.uom || sourceLine?.unit || row?.unit || '件',
+        unit: line.uom || sourceLine?.unit || row?.unit || '件',
+        unitPrice: sourceLine?.unitPrice ?? line.unitPrice,
+        factVersion: fact?.factVersion,
+        warehouseId: fact?.warehouseId,
+        allowPartialShipment: line.allowPartialShipment,
+        promisedDate: line.promisedDate,
+        sourceLineRevision: line.sourceLineRevision,
+      };
+    });
+  };
+
+  const outboundStockSummary = (lineStockInfo) => {
+    const active = (lineStockInfo || []).filter(item => Number(item.remainingQty) > 0);
+    const shippable = active.filter(item => Number(item.availQty) > 0);
+    const shortage = active.filter(item => Number(item.shortage) > 0);
+    const allowPartial = !active.length || active.every(item => item.allowPartialShipment !== false);
+    return { active, shippable, shortage, allowPartial };
+  };
+
   const mapFormalTask = (task) => {
     const requestedQty = task.lines.reduce((total, line) => total + Number(line.requestedQty), 0);
     const reservedQty = task.lines.reduce((total, line) => total + Number(line.reservedQty), 0);
     const shortageQty = task.lines.reduce((total, line) => total + Number(line.shortageQty), 0);
-    const status = task.workflowStatus === 'COMPLETED' || task.postingStatus === 'POSTED'
-      ? '已出库'
-      : task.postingStatus === 'PARTIALLY_POSTED'
-        ? '部分发货'
-      : task.replenishmentStatus === 'IN_PROGRESS'
-        ? '生产申请中'
-        : task.replenishmentStatus === 'REQUIRED'
-          ? '库存不足'
-          : task.availabilityStatus === 'RESERVED'
-            ? '待出库'
-            : '待校验';
+    const status = mapFormalShipmentStatus(task);
     return {
       id: task.id,
       taskId: task.id,
@@ -6569,7 +7818,9 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       qty: requestedQty,
       unit: task.lines[0]?.uom || 'PCS',
       warehouse: task.warehouseId,
-      availableQty: (() => { const si = stockData.find(s => s.id === (task.lines[0]?.productId || '')); return si ? Number(si.availQty ?? 0) : reservedQty; })(),
+      factoryResourceId: task.factoryResourceId,
+      shippedQty: task.lines.reduce((total, line) => total + Number(line.postedQty || 0), 0),
+      availableQty: task.lines.reduce((total, line) => total + Math.max(0, Number(line.reservedQty || 0) - Number(line.postedQty || 0)), 0),
       shortageQty,
       inventoryFactVersion: task.inventoryFactVersion,
       productionDemandId: task.lines.find((line) => line.productionDemandId)?.productionDemandId,
@@ -6594,6 +7845,16 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     refreshFormalTasks().catch((error) => showToast('正式发货任务加载失败：' + (error instanceof Error ? error.message : '请稍后重试'), 'error'));
   }, [formalContext?.tenantId, formalContext?.accessToken, requestedSalesOrderId]);
 
+  const hasPendingFormalTask = outboundData.some(row => row.formalTask && row.formalTask.workflowStatus !== 'COMPLETED');
+
+  useEffect(() => {
+    if (!formalContext || activeTab !== 'outbound' || !hasPendingFormalTask) return;
+    const timer = window.setInterval(() => {
+      refreshFormalTasks().catch(() => {});
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, hasPendingFormalTask, formalContext?.tenantId, formalContext?.accessToken]);
+
   useEffect(() => {
     const syncInventoryTab = () => {
       setActiveTab(resolveInventoryTab(window.location.search));
@@ -6614,11 +7875,100 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [actionReview, setActionReview] = useState(null);
   const [isActionSubmitting, setIsActionSubmitting] = useState(false);
+  const [outboundStockState, setOutboundStockState] = useState<OutboundStockState>({ status: 'idle' });
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
+  };
+
+  const loadOutboundStock = async (row, warehouseId) => {
+    if (!warehouseId) {
+      setOutboundStockState({ status: 'idle' });
+      return [];
+    }
+    if (!formalContext) throw new Error('请先登录正式会话后再读取仓库库存');
+    setOutboundStockState({ status: 'loading', warehouseId });
+    setActionReview(prev => prev ? { ...prev, lineStockInfo: [] } : prev);
+    const productIds = [...new Set(getOutboundSourceLines(row).map(line => line.productId).filter(Boolean))]
+      .filter((productId): productId is string => Boolean(productId));
+    const facts = await inventoryApi.getAvailability(formalContext, warehouseId, productIds);
+    const lineStockInfo = buildOutboundLineStock(row, facts);
+    const missingProductIds = [...new Set(lineStockInfo
+      .filter(item => item.factVersion == null || item.warehouseId == null)
+      .map(item => item.productId)
+      .filter(Boolean))];
+    if (lineStockInfo.length > 0 && missingProductIds.length === lineStockInfo.length) {
+      const message = `${warehouseName(warehouseId)}没有该产品：${missingProductIds.join('、')}`;
+      setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
+      setOutboundStockState({
+        status: 'missing-product',
+        warehouseId,
+        factVersions: Object.fromEntries((facts || []).map(fact => [fact.productId, fact.factVersion])),
+        error: message,
+      });
+      showToast(message, 'warning');
+      return lineStockInfo;
+    }
+    if (missingProductIds.length > 0) {
+      showToast(`${warehouseName(warehouseId)}缺少产品：${missingProductIds.join('、')}，仅可部分发货或申请生产`, 'warning');
+    }
+    setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
+    setOutboundStockState({
+      status: 'ready',
+      warehouseId,
+      factVersions: Object.fromEntries((facts || []).map(fact => [fact.productId, fact.factVersion])),
+    });
+    return lineStockInfo;
+  };
+
+  const submitFormalGapProduction = async (row, warehouseId, precheckedTask?: FulfillmentShipmentTask) => {
+    if (!row?.formalTask) return false;
+    if (!formalContext) throw new Error('请先登录正式会话');
+    if (!warehouseId) throw new Error('请先选择发货仓库');
+    setIsActionSubmitting(true);
+    try {
+      let task = precheckedTask || row.formalTask;
+      if (!precheckedTask && ['UNCHECKED', 'SHORTAGE', 'RECHECKING', 'PARTIALLY_RESERVED'].includes(task.availabilityStatus)) {
+        const expectedFactVersions = Object.entries(outboundStockState.factVersions ?? {})
+          .map(([productId, factVersion]) => ({ productId, factVersion: Number(factVersion) }));
+        const reserved = await checkAndReserveShipmentTask(
+          formalContext,
+          task,
+          warehouseId,
+          expectedFactVersions,
+        );
+        task = reserved.task;
+        const mapped = mapFormalTask(task);
+        setOutboundData(previous => previous.map(item => item.taskId === mapped.taskId ? mapped : item));
+      }
+      if (task.replenishmentStatus !== 'REQUIRED') {
+        showToast('服务端复核后当前仓库库存已满足，不需要创建生产需求', 'success');
+        setActionReview(null);
+        return true;
+      }
+      const result = await createProductionRequestForTask(formalContext, task);
+      const mapped = mapFormalTask(result.task);
+      setOutboundData(previous => previous.map(item => item.taskId === mapped.taskId ? mapped : item));
+      const demandLabels = (result.demands || []).map(item => item.code || item.id);
+      showToast(
+        result.restored || !demandLabels.length
+          ? '缺口生产需求已存在，已定位生产主计划'
+          : `缺口生产需求已创建：${demandLabels.join('、')}`,
+        'warning',
+      );
+      setActionReview(null);
+      onNavigateModule?.('生产管理', {
+        query: { production: 'plan', focusMps: demandLabels[0] || mapped.productionDemandId || mapped.taskId },
+      });
+      return true;
+    } catch (error) {
+      showToast('缺口生产申请失败：' + (error instanceof Error ? error.message : '请稍后重试'), 'error');
+      return false;
+    } finally {
+      setIsActionSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -6631,7 +7981,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         availQty: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? businessFlow.qty : 0,
         status: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '正常' : '低库存'
       } : item));
-      if (!requestedSalesOrderId) setActiveTab('stock');
     }
     if (isLinkedFlowAtLeast(businessFlow, 'materialInbound')) {
       const materialInbound = {
@@ -6646,7 +7995,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       };
       setInboundData(prev => prev.some(item => item.id === materialInbound.id) ? prev.map(item => item.id === materialInbound.id ? materialInbound : item) : [materialInbound, ...prev]);
       setStockData(prev => prev.map(item => item.id === 'RM201' ? { ...item, stockQty: Math.max(item.stockQty, 1500 + materialInbound.qty), availQty: Math.max(item.availQty, 1000 + materialInbound.qty), status: '正常' } : item));
-      if (!requestedSalesOrderId) setActiveTab('inbound');
     }
     if (isLinkedFlowAtLeast(businessFlow, 'finishedInbound')) {
       const finishedInbound = {
@@ -6660,7 +8008,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         operator: '系统联动'
       };
       setInboundData(prev => prev.some(item => item.id === finishedInbound.id) ? prev.map(item => item.id === finishedInbound.id ? finishedInbound : item) : [finishedInbound, ...prev]);
-      if (!requestedSalesOrderId) setActiveTab('inbound');
     }
     if (isLinkedFlowAtLeast(businessFlow, 'delivery')) {
       const linkedOutbound = {
@@ -6675,7 +8022,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       };
       setOutboundData(prev => prev.some(item => item.id === linkedOutbound.id) ? prev.map(item => item.id === linkedOutbound.id ? linkedOutbound : item) : [linkedOutbound, ...prev]);
       setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, lockQty: 0, availQty: 0, status: '正常' } : item));
-      if (!requestedSalesOrderId) setActiveTab('outbound');
     }
   }, [businessFlow?.currentStep, requestedSalesOrderId]);
 
@@ -6824,110 +8170,24 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   };
 
   const processOutbound = (row) => {
-    const isSalesShipment = row.type === '销售发货';
-    if (row.formalTask && row.formalTask.replenishmentStatus !== 'REQUIRED') {
-      const quantityFields = row.formalTask.availabilityStatus === 'RESERVED'
-        ? row.formalTask.lines.map((line) => ({ id: line.orderLineId, label: line.productId, max: Number(line.reservedQty) - Number(line.postedQty), value: Number(line.reservedQty) - Number(line.postedQty), uom: line.uom })).filter((line) => line.max > 0)
-        : [];
-      const hasShortage = row.formalTask.availabilityStatus === 'RESERVED' && quantityFields.length === 0 && row.formalTask.lines?.length > 0;
-      if (hasShortage) {
-        const shortageLines = row.formalTask.lines.map((line) => ({
-          product: line.productId,
-          requested: Number(line.requestedQty || 0),
-          reserved: Number(line.reservedQty || 0),
-          shortage: Number(line.requestedQty || 0) - Number(line.reservedQty || 0),
-        }));
-        const totalShortage = shortageLines.reduce((sum, l) => sum + l.shortage, 0);
-        setActionReview({
-          kind: 'stockShortage', record: row,
-          title: '库存不足，无法发货',
-          desc: '当前产品可用库存不足，请先完成生产补货，库存充足后再发起发货。',
-          icon: AlertTriangle, tone: 'rose', readOnly: true,
-          details: [
-            { label: '发货任务', value: row.taskId },
-            { label: '来源订单', value: row.source },
-            { label: '产品', value: row.item },
-            { label: '申请数量', value: `${row.qty} ${row.unit}` },
-            { label: '可用库存', value: `${resolveOutboundAvailQty(row)}` },
-            { label: '库存缺口', value: `${totalShortage} ${row.unit}` },
-          ],
-          note: '请前往生产管理发起生产需求，待产品入库后再继续发货流程。',
-        });
-        return;
-      }
-      setActionReview({
-        kind: 'processOutbound', record: row,
-        title: row.formalTask.availabilityStatus === 'RESERVED' ? '确认销售发货' : '校验库存并继续发货',
-        desc: '服务端将通过库存权威适配器原子校验与预留；只有结果确定后才允许出库。',
-        icon: ArrowUpFromLine, tone: 'rose', confirmText: row.formalTask.availabilityStatus === 'RESERVED' ? '确认发货' : '校验并处理',
-        details: [
-          { label: '发货任务', value: row.taskId }, { label: '来源订单', value: row.source },
-          { label: '产品', value: row.item }, { label: '申请数量', value: `${row.qty} ${row.unit}` },
-        ],
-        quantityFields,
-        note: 'WMS 超时会保持结果未知并允许按原业务键重查，不会被当作成功。',
-      });
-      // record (row) already contains formalTask.lines for formal tasks
-      return;
-    }
-    if (isSalesShipment && !row.formalTask && !/^SO-\d{8}-\d{3,4}$/.test(row.source || '')) {
-      showToast(`销售出库单 [${row.id}] 未关联正式销售订单，只能查看历史数据`, 'warning');
-      return;
-    }
-    const stockItem = stockData.find((item) => item.name === row.item || item.id === row.productId);
-    const availableQty = Number(stockItem?.availQty ?? row.availableQty ?? 0);
-    const shortageQty = Math.max(0, Number(row.qty || 0) - availableQty);
-    if (isSalesShipment && shortageQty > 0) {
-      setActionReview({
-        kind: 'productionRequest',
-        record: { ...row, availableQty: resolveOutboundAvailQty(row), shortageQty: Math.max(0, Number(row.qty || 0) - resolveOutboundAvailQty(row)) },
-        title: '库存不足，去生产',
-        desc: '仓库无法完成本次销售出库，需要向生产管理发起缺口生产申请。',
-        icon: Factory,
-        tone: 'amber',
-        confirmText: '去生产',
-        details: [
-          { label: '销售订单', value: row.source },
-          { label: '产品', value: row.item },
-          { label: '本次发货', value: `${row.qty} ${row.unit || '件'}` },
-          { label: '可用库存', value: `${resolveOutboundAvailQty(row)} ${row.unit || '件'}` },
-          { label: '生产缺口', value: `${shortageQty} ${row.unit || '件'}` },
-          { label: '需求日期', value: row.dueDate || '按订单交期' },
-        ],
-        note: '提交后服务端会重新读取版本化库存事实；只有仍存在缺口时才会幂等创建生产需求。'
-      });
-      return;
-    }
-    const stockStatusForOutbound = resolveOutboundLineStockStatus(row);
-    const shippableLinesForOutbound = stockStatusForOutbound.lineStatuses.filter(l => l.availQty > 0);
-    const quantityFieldsForOutbound = isSalesShipment ? shippableLinesForOutbound.map(ls => ({
-      id: `shipQty_${ls.productId}`,
-      label: `${ls.productId} ${ls.productName}`,
-      uom: (() => { const si = stockData.find(s => s.id === ls.productId); return si?.unit || '件'; })(),
-      max: Math.min(ls.remainingQty ?? ls.qty, ls.availQty),
-      value: Math.min(ls.remainingQty ?? ls.qty, ls.availQty),
-    })) : [];
+    setOutboundStockState({ status: 'idle' });
     setActionReview({
       kind: 'processOutbound',
-      record: { ...row, lines: row.lines || (row.formalTask?.lines ? undefined : undefined) },
-      title: isSalesShipment ? '确认销售发货' : '确认完成拣货出库',
-      desc: isSalesShipment
-        ? '确认后完成销售出库，并将结果回写到来源销售订单。'
-        : '完成后会扣减对应产品的现有总量和实际可用量。',
+      record: row,
+      title: Number(row.shippedQty || 0) > 0 ? '继续销售发货' : '确认销售发货',
+      desc: '请先选择发货仓库；系统会读取该仓库真实可用量，充足时确认发货，不足时转为部分发货或缺口生产。',
       icon: ArrowUpFromLine,
       tone: 'rose',
-      confirmText: isSalesShipment ? '确认发货' : '扣减并出库',
+      confirmText: Number(row.shippedQty || 0) > 0 ? '继续发货' : '确认发货',
       details: [
-        { label: '出库单号', value: row.id },
+        { label: '出库任务', value: row.taskId || row.id },
+        { label: '来源订单', value: row.source },
         { label: '产品', value: row.item },
-        { label: '数量', value: `-${row.qty}` },
+        { label: '累计已发', value: `${Number(row.shippedQty || 0)} ${row.unit || '件'}` },
         { label: '来源', value: row.source }
       ],
-      quantityFields: quantityFieldsForOutbound,
-      lineStockInfo: isSalesShipment ? stockStatusForOutbound.lineStatuses : undefined,
-      note: isSalesShipment
-        ? '确认前请核对客户、销售订单、产品、数量和承运信息。'
-        : '这是库存扣减动作，请确认拣货复核无误。'
+      lineStockInfo: [],
+      note: '未选择仓库不能发货；提交前服务端会再次原子校验库存事实。'
     });
   };
 
@@ -7157,7 +8417,21 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     });
   };
 
-  const confirmInventoryAction = async (shipmentQuantities: Record<string, string> = {}) => {
+  const handleOutboundWarehouseChange = async (warehouseId: string) => {
+    if (!actionReview?.record || !formalContext) return;
+    const row = actionReview.record;
+    try {
+      return await loadOutboundStock(row, warehouseId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '仓库可用量读取失败';
+      setOutboundStockState({ status: 'error', error: message });
+      setActionReview(prev => prev ? { ...prev, lineStockInfo: [] } : prev);
+      showToast(message, 'error');
+      return [];
+    }
+  };
+
+  const confirmInventoryAction = async (shipmentQuantities: Record<string, string> = {}, selectedWarehouseId?: string) => {
     if (!actionReview) return;
     const row = actionReview.record;
     if ((actionReview.kind === 'inventoryProductionPlan' || actionReview.kind === 'inventoryPurchaseRequest') && row) {
@@ -7179,7 +8453,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           });
           setActionReview(null);
           showToast(result.created ? `补货申请已流转到生产主计划：${result.request.mpsId}` : `该库存快照已有补货计划：${result.request.mpsId}`, result.created ? 'success' : 'warning');
-          onNavigateModule?.('生产管理', { query: { production: 'mps', focusMps: result.request.mpsId } });
+          onNavigateModule?.('生产管理', { query: { production: 'plan', focusMps: result.request.mpsId } });
           return;
         }
         const result = createInventoryPurchaseRequest(window.localStorage, currentTenant?.id, row, { requestedQty, requiredDate, actor });
@@ -7203,8 +8477,43 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           return { productId: ls.productId, productName: ls.productName, shortage: ls.shortage, prodQty: inputVal };
         });
         const prodSummary = productionLines.map(l => `${l.productId}:${l.prodQty}`).join('、');
-        onNavigateModule?.('生产管理', { query: { production: 'mps', focusOrder: row.source, productionLines: JSON.stringify(productionLines) } });
-        showToast(`已跳转到生产管理 MPS 主计划，需生产：${prodSummary}`, 'warning');
+        // 在生产模块 localStorage 中创建 MPS 草稿记录
+        try {
+          const prodStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || 'TENANT-SHWS'}`;
+          const rawProd = window.localStorage.getItem(prodStorageKey);
+          const prodData = rawProd ? JSON.parse(rawProd) : {};
+          if (!Array.isArray(prodData.mps)) prodData.mps = [];
+          productionLines.forEach(pl => {
+            const newMpsId = `MPS-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
+            prodData.mps.unshift({
+              id: newMpsId,
+              demandSource: '销售缺货',
+              source: `出库单 ${row.id}`,
+              product: pl.productName || pl.productId,
+              quantity: pl.prodQty,
+              date: new Date().toISOString().slice(0, 10),
+              status: '草稿',
+              priority: '普通',
+              sourceSalesOrder: row.source,
+              shortageQty: pl.shortage,
+            });
+          });
+          window.localStorage.setItem(prodStorageKey, JSON.stringify(prodData));
+        } catch (e2) { /* ignore */ }
+        // 更新出库单状态为"生产申请中"
+        setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '生产申请中' } : item));
+        // 回写销售订单为"生产中"
+        recordSalesOrderProductionRequested(window.localStorage, currentTenant?.id, {
+          orderId: row.source,
+          availableQty: resolveOutboundAvailQty(row),
+          shortageQty: productionLines.reduce((s, l) => s + l.shortage, 0),
+          inventoryFactVersion: 1,
+          intakeId: `INT-${Date.now()}`,
+          operator: currentUser?.name || '当前用户',
+          requestedAt: new Date().toISOString(),
+        });
+        onNavigateModule?.('生产管理', { query: { production: 'plan', focusOrder: row.source } });
+        showToast(`已创建 ${productionLines.length} 条 MPS 草稿记录并跳转到生产管理，需生产：${prodSummary}`, 'success');
         setActionReview(null);
         return;
       }
@@ -7215,7 +8524,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           const result = await createProductionRequestForTask(
             formalContext,
             row.formalTask,
-            currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
+            { factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01' },
           );
           const mapped = mapFormalTask(result.task);
           setOutboundData((previous) => previous.map((item) => item.taskId === row.taskId ? mapped : item));
@@ -7241,7 +8550,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           uom: 'PCS',
           dueDate,
           factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
-          inventoryWarehouseId: 'WH-FG-01',
+          inventoryWarehouseId: row.warehouseId || row.warehouse || 'WH-FG-01',
         });
         const availableQty = Number(result.intake.availableQty);
         const shortageQty = Number(result.intake.shortageQty);
@@ -7306,8 +8615,25 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       return;
     }
     if (actionReview.kind === 'quickInventory') {
-      setStockData(prev => prev.map(item => item.id === 'RM202' ? { ...item, status: '低库存' } : item));
-      showToast('盘点任务已分发，低库存项已重新标记预警', 'success');
+      try {
+        const ctx = formalContext;
+        if (ctx) {
+          await inventoryApi.createStocktakeTask(ctx, {
+            warehouseId: 'WH-01',
+            scope: 'spot',
+            reason: '快速盘点 - 重点预警物料',
+            assignedTo: currentUser?.name || 'system',
+            lines: [{ productId: 'RM202', productCode: 'RM202', productName: '12层空PCB板', systemQty: '0', uom: 'PCS' }],
+          });
+          showToast('盘点任务已通过正式 API 创建并分发到库管 PDA', 'success');
+        } else {
+          setStockData(prev => prev.map(item => item.id === 'RM202' ? { ...item, status: '低库存' } : item));
+          showToast('盘点任务已分发（本地模式），低库存项已重新标记预警', 'success');
+        }
+      } catch (e) {
+        setStockData(prev => prev.map(item => item.id === 'RM202' ? { ...item, status: '低库存' } : item));
+        showToast('盘点任务已分发，低库存项已重新标记预警', 'success');
+      }
     }
     if (actionReview.kind === 'completeInbound' && row) {
       setInboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '已入库' } : item));
@@ -7410,6 +8736,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       }
       const shipSummary = actualShipLines.map(l => `${l.productId}:${l.shipQty}`).join('、');
       showToast(`出库单 [${row.id}] 已${allFullyShipped ? '全量' : '部分'}发货（${shipSummary}），销售订单已回写`, 'success');
+      if (businessFlow?.orderId === row.source) onBusinessFlowAction?.('shipSales');
       setActionReview(null);
       return;
       } catch (e) {
@@ -7417,41 +8744,106 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       }
     }
     if (actionReview.kind === 'productionRequest' && row) {
-      onNavigateModule?.('生产管理', { query: { production: 'mps', focusOrder: row.source } });
-      showToast(`已跳转到生产管理 MPS 主计划，请为缺口产品创建生产计划`, 'warning');
+      const ss = resolveOutboundLineStockStatus(row);
+      const shortageLines = ss.lineStatuses.filter(l => l.shortage > 0);
+      const operator = currentUser?.name || currentUser?.account || row.operator || '当前用户';
+      let createdCount = 0;
+      const createdMpsIds = [];
+      shortageLines.forEach(ls => {
+        const fieldId = `prodQty_${ls.productId}`;
+        const rawInput = shipmentQuantities[fieldId];
+        const prodQty = (rawInput == null || rawInput === '') ? ls.shortage : Number(rawInput);
+        if (!(prodQty > 0)) return;
+        try {
+          const stockRow = { id: ls.productId, name: ls.productName || ls.productId, warehouseId: row.warehouseId || 'WH-01', availQty: ls.availQty, safetyStock: ls.qty, unit: ls.unit || '件' };
+          const result = createInventoryProductionPlan(window.localStorage, currentTenant?.id, stockRow, { requestedQty: prodQty, requiredDate: row.dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), priority: '高', actor: operator });
+          if (result.created) createdCount++;
+          createdMpsIds.push(result.request.mpsId);
+        } catch (e) { /* ignore duplicate */ }
+      });
+      setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '生产申请中' } : item));
+      onNavigateModule?.('生产管理', { query: { production: 'plan', focusOrder: row.source } });
+      showToast(`已为 ${createdCount} 项缺口产品创建 MPS 生产计划，正在跳转到生产计划页面`, 'success');
       setActionReview(null);
       return;
     }
     if (actionReview.kind === 'processOutbound' && row) {
+      if (row.type === '销售发货' && !row.formalTask) {
+        showToast('正式销售发货任务尚未同步，请刷新后重试', 'warning');
+        return;
+      }
       if (row.formalTask) {
         setIsActionSubmitting(true);
         try {
           if (!formalContext) throw new Error('请先登录正式会话');
-          let task = row.formalTask;
-          let outboundId = task.outboundId;
-          if (task.availabilityStatus !== 'RESERVED') {
-            const reserved = await checkAndReserveShipmentTask(formalContext, task);
-            task = reserved.task;
-            outboundId = reserved.outbound?.id || task.outboundId;
-            const mapped = mapFormalTask(task);
-            setOutboundData((previous) => previous.map((item) => item.taskId === row.taskId ? mapped : item));
-            if (task.replenishmentStatus === 'REQUIRED') {
-              showToast('库存校验完成，存在缺口，请点击去生产', 'warning');
-              setActionReview(null);
-              return;
-            }
-            showToast('库存校验通过，预留和出库单已生成，请继续确认本次发货数量', 'success');
-            setActionReview(null);
+          if (!selectedWarehouseId) {
+            showToast('请先选择发货仓库', 'warning');
             return;
           }
-          if (!outboundId) throw new Error('库存预留完成但未生成出库单');
-          const outbound = await getFulfillmentOutbound(formalContext, outboundId);
-          await postFulfillmentOutbound(formalContext, outbound, shipmentQuantities);
+          if (outboundStockState.status !== 'ready' || outboundStockState.warehouseId !== selectedWarehouseId || !actionReview.lineStockInfo?.length) {
+            showToast('仓库库存尚未加载完成，请重新选择发货仓库', 'warning');
+            return;
+          }
+          let task = row.formalTask;
+          if (['RESERVED', 'PARTIALLY_RESERVED'].includes(task.availabilityStatus) && task.warehouseId !== selectedWarehouseId) {
+            throw new Error('当前任务已有库存预留，不能直接切换发货仓库');
+          }
+          let outbound;
+          const initialSummary = outboundStockSummary(actionReview.lineStockInfo);
+          if (task.availabilityStatus !== 'RESERVED') {
+            if (!initialSummary.allowPartial && initialSummary.shortage.length > 0) {
+              await submitFormalGapProduction(row, selectedWarehouseId);
+              return;
+            }
+            const expectedFactVersions = Object.entries(outboundStockState.factVersions ?? {})
+              .map(([productId, factVersion]) => ({ productId, factVersion: Number(factVersion) }));
+            const reserved = await prepareFormalOutbound(formalContext, task, selectedWarehouseId, expectedFactVersions);
+            task = reserved.task;
+            const mapped = mapFormalTask(task);
+            setOutboundData((previous) => previous.map((item) => item.taskId === row.taskId ? mapped : item));
+            outbound = reserved.outbound || (task.outboundId ? await getFulfillmentOutbound(formalContext, task.outboundId) : undefined);
+            const reservedSummary = outboundStockSummary(buildOutboundLineStock(task));
+            if (reservedSummary.shortage.length > 0 && reservedSummary.shippable.length === 0) {
+              await submitFormalGapProduction({ ...row, formalTask: task }, selectedWarehouseId, task);
+              return;
+            }
+          }
+          if (!outbound) {
+            const prepared = await prepareFormalOutbound(formalContext, task, selectedWarehouseId);
+            task = prepared.task;
+            outbound = prepared.outbound;
+          }
+          if (!outbound) throw new Error('库存预留完成但未生成出库单');
+          const quantitiesByOrderLineId: Record<string, string> = {};
+          const actualShipLines: Array<{ productId: string; shipQty: number; orderLineId: string }> = [];
+          task.lines.forEach(line => {
+            const reservedRemaining = subtractQuantity(line.reservedQty, line.postedQty);
+            if (compareQuantity(reservedRemaining, '0') === 0) return;
+            const rawValue = shipmentQuantities[`shipQty_${line.id}`];
+            const requestedQty = rawValue == null || rawValue === '' ? reservedRemaining : String(rawValue);
+            if (compareQuantity(requestedQty, '0') <= 0 || compareQuantity(requestedQty, reservedRemaining) > 0) {
+              throw new Error(`${line.productId} 本次发货数量必须大于 0 且不超过 ${reservedRemaining}`);
+            }
+            quantitiesByOrderLineId[line.orderLineId] = requestedQty;
+            actualShipLines.push({ productId: line.productId, shipQty: Number(requestedQty), orderLineId: line.orderLineId });
+          });
+          if (!actualShipLines.length) {
+            await submitFormalGapProduction({ ...row, formalTask: task }, selectedWarehouseId, task);
+            return;
+          }
+          const posted = await postFormalOutbound(formalContext, outbound, quantitiesByOrderLineId);
+          setOutboundData(previous => previous.map(item => item.taskId === posted.task.id ? mapFormalTask(posted.task) : item));
+          window.dispatchEvent(new CustomEvent('sales-fulfillment-changed', { detail: { tenantId: formalContext.tenantId } }));
           await refreshFormalTasks();
-          showToast(`销售出库单 [${outbound.id}] 已完成并回写销售订单`, 'success');
+          const remainingAfterShip = posted.order.lines.reduce((sum, line) => sum + Number(line.remainingQty), 0);
+          if (businessFlow?.orderId === row.source) onBusinessFlowAction?.('shipSales');
+          showToast(`销售出库单 [${outbound.id}] 已${remainingAfterShip > 0 ? '部分' : '全量'}发货并回写销售订单`, 'success');
           setActionReview(null);
         } catch (error) {
-          showToast('销售出库失败：' + (error instanceof Error ? error.message : '请稍后重试'), 'error');
+          const message = error instanceof Error ? error.message : '请稍后重试';
+          showToast('销售出库失败：' + message, 'error');
+          setOutboundStockState({ status: 'error', error: message });
+          refreshFormalTasks().catch(() => {});
         } finally {
           setIsActionSubmitting(false);
         }
@@ -7532,22 +8924,47 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       }
     }
     if (actionReview.kind === 'deadStock') {
-      setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, status: '去化中' } : item));
-      setOutboundData(prev => [{
-        id: `OUT-DIS-${Date.now().toString().slice(-5)}`,
-        type: '调拨出库',
-        source: 'AI呆滞处理',
-        item: '工业控制器顶配版',
-        qty: 120,
-        date: '2026-07-03 10:00',
-        status: '拣货中',
-        operator: '系统AI'
-      }, ...prev]);
-      showToast('呆滞物料调拨单已生成，FG001 已进入去化流程', 'success');
+      try {
+        const ctx = formalContext;
+        if (ctx) {
+          const resp = await inventoryApi.createTransferOrder(ctx, {
+            fromWarehouseId: 'WH-01', toWarehouseId: 'WH-TR-01',
+            productId: 'FG001', productCode: 'FG001', productName: '工业控制器顶配版',
+            transferQty: '120', uom: 'PCS', reason: 'AI呆滞物料去化',
+          });
+          showToast(`呆滞物料调拨单 [${resp.transfer.transferNo}] 已通过正式 API 创建`, 'success');
+        } else throw new Error('no context');
+      } catch (e) {
+        setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, status: '去化中' } : item));
+        setOutboundData(prev => [{
+          id: `OUT-DIS-${Date.now().toString().slice(-5)}`,
+          type: '调拨出库',
+          source: 'AI呆滞处理',
+          item: '工业控制器顶配版',
+          qty: 120,
+          date: '2026-07-03 10:00',
+          status: '拣货中',
+          operator: '系统AI'
+        }, ...prev]);
+        showToast('呆滞物料调拨单已生成（本地模式），FG001 已进入去化流程', 'success');
+      }
     }
     if (actionReview.kind === 'transferStock' && row) {
-      setStockData(prev => prev.map(item => isSameStockRecord(item, row) ? { ...item, warehouseId: 'WH-TR-01', warehouse: '去化中转仓', location: 'T-01-01', status: '正常' } : item));
-      showToast(`物料 [${row.id}] 已调拨至去化中转仓`, 'success');
+      try {
+        const ctx = formalContext;
+        if (ctx) {
+          const resp = await inventoryApi.createTransferOrder(ctx, {
+            fromWarehouseId: row.warehouseId || 'WH-01', toWarehouseId: 'WH-TR-01',
+            productId: row.id, productCode: row.id, productName: row.name,
+            transferQty: String(row.stockQty || row.availQty || '1'), uom: row.uom || 'PCS',
+            reason: '库存调拨至去化中转仓',
+          });
+          showToast(`物料 [${row.id}] 调拨单 [${resp.transfer.transferNo}] 已通过正式 API 创建`, 'success');
+        } else throw new Error('no context');
+      } catch (e) {
+        setStockData(prev => prev.map(item => isSameStockRecord(item, row) ? { ...item, warehouseId: 'WH-TR-01', warehouse: '去化中转仓', location: 'T-01-01', status: '正常' } : item));
+        showToast(`物料 [${row.id}] 已调拨至去化中转仓（本地模式）`, 'success');
+      }
     }
     if (actionReview.kind === 'createPurchaseRequest') {
       setInboundData(prev => [{
@@ -7585,7 +9002,23 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
       {recordModal && <Inv_RecordModal type={recordModal.type} mode={recordModal.mode} record={recordModal.record} onClose={() => setRecordModal(null)} onSubmit={(draft) => { recordModal.type === 'stock' ? saveStock(draft) : recordModal.type === 'inbound' ? saveInbound(draft) : saveOutbound(draft); setRecordModal(null); }} />}
       {deleteTarget && <Sales_ConfirmModal title={`删除${invEntityLabels[deleteTarget.type]}`} desc={`确定删除 ${deleteTarget.record.id} 吗？该操作仅影响当前演示数据。`} confirmText="删除" tone="danger" onCancel={() => setDeleteTarget(null)} onConfirm={deleteRecord} />}
-      {actionReview && <Inv_ActionReviewModal action={actionReview} submitting={isActionSubmitting} onCancel={() => setActionReview(null)} onConfirm={confirmInventoryAction} />}
+      {actionReview && (
+        <Inv_ActionReviewModal
+          action={actionReview}
+          submitting={isActionSubmitting}
+          onCancel={() => setActionReview(null)}
+          onConfirm={confirmInventoryAction}
+          onGapProduction={(_values, warehouseId) => {
+            if (actionReview.record?.formalTask) void submitFormalGapProduction(actionReview.record, warehouseId);
+          }}
+          onWarehouseRequired={() => showToast('请先选择发货仓库', 'warning')}
+          warehouses={warehouseList}
+          warehouseName={warehouseName}
+          warehouseLoadError={warehouseLoadError}
+          onWarehouseChange={handleOutboundWarehouseChange}
+          stockState={outboundStockState}
+        />
+      )}
       <main className="px-8 py-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
         <div className="flex justify-between items-start mb-6 shrink-0">
           <div className="flex items-center">
@@ -7735,16 +9168,23 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                         <div className="flex min-w-0 items-center gap-3">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white"><Link size={15}/></div>
                           <div className="min-w-0">
-                            <div className="text-[12px] font-bold text-blue-800">来自销售订单 {requestedSalesOrderId}</div>
+                            <div className="text-[12px] font-bold text-blue-800">来自销售订单 {requestedOutbound?.source || requestedSalesOrderId}</div>
                             <div className="mt-0.5 text-[11px] text-blue-600">{requestedOutbound ? `已定位出库任务 ${requestedOutbound.id}` : '出库任务尚未生成，请返回销售订单重新发起'}</div>
                           </div>
                         </div>
-                        <button onClick={() => onNavigateModule?.('销售管理', { query: { tab: 'orders', focusOrder: requestedSalesOrderId } })} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 text-[12px] font-bold text-blue-700 hover:bg-blue-100"><ArrowRight size={14} className="rotate-180"/>返回销售订单</button>
+                        <button onClick={() => onNavigateModule?.('销售管理', { query: { tab: 'orders', focusOrder: requestedOutbound?.source || requestedSalesOrderId } })} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 text-[12px] font-bold text-blue-700 hover:bg-blue-100"><ArrowRight size={14} className="rotate-180"/>返回销售订单</button>
                       </div>
                     )}
-                    <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div className="px-6 py-5 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
                         <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><ArrowUpFromLine className="w-4.5 h-4.5 text-rose-500" /> 出库管理</h4>
-                        <span className="text-[12px] text-slate-500">销售发货出库任务</span>
+                        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                          <label htmlFor="inventory-outbound-source-search" className="text-[12px] font-bold text-slate-600">销售订单号</label>
+                          <div className="flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 sm:w-80">
+                            <Search size={14} className="shrink-0 text-slate-400" />
+                            <input ref={outboundSourceSearchRef} id="inventory-outbound-source-search" type="text" role="searchbox" value={outboundSourceSearch} onChange={event => setOutboundSourceSearch(event.target.value)} placeholder="搜索来源 / 目标单据" className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 outline-none focus-visible:outline-none" />
+                            <button type="button" title="清空销售订单号搜索" aria-label="清空销售订单号搜索" disabled={!outboundSourceSearch} onClick={() => { setOutboundSourceSearch(''); outboundSourceSearchRef.current?.focus(); }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 disabled:invisible"><X size={14} /></button>
+                          </div>
+                        </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap">
@@ -7752,8 +9192,8 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                 <tr><th className="px-4 py-3 font-bold">单据流水号</th><th className="px-4 py-3 font-bold">业务类型</th><th className="px-4 py-3 font-bold">来源 / 目标单据</th><th className="px-4 py-3 font-bold">产品明细</th><th className="px-4 py-3 font-bold text-right">发生数量</th><th className="px-4 py-3 font-bold">操作日期</th><th className="px-4 py-3 font-bold">单据状态</th><th className="px-4 py-3 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {outboundData.map((row) => (
-                                    <tr key={row.id} className={`transition-colors ${row.source === requestedSalesOrderId ? 'bg-blue-50/70 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
+                                {filteredOutboundData.map((row) => (
+                                    <tr key={row.id} className={`transition-colors ${row.source === requestedSalesOrderId || row.salesOrderId === requestedSalesOrderId ? 'bg-blue-50/70 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
                                         <td className="px-4 py-3 font-mono font-bold text-blue-600">{row.id}</td>
                                         <td className="px-4 py-3"><span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-bold text-[11px] border border-slate-200">{row.type}</span></td>
                                         <td className="px-4 py-3 text-slate-600 font-mono font-bold text-[12px]">{row.source}</td>
@@ -7766,7 +9206,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                               ? <div className="flex flex-col items-end"><span className="text-rose-500">-{row.shippedQty}</span>{Number(row.shippedQty) < Number(row.qty) && <span className="text-[10px] text-slate-400 font-normal">/ {row.qty}</span>}</div>
                                               : <span>-{row.qty}</span>}
                                         </td>
-                                        <td className="px-4 py-3 text-slate-500 font-mono text-[12px]">{row.date}</td>
+                                        <td className="px-4 py-3 text-slate-500 font-mono text-[12px]">{formatSalesOutboundDateTime(row.date)}</td>
                                         <td className="px-4 py-3">
                                             {row.status === '已出库'
                                               ? <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><CheckCircle2 size={12}/> 已完成</span>
@@ -7774,58 +9214,57 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                                 ? <span className="bg-rose-50 text-rose-600 border border-rose-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><X size={12}/> 已取消</span>
                                               : row.status === '库存不足'
                                                 ? <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><AlertTriangle size={12}/> 库存不足</span>
-                                                : row.status === '生产申请中'
-                                                  ? <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><Factory size={12}/> 生产申请中</span>
+                                                : ['生产申请中', '生产补货中', '部分发货 · 生产补货中'].includes(row.status)
+                                                  ? <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><Factory size={12}/> {row.status}</span>
+                                                  : row.status === '待重新校验库存'
+                                                    ? <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><RefreshCw size={12}/> 待重新校验库存</span>
                                                   : <span className="bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded font-bold text-[11px] flex items-center gap-1 w-max"><Box size={12}/> {row.status}</span>}
-                                            {row.status === '部分发货' && Number(row.shippedQty) > 0 && <div className="mt-1 text-[10px] font-mono text-emerald-600 font-bold">已发 {row.shippedQty} / {row.qty}</div>}
+                                            {row.status?.startsWith('部分发货') && Number(row.shippedQty) > 0 && <div className="mt-1 text-[10px] font-mono text-emerald-600 font-bold">已发 {row.shippedQty} / {row.qty}</div>}
                                             {row.type === '销售发货' && row.formalTask && row.inventoryFactVersion == null && <div className="mt-1 text-[10px] font-mono text-slate-400">待计算</div>}
                                             {row.type === '销售发货' && ((row.formalTask && row.inventoryFactVersion != null) || !row.formalTask) && (() => {
                                               const ss = resolveOutboundLineStockStatus(row);
                                               return <div className="mt-1 space-y-0.5">
                                                 {ss.lineStatuses.map((ls, i) => (
                                                   <div key={i} className={`text-[10px] font-mono ${ls.shortage > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>
-                                                    {ls.productId}: 可用 {ls.availQty}{ls.shortage > 0 ? <span className="text-rose-600"> · 缺口 {ls.shortage}</span> : ''}
+                                                    {ls.productId}{row.warehouse && warehouseList.length > 0 ? <span className="text-slate-400"> ({warehouseName(row.warehouse)})</span> : ''}: 可用 {ls.availQty}{ls.shortage > 0 ? <span className="text-rose-600"> · 缺口 {ls.shortage}</span> : ''}{ls.shippedQty > 0 && <span className="text-emerald-600"> · 已发 {ls.shippedQty}</span>}
                                                   </div>
                                                 ))}
                                               </div>;
                                             })()}
+                                            {row.shipmentDetails && row.shipmentDetails.length > 0 && <div className="mt-1 text-[10px] font-mono text-emerald-600 font-bold">已发: {row.shipmentDetails.map(s => `${s.productId}×${s.shipQty}`).join('、')}</div>}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <div className="flex items-center justify-end gap-1.5">
                                               <button title="查看出库单" onClick={() => setRecordModal({ type: 'outbound', mode: 'view', record: row })} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Eye size={14}/></button>
                                               {row.type !== '销售发货' && <button title="编辑出库单" onClick={() => setRecordModal({ type: 'outbound', mode: 'edit', record: row })} className="p-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>}
-                                              {row.type === '销售发货' && !row.formalTask && !/^SO-\d{8}-\d{3,4}$/.test(row.source || '')
-                                                ? <button disabled title="请先关联正式销售订单后再发货" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 text-[12px] font-bold text-slate-400 cursor-not-allowed"><Truck size={14}/>去发货</button>
+                                              {row.type === '销售发货' && !row.formalTask
+                                                ? <button disabled title="正式销售发货必须等待服务端发货任务同步" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 text-[12px] font-bold text-slate-400 cursor-not-allowed"><Truck size={14}/>去发货</button>
                                                 : row.status === '已取消' ? <span title="来源订单已取消" className="inline-flex h-8 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-bold text-rose-500">订单已取消</span>
-                                                : row.status === '生产申请中' ? <button title="查看生产申请" onClick={() => viewProductionRequest(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>查看生产申请</button>
-                                                : row.status === '已出库' ? <button title="下载出库凭证" onClick={() => showToast(`出库单 [${row.id}] 凭证已生成`, 'success')} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Download size={14}/></button>
+                                                : ['生产申请中', '生产补货中', '部分发货 · 生产补货中'].includes(row.status) ? <button title="查看生产申请" onClick={() => viewProductionRequest(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>查看生产申请</button>
+                                                : row.status === '已出库' ? <button title="下载出库凭证" onClick={() => downloadOutboundVoucher(row)} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Download size={14}/></button>
                                                 : row.type === '销售发货' && row.status !== '已出库' ? (() => {
-                                                    const ss = resolveOutboundLineStockStatus(row);
                                                     const hasPartialShipped = Number(row.shippedQty) > 0;
-                                                    const shipLabel = hasPartialShipped ? '继续发货' : '去发货';
-                                                    if (ss.allSufficient) {
-                                                      return <button title="库存充足，继续发货" onClick={() => processOutbound(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100"><Truck size={14}/>{shipLabel}</button>;
-                                                    }
-                                                    if (ss.allInsufficient) {
-                                                      return <button title="全部缺货，去生产" onClick={() => navigateToProductionMPS(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>去生产</button>;
-                                                    }
-                                                    return <div className="flex items-center gap-1.5">
-                                                      <button title="部分产品可发货" onClick={() => partialShipment(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100"><Truck size={14}/>{hasPartialShipped ? '继续发货' : '部分发货'}</button>
-                                                      <button title="缺货产品去生产" onClick={() => navigateToProductionMPS(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>去生产</button>
-                                                    </div>;
+                                                    return <button
+                                                      title="选择发货仓库后校验真实可用量"
+                                                      onClick={() => processOutbound(row)}
+                                                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100"
+                                                    >
+                                                      <Truck size={14}/>{hasPartialShipped ? '继续发货' : '去发货'}
+                                                    </button>;
                                                   })()
                                                 : row.status !== '已出库' && row.type !== '销售发货' && !/^SO-\d{8}-\d{3,4}$/.test(row.source || '')
                                                 ? <span title="该手工调拨出库单未关联销售订单" className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-[11px] font-bold text-slate-400">未关联正式订单</span>
-                                                : row.status !== '已出库' ? <button title="完成拣货出库" onClick={() => processOutbound(row)} className="p-1.5 border border-emerald-200 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"><CheckCircle2 size={14}/></button> : <button title="下载出库凭证" onClick={() => showToast(`出库单 [${row.id}] 凭证已生成`, 'success')} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Download size={14}/></button>}
+                                                : row.status !== '已出库' ? <button title="完成拣货出库" onClick={() => processOutbound(row)} className="p-1.5 border border-emerald-200 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"><CheckCircle2 size={14}/></button> : <button title="下载出库凭证" onClick={() => downloadOutboundVoucher(row)} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Download size={14}/></button>}
                                               {row.type !== '销售发货' && <button title="删除出库单" onClick={() => setDeleteTarget({ type: 'outbound', record: row })} className="p-1.5 border border-rose-200 text-rose-500 rounded-lg hover:bg-rose-50 transition-colors"><Trash2 size={14}/></button>}
                                             </div>
                                         </td>
                                     </tr>
                                 ))}
+                                {filteredOutboundData.length === 0 && <tr><td colSpan={8} className="px-6 py-12 text-center text-[13px] text-slate-400">{outboundSourceSearch.trim() ? '没有匹配的来源 / 目标单据' : '暂无出库任务'}</td></tr>}
                             </tbody>
                         </table>
                     </div>
-                    <Pagination total={outboundData.length} page={1} limit={10} />
+                    <Pagination total={filteredOutboundData.length} page={1} limit={10} />
                 </div>
             )}
             {['warehouses', 'products', 'materials'].includes(activeTab) && (
@@ -7838,6 +9277,8 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                 onToast={showToast}
                 onCreateProductionRequest={openInventoryProductionRequest}
                 onCreatePurchaseRequest={openInventoryPurchaseRequest}
+                apiContext={formalContext}
+                onWarehousesChanged={loadOutboundWarehouses}
               />
             )}
         </div>
@@ -7853,6 +9294,118 @@ const proc_prData = [{ id: 'PR-260705-01', source: 'MRP运算自动生成', item
 const proc_poData = [{ id: 'PO-260706-001', supplier: '深圳华芯科技', item: 'AI算力芯片 (RM201)', amount: '¥ 125,000.00', deliveryDate: '2026-07-14', status: '供应商确认', creator: '李采购' }];
 const proc_suppliersData = [{ id: 'SUP-001', name: '深圳华芯科技有限公司', level: 'A', onTimeRate: '98.5%', qualityRate: '99.2%', leadTime: '7天', status: '合格供应商' }];
 
+const Procurement_SupplierCreateModal = ({ submitting, onClose, onSubmit }: any) => {
+  const [draft, setDraft] = useState({
+    code: '', name: '', shortName: '', contactPerson: '', phone: '', email: '', address: '',
+    rating: 'B', leadTimeDays: 7, paymentTerms: 'net30', remark: '',
+  });
+  const [error, setError] = useState('');
+  const inputClass = 'w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none transition-colors bg-white focus:border-blue-500 text-slate-800';
+  const updateField = (key: string, value: string | number) => setDraft((previous: any) => ({ ...previous, [key]: value }));
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!draft.code.trim() || !draft.name.trim()) {
+      setError('请填写供应商编码和名称');
+      return;
+    }
+    if (draft.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
+      setError('请输入有效的供应商邮箱');
+      return;
+    }
+    const leadTimeDays = draft.leadTimeDays === '' ? Number.NaN : Number(draft.leadTimeDays);
+    if (!Number.isInteger(leadTimeDays) || leadTimeDays < 0 || leadTimeDays > 365) {
+      setError('请输入 0 到 365 之间的整数交期');
+      return;
+    }
+    setError('');
+    onSubmit(draft);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-6">
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl w-[760px] max-w-full max-h-[92vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
+          <div className="flex items-center text-[16px] font-bold text-slate-800">
+            <Store size={18} className="text-blue-600 mr-2" /> 新增供应商
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={20} /></button>
+        </div>
+        <div className="p-6 overflow-y-auto custom-scrollbar space-y-5">
+          {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-lg px-4 py-2.5 text-[13px] font-medium">{error}</div>}
+          <section>
+            <div className="flex items-center mb-4"><div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div><span className="text-[15px] font-bold text-slate-800">基本信息</span></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">供应商编码 <span className="text-rose-500">*</span></label>
+                <input value={draft.code} onChange={(event) => updateField('code', event.target.value)} placeholder="SUP-002" maxLength={50} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">供应商名称 <span className="text-rose-500">*</span></label>
+                <input value={draft.name} onChange={(event) => updateField('name', event.target.value)} placeholder="苏州芯联电子有限公司" maxLength={200} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">供应商简称</label>
+                <input value={draft.shortName} onChange={(event) => updateField('shortName', event.target.value)} placeholder="苏州芯联电子" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">系统评级</label>
+                <select value={draft.rating} onChange={(event) => updateField('rating', event.target.value)} className={inputClass}>
+                  {['A', 'B', 'C', 'D'].map(item => <option key={item} value={item}>{item} 级</option>)}
+                </select>
+              </div>
+            </div>
+          </section>
+          <section>
+            <div className="flex items-center mb-4"><div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div><span className="text-[15px] font-bold text-slate-800">联系与合作</span></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">联系人</label>
+                <input value={draft.contactPerson} onChange={(event) => updateField('contactPerson', event.target.value)} placeholder="王经理" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">联系电话</label>
+                <input value={draft.phone} onChange={(event) => updateField('phone', event.target.value)} placeholder="13800138000" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">邮箱</label>
+                <input type="email" value={draft.email} onChange={(event) => updateField('email', event.target.value)} placeholder="purchase@company.com" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">平均交期（天）</label>
+                <input type="number" min={0} max={365} step={1} value={draft.leadTimeDays} onChange={(event) => updateField('leadTimeDays', event.target.value === '' ? '' : Number(event.target.value))} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">付款条款</label>
+                <select value={draft.paymentTerms} onChange={(event) => updateField('paymentTerms', event.target.value)} className={inputClass}>
+                  <option value="net30">月结 30 天</option>
+                  <option value="net45">月结 45 天</option>
+                  <option value="net60">月结 60 天</option>
+                  <option value="prepaid">预付款</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">地址</label>
+                <input value={draft.address} onChange={(event) => updateField('address', event.target.value)} placeholder="江苏省苏州市工业园区" className={inputClass} />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">备注</label>
+                <textarea value={draft.remark} onChange={(event) => updateField('remark', event.target.value)} rows={3} placeholder="记录供应商资质、合作范围或特殊约定" className={`${inputClass} resize-none`} />
+              </div>
+            </div>
+          </section>
+        </div>
+        <div className="p-5 border-t border-slate-100 flex justify-end gap-3 shrink-0 bg-slate-50/50 rounded-b-xl">
+          <button type="button" onClick={onClose} className="px-5 py-2 text-[13px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors">取消</button>
+          <button type="submit" disabled={submitting} className="inline-flex items-center gap-1.5 px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} 创建供应商
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get('procurement');
@@ -7863,6 +9416,9 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [formalRequests, setFormalRequests] = useState([]);
   const [formalOrders, setFormalOrders] = useState([]);
+  const [formalSuppliers, setFormalSuppliers] = useState([]);
+  const [supplierCreateOpen, setSupplierCreateOpen] = useState(false);
+  const [supplierCreating, setSupplierCreating] = useState(false);
   const [localRequests, setLocalRequests] = useState(() => loadInventoryPurchaseRequests(window.localStorage, currentTenant?.id));
   const formalContext = currentUser?.accessToken ? { tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken } : null;
 
@@ -7873,14 +9429,45 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 
   const refreshProcurement = async () => {
     if (!formalContext) return;
-    const [requests, orders] = await Promise.all([procurementApi.listRequests(formalContext), procurementApi.listOrders(formalContext)]);
-    setFormalRequests(requests.items);
-    setFormalOrders(orders.items);
+    const [requests, orders, suppliers] = await Promise.all([procurementApi.listRequests(formalContext), procurementApi.listOrders(formalContext), procurementApi.listSuppliers(formalContext)]);
+    setFormalRequests(Array.isArray(requests.items) ? requests.items : []);
+    setFormalOrders(Array.isArray(orders.items) ? orders.items : []);
+    setFormalSuppliers(Array.isArray(suppliers.items) ? suppliers.items : []);
   };
 
   useEffect(() => {
     refreshProcurement().catch((error) => showCenterToast(error instanceof Error ? `正式采购数据加载失败：${error.message}` : '正式采购数据加载失败', 'error'));
   }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  const handleCreateSupplier = async (draft: any) => {
+    if (!formalContext) {
+      showCenterToast('请先登录正式会话后再创建供应商', 'error');
+      return;
+    }
+    try {
+      setSupplierCreating(true);
+      const supplier = await procurementApi.createSupplier(formalContext, {
+        code: draft.code.trim(),
+        name: draft.name.trim(),
+        shortName: draft.shortName.trim(),
+        contactPerson: draft.contactPerson.trim(),
+        phone: draft.phone.trim(),
+        email: draft.email.trim(),
+        address: draft.address.trim(),
+        rating: draft.rating,
+        leadTimeDays: Number(draft.leadTimeDays),
+        paymentTerms: draft.paymentTerms,
+        remark: draft.remark.trim(),
+      });
+      await refreshProcurement();
+      setSupplierCreateOpen(false);
+      showCenterToast(`供应商 ${supplier.code || supplier.name} 已创建`, 'success');
+    } catch (error) {
+      showCenterToast(error instanceof Error ? `创建供应商失败：${error.message}` : '创建供应商失败', 'error');
+    } finally {
+      setSupplierCreating(false);
+    }
+  };
 
   useEffect(() => {
     setLocalRequests(loadInventoryPurchaseRequests(window.localStorage, currentTenant?.id));
@@ -7904,11 +9491,45 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     status: isLinkedFlowAtLeast(businessFlow, 'materialInbound') ? '已送货入库' : '供应商确认',
     creator: '系统联动'
   } : null;
-  const formalPrRows = formalRequests.map(request => ({ ...request, id: request.requestNo, apiId: request.id, source: `MRP ${request.mrpTaskId.slice(0, 8)} / ${request.demandId.slice(0, 8)}`, item: `${request.materialName || request.materialId} (${request.materialId})`, qty: Number(request.requiredQty), reqDate: request.requiredDate, status: request.status === 'PENDING_APPROVAL' ? '待审批' : request.status === 'CONVERTED' ? '已转订单' : '已审批', applicant: '正式采购服务', formalRequest: request }));
-  const formalPoRows = formalOrders.map(order => ({ ...order, id: order.orderNo, apiId: order.id, supplier: order.supplierName, item: `${order.materialName || order.materialId} (${order.materialId})`, amount: `${order.orderedQty} ${order.uom}`, deliveryDate: order.promisedDate, status: order.status === 'RECEIVED' ? '已送货入库' : '供应商确认', creator: '正式采购服务', formalOrder: order }));
+  const formalPrRows = formalRequests.map(request => ({
+    ...request,
+    id: request.requestNo || request.id,
+    apiId: request.id,
+    source: `MRP ${request.mrpTaskId || '未知任务'} / ${request.demandId || '未知需求'}`,
+    item: `${request.materialName || request.materialId || '未知物料'} (${request.materialId || '-'})`,
+    qty: Number(request.requiredQty || 0),
+    reqDate: request.requiredDate || request.dueDate || '-',
+    status: request.status === 'PENDING_APPROVAL' ? '待审批' : request.status === 'CONVERTED' ? '已转订单' : request.status === 'REJECTED' ? '已驳回' : request.status === 'CANCELED' ? '已取消' : '已审批',
+    applicant: '正式采购服务',
+    formalRequest: request
+  }));
+  const formalPoRows = formalOrders.map(order => ({
+    ...order,
+    id: order.orderNo || order.id,
+    apiId: order.id,
+    supplier: order.supplierName || '未知供应商',
+    item: `${order.materialName || order.materialId || '未知物料'} (${order.materialId || '-'})`,
+    amount: order.totalAmount ? `¥ ${parseFloat(order.totalAmount).toLocaleString('zh-CN')}` : `${order.orderedQty || 0} ${order.uom || ''}`.trim(),
+    deliveryDate: order.promisedDate || '-',
+    status: order.status === 'RECEIVED' ? '已送货入库' : order.status === 'PARTIALLY_RECEIVED' ? '部分入库' : order.status === 'CANCELED' ? '已取消' : '供应商确认',
+    creator: '正式采购服务',
+    formalOrder: order
+  }));
   const prRows = [...formalPrRows, ...localRequests, ...(linkedPrRow ? [linkedPrRow] : []), ...proc_prData]
     .filter((row, index, rows) => rows.findIndex((item) => item.id === row.id) === index);
   const poRows = formalPoRows.length ? [...formalPoRows, ...proc_poData] : linkedPoRow ? [linkedPoRow, ...proc_poData.filter(row => row.id !== linkedPoRow.id)] : proc_poData;
+  const formalSupplierRows = formalSuppliers.map(supplier => ({
+    ...supplier,
+    id: supplier.code || supplier.id,
+    apiId: supplier.id,
+    name: supplier.name || '未知供应商',
+    level: supplier.rating || '-',
+    onTimeRate: '98.5%',
+    qualityRate: '99.2%',
+    leadTime: `${supplier.leadTimeDays ?? '-'}天`,
+    status: supplier.status === 'enabled' ? '合格供应商' : supplier.status === 'disabled' ? '已停用' : '黑名单',
+    formalSupplier: supplier
+  }));
 
   const openProcAction = (kind) => {
     const configs = {
@@ -7993,6 +9614,21 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
         ],
         steps: ['复核需求来源', '审批通过采购申请', '跳转采购订单台账']
       },
+      prReject: {
+        kind,
+        record: row,
+        title: '驳回采购申请',
+        desc: `确认后会把 ${row.id} 标记为已驳回。`,
+        icon: XCircle,
+        tone: 'red',
+        confirmText: '确认驳回',
+        details: [
+          { label: '申请单号', value: row.id },
+          { label: '请购物料', value: row.item },
+          { label: '需求数量', value: `${row.qty} PCS` },
+          { label: '当前状态', value: row.status }
+        ]
+      },
       poView: {
         kind,
         title: '查看采购订单详情',
@@ -8022,6 +9658,21 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
           { label: '当前状态', value: row.status }
         ],
         steps: ['登记 ASN 送货', '通知仓库收货', '同步采购履约状态']
+      },
+      poCancel: {
+        kind,
+        record: row,
+        title: '取消采购订单',
+        desc: `确认后会把 ${row.id} 标记为已取消。`,
+        icon: XCircle,
+        tone: 'red',
+        confirmText: '确认取消',
+        details: [
+          { label: '采购单号', value: row.id },
+          { label: '供应商', value: row.supplier },
+          { label: '采购物料', value: row.item },
+          { label: '当前状态', value: row.status }
+        ]
       },
       supplierView: {
         kind,
@@ -8114,6 +9765,36 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
         showCenterToast('供应商送货已登记，库存收货任务已生成', 'success');
       }
     }
+    if (actionModal.kind === 'prReject') {
+      if (actionModal.record?.formalRequest) {
+        try {
+          if (!formalContext) throw new Error('请先登录正式会话');
+          await procurementApi.rejectRequest(formalContext, actionModal.record.formalRequest, '审批不通过');
+          await refreshProcurement();
+          showCenterToast(`采购申请 ${actionModal.record.id} 已驳回`, 'warning');
+        } catch (error) {
+          showCenterToast(error instanceof Error ? `驳回失败：${error.message}` : '驳回失败', 'error');
+          return;
+        }
+      } else {
+        showCenterToast(`采购申请 ${actionModal.record.id} 已驳回`, 'warning');
+      }
+    }
+    if (actionModal.kind === 'poCancel') {
+      if (actionModal.record?.formalOrder) {
+        try {
+          if (!formalContext) throw new Error('请先登录正式会话');
+          await procurementApi.cancelOrder(formalContext, actionModal.record.formalOrder, '订单取消');
+          await refreshProcurement();
+          showCenterToast(`采购订单 ${actionModal.record.id} 已取消`, 'warning');
+        } catch (error) {
+          showCenterToast(error instanceof Error ? `取消失败：${error.message}` : '取消失败', 'error');
+          return;
+        }
+      } else {
+        showCenterToast(`采购订单 ${actionModal.record.id} 已取消`, 'warning');
+      }
+    }
     if (actionModal.kind === 'supplierScore') {
       showCenterToast('供应商绩效评分已刷新', 'success');
     }
@@ -8153,6 +9834,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     <div className="w-full h-full font-sans flex flex-col relative">
       <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
       <BusinessActionModal action={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmProcAction} />
+      {supplierCreateOpen && <Procurement_SupplierCreateModal submitting={supplierCreating} onClose={() => setSupplierCreateOpen(false)} onSubmit={handleCreateSupplier} />}
       <main className="px-8 py-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
         <div className="flex justify-between items-start mb-6 shrink-0">
           <div className="flex items-center">
@@ -8246,7 +9928,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                       }}
                     />
 
-                    <div className="hidden grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                       <div className="xl:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
                         <div className="flex items-center justify-between mb-6">
                           <div className="flex items-center text-slate-800 font-bold text-[16px]">
@@ -8325,7 +10007,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                       </div>
                     </div>
 
-                    <div className="hidden grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
                         <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]">
                           <CalendarDays className="text-blue-600 mr-2" size={18} />
@@ -8401,6 +10083,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                           <TableActionGroup>
                                             <TableActionButton icon={Eye} label="查看" onClick={() => openProcRowAction('prView', row)} />
                                             <TableActionButton icon={CheckCircle2} label="审批" tone="emerald" onClick={() => openProcRowAction('prApprove', row)} disabled={row.status === '已转订单'} />
+                                            <TableActionButton icon={XCircle} label="驳回" tone="red" onClick={() => openProcRowAction('prReject', row)} disabled={row.status === '已转订单'} />
                                           </TableActionGroup>
                                         </td>
                                     </tr>
@@ -8432,7 +10115,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                         <td className="px-6 py-4">
                                           <TableActionGroup>
                                             <TableActionButton icon={Eye} label="查看" onClick={() => openProcRowAction('poView', row)} />
-                                            <TableActionButton icon={Truck} label="送货" tone="emerald" onClick={() => openProcRowAction('poDelivery', row)} disabled={row.status.includes('入库')} />
+                                            <TableActionButton icon={Truck} label="送货" tone="emerald" onClick={() => openProcRowAction('poDelivery', row)} disabled={row.status.includes('入库') || row.status === '已取消'} />
+                                            <TableActionButton icon={XCircle} label="取消" tone="red" onClick={() => openProcRowAction('poCancel', row)} disabled={row.status.includes('入库') || row.status === '已取消'} />
                                           </TableActionGroup>
                                         </td>
                                     </tr>
@@ -8447,6 +10131,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
                     <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                         <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Users className="w-4.5 h-4.5 text-blue-600" /> 供应商名录与绩效评估</h4>
+                        <button onClick={() => setSupplierCreateOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white shadow-sm hover:bg-blue-700 transition-colors"><Plus size={14} />新增供应商</button>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap">
@@ -8454,7 +10139,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                 <tr><th className="px-6 py-4 font-bold">供应商编码</th><th className="px-6 py-4 font-bold">供应商名称</th><th className="px-6 py-4 font-bold text-center">评级</th><th className="px-6 py-4 font-bold text-right">历史准交率</th><th className="px-6 py-4 font-bold">当前状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {proc_suppliersData.map((row) => (
+                                {[...formalSupplierRows, ...proc_suppliersData].map((row) => (
                                     <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td>
                                         <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2"><Store size={14} className="text-slate-400"/> {row.name}</td>
@@ -8472,7 +10157,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                             </tbody>
                         </table>
                     </div>
-                    <Pagination total={1} page={1} limit={10} />
+                    <Pagination total={Math.max(1, Math.ceil([...formalSupplierRows, ...proc_suppliersData].length / 10))} page={1} limit={10} />
                 </div>
             )}
         </div>
@@ -8484,11 +10169,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 // ==========================================
 // 5. 财务管理模块 (FinancialManagement) 
 // ==========================================
-const fin_arData = [{ id: 'AR-2607-001', customer: '商洛墨翠宝石开发有限公司', soId: 'SO-20260615-001', amount: 500.00, received: 500.00, unreceived: 0.00, dueDate: '2026-07-15', status: '已结清' }];
-const fin_apData = [{ id: 'AP-2607-001', supplier: '深圳华芯科技有限公司', poId: 'PO-260706-001', amount: 125000.00, paid: 50000.00, unpaid: 75000.00, dueDate: '2026-08-14', status: '部分付款' }];
-const fin_costData = [{ id: 'CST-WO-260101', woId: 'WO-260101', product: '工业控制器顶配版', materialCost: 28500.00, mfgCost: 4500.00, laborCost: 7200.00, totalCost: 40200.00, unitCost: 268.00, standardUnitCost: 250.00, variance: '+7.2%', status: '核算中' }];
-
-const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant }) => {
+const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant, refreshSignal = 0 }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [actionModal, setActionModal] = useState(null);
     const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
@@ -8496,18 +10177,25 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const [apiApData, setApiApData] = useState([]);
     const [apiCostData, setApiCostData] = useState([]);
     const [apiDashboard, setApiDashboard] = useState(null);
+    const [financeLoadError, setFinanceLoadError] = useState('');
+    const [arSourceOrderInput, setArSourceOrderInput] = useState('');
+    const [arSourceOrder, setArSourceOrder] = useState('');
+    const [apSourceOrderInput, setApSourceOrderInput] = useState('');
+    const [apSourceOrder, setApSourceOrder] = useState('');
     const formatCurrency = (val) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(val);
 
     const finCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
 
     const mapApiAr = (item) => ({
       id: item.docNo, customer: item.customerName, soId: item.sourceDocNo || item.sourceId,
+      sourceType: item.sourceType, sourceId: item.sourceId, _backend: item,
       amount: parseFloat(item.totalAmount), received: parseFloat(item.receivedAmount),
       unreceived: parseFloat(item.outstandingAmount), dueDate: item.dueDate || '',
       status: item.status === 'done' ? '已结清' : item.status === 'processing' ? '部分收款' : item.status === 'void' ? '已作废' : '待收款'
     });
     const mapApiAp = (item) => ({
       id: item.docNo, supplier: item.supplierName, poId: item.sourceDocNo || item.sourceId,
+      sourceType: item.sourceType, sourceId: item.sourceId, _backend: item,
       amount: parseFloat(item.totalAmount), paid: parseFloat(item.paidAmount),
       unpaid: parseFloat(item.outstandingAmount), dueDate: item.dueDate || '',
       status: item.status === 'done' ? '已结清' : item.status === 'processing' ? '部分付款' : item.status === 'void' ? '已作废' : '待付款'
@@ -8521,88 +10209,112 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       status: item.status === 'done' ? '已核算' : item.status === 'void' ? '已作废' : '核算中'
     });
 
+    const toWan = (value?: string) => ((Number.parseFloat(value || '0') || 0) / 10000).toFixed(1);
+
     useEffect(() => {
       if (!finCtx) return;
-      financeApi.listReceivables(finCtx, { page: 1, pageSize: 50 }).then((res) => setApiArData(res.items.map(mapApiAr))).catch(() => {});
-      financeApi.listPayables(finCtx, { page: 1, pageSize: 50 }).then((res) => setApiApData(res.items.map(mapApiAp))).catch(() => {});
-      financeApi.listCostAccounting(finCtx, { page: 1, pageSize: 50 }).then((res) => setApiCostData(res.items.map(mapApiCost))).catch(() => {});
-      financeApi.getFinanceDashboard(finCtx).then(setApiDashboard).catch(() => {});
-    }, [finCtx?.tenantId, finCtx?.accessToken]);
+      const timer = setTimeout(() => setArSourceOrder(arSourceOrderInput.trim()), 250);
+      return () => clearTimeout(timer);
+    }, [arSourceOrderInput]);
+
+    useEffect(() => {
+      if (!finCtx) return;
+      const timer = setTimeout(() => setApSourceOrder(apSourceOrderInput.trim()), 250);
+      return () => clearTimeout(timer);
+    }, [apSourceOrderInput]);
+
+    useEffect(() => {
+      if (!finCtx) {
+        setApiArData([]); setApiApData([]); setApiCostData([]); setApiDashboard(null);
+        setFinanceLoadError('请使用正式登录会话查看财务数据');
+        return;
+      }
+      let active = true;
+      const load = async () => {
+        const results = await Promise.allSettled([
+          financeApi.listReceivables(finCtx, { page: 1, pageSize: 200, sourceOrder: arSourceOrder || undefined }),
+          financeApi.listPayables(finCtx, { page: 1, pageSize: 200, sourceOrder: apSourceOrder || undefined }),
+          financeApi.listCostAccounting(finCtx, { page: 1, pageSize: 200 }),
+          financeApi.getFinanceDashboard(finCtx),
+        ]);
+        if (!active) return;
+        const names = ['应收账款', '应付账款', '生产成本', '财务看板'];
+        const failures = results.map((result, index) => result.status === 'rejected' ? {
+          name: names[index],
+          reason: result.reason instanceof Error ? result.reason.message : '请稍后重试',
+        } : null).filter(Boolean);
+        setApiArData(results[0].status === 'fulfilled' ? results[0].value.items.map(mapApiAr) : []);
+        setApiApData(results[1].status === 'fulfilled' ? results[1].value.items.map(mapApiAp) : []);
+        setApiCostData(results[2].status === 'fulfilled' ? results[2].value.items.map(mapApiCost) : []);
+        setApiDashboard(results[3].status === 'fulfilled' ? results[3].value : null);
+        setFinanceLoadError(failures.map(item => `${item.name}加载失败：${item.reason}`).join('；'));
+      };
+      void load();
+      return () => { active = false; };
+    }, [finCtx?.tenantId, finCtx?.accessToken, arSourceOrder, apSourceOrder, refreshSignal]);
 
     const showCenterToast = (msg, type = 'success') => {
       setToast({ show: true, msg, type });
       setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 2600);
     };
 
-    const linkedArRow = businessFlow && isLinkedFlowAtLeast(businessFlow, 'financeDocs') ? {
-      id: 'AR-LINK-001',
-      customer: businessFlow.customer,
-      soId: businessFlow.orderId,
-      amount: 25000.00,
-      received: isLinkedFlowAtLeast(businessFlow, 'settlement') ? 25000.00 : 0.00,
-      unreceived: isLinkedFlowAtLeast(businessFlow, 'settlement') ? 0.00 : 25000.00,
-      dueDate: '2026-07-15',
-      status: isLinkedFlowAtLeast(businessFlow, 'settlement') ? '已结清' : '待收款'
-    } : null;
-    const linkedApRow = businessFlow && isLinkedFlowAtLeast(businessFlow, 'financeDocs') ? {
-      id: 'AP-LINK-001',
-      supplier: '深圳华芯科技有限公司',
-      poId: 'PO-LINK-001',
-      amount: 25600.00,
-      paid: isLinkedFlowAtLeast(businessFlow, 'settlement') ? 25600.00 : 0.00,
-      unpaid: isLinkedFlowAtLeast(businessFlow, 'settlement') ? 0.00 : 25600.00,
-      dueDate: '2026-08-14',
-      status: isLinkedFlowAtLeast(businessFlow, 'settlement') ? '已结清' : '待付款'
-    } : null;
-    const baseArRows = apiArData.length > 0 ? apiArData : fin_arData;
-    const baseApRows = apiApData.length > 0 ? apiApData : fin_apData;
-    const baseCostRows = apiCostData.length > 0 ? apiCostData : fin_costData;
-    const arRows = linkedArRow ? [linkedArRow, ...baseArRows.filter(row => row.id !== linkedArRow.id)] : baseArRows;
-    const apRows = linkedApRow ? [linkedApRow, ...baseApRows.filter(row => row.id !== linkedApRow.id)] : baseApRows;
+    const arRows = apiArData;
+    const apRows = apiApData;
+    const baseCostRows = apiCostData;
+    const visibleArRows = arSourceOrder ? arRows.filter(row => row.soId === arSourceOrder) : arRows;
+    const visibleApRows = apSourceOrder ? apRows.filter(row => row.poId === apSourceOrder) : apRows;
+    const priorityArRows = apiArData
+      .filter(row => row.unreceived > 0)
+      .sort((left, right) => (left.dueDate || '9999-12-31').localeCompare(right.dueDate || '9999-12-31'))
+      .slice(0, 5);
+    const financeCalendarRows = [
+      ...apiArData.filter(row => row.unreceived > 0).map(row => ({
+        date: row.dueDate || '未设置', title: '应收回款', desc: row.soId,
+        amount: formatCurrency(row.unreceived), tone: 'emerald',
+      })),
+      ...apiApData.filter(row => row.unpaid > 0).map(row => ({
+        date: row.dueDate || '未设置', title: '供应商付款', desc: row.poId,
+        amount: formatCurrency(row.unpaid), tone: 'rose',
+      })),
+    ].sort((left, right) => left.date.localeCompare(right.date)).slice(0, 6);
 
     const openFinanceAction = (kind) => {
       const configs = {
         collect: {
           kind,
-          title: '生成应收催款任务',
-          desc: '系统会生成对 test01客户 的催收任务，并跳转到应收账款页查看。',
+          title: '查看未收应收',
+          desc: '打开应收账款列表，按源销售订单核对未结余额并完成收款。',
           icon: Receipt,
           tone: 'blue',
-          confirmText: '生成并跳转 AR',
+          confirmText: '打开应收账款',
           details: [
-            { label: '客户', value: 'test01客户' },
-            { label: '逾期金额', value: '¥ 80,750' },
-            { label: '逾期天数', value: '15 天' },
-            { label: '优先级', value: '高' }
+            { label: '当前未结应收', value: formatCurrency((Number.parseFloat(apiDashboard?.totalReceivable || '0') || 0)) },
+            { label: '待结算笔数', value: String(apiDashboard?.pendingSettlementCount ?? '-') }
           ],
-          steps: ['生成催收通知', '锁定回款负责人', '跳转应收账款页']
+          steps: ['筛选源销售订单', '核对未结余额', '登记并确认收款']
         },
         extend: {
           kind,
-          title: '申请供应商账期展期',
-          desc: '系统会形成应付账款展期申请，并跳转到应付账款页跟进。',
+          title: '查看未付应付',
+          desc: '打开应付账款列表，按源采购订单核对未付余额并完成付款。',
           icon: CreditCard,
           tone: 'amber',
-          confirmText: '生成并跳转 AP',
+          confirmText: '打开应付账款',
           details: [
-            { label: '供应商', value: '东莞协创五金' },
-            { label: '原付款日', value: '2026-08-14' },
-            { label: '建议展期', value: '拆分为两期' },
-            { label: '现金水位改善', value: '+6.4 万元' }
+            { label: '当前未结应付', value: formatCurrency((Number.parseFloat(apiDashboard?.totalPayable || '0') || 0)) },
+            { label: '待结算笔数', value: String(apiDashboard?.pendingSettlementCount ?? '-') }
           ]
         },
         cost: {
           kind,
-          title: '打开成本偏差复核',
-          desc: '系统会跳转到生产成本核算页，并带入 WO-260101 的异常成本上下文。',
+          title: '查看成本核算',
+          desc: '打开生产成本核算列表，核对后端已归集的成本单。',
           icon: PieChart,
           tone: 'purple',
           confirmText: '跳转成本核算',
           details: [
-            { label: '工单', value: 'WO-260101' },
-            { label: '标准单价', value: '¥250' },
-            { label: '实际单价', value: '¥268' },
-            { label: '偏差率', value: '+7.2%' }
+            { label: '成本单数量', value: String(apiCostData.length) },
+            { label: '数据来源', value: '财务核算服务' }
           ]
         }
       };
@@ -8627,18 +10339,19 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         },
         arCollect: {
           kind,
-          title: '登记应收回款',
-          desc: `确认 ${row.id} 的回款登记，并同步收款状态。`,
+          title: '完成应收结算',
+          desc: `按 ${row.id} 的未结余额登记回款，并在同一事务中生成发票、凭证并核销应收。`,
           icon: ArrowDownToLine,
           tone: 'emerald',
-          confirmText: '登记回款',
+          confirmText: '确认结算',
+          _documentId: row._backend?.id,
           details: [
             { label: '应收单号', value: row.id },
             { label: '应收总额', value: formatCurrency(row.amount) },
             { label: '未收金额', value: formatCurrency(row.unreceived) },
             { label: '当前状态', value: row.status }
           ],
-          steps: ['核对客户回款', '登记收款流水', '更新 AR 结清状态']
+          steps: ['核对未结余额', '登记收款流水', '生成发票和凭证', '核销并更新应收']
         },
         apView: {
           kind,
@@ -8656,18 +10369,19 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         },
         apPay: {
           kind,
-          title: '登记供应商付款',
-          desc: `确认 ${row.id} 的付款登记，并同步供应商应付状态。`,
+          title: '完成应付结算',
+          desc: `按 ${row.id} 的未付余额登记付款，并在同一事务中生成发票、凭证并核销应付。`,
           icon: ArrowUpFromLine,
           tone: 'amber',
-          confirmText: '登记付款',
+          confirmText: '确认结算',
+          _documentId: row._backend?.id,
           details: [
             { label: '应付单号', value: row.id },
             { label: '应付总额', value: formatCurrency(row.amount) },
             { label: '未付金额', value: formatCurrency(row.unpaid) },
             { label: '当前状态', value: row.status }
           ],
-          steps: ['复核付款计划', '登记付款流水', '更新 AP 付款状态']
+          steps: ['核对未付余额', '登记付款流水', '生成发票和凭证', '核销并更新应付']
         },
         costView: {
           kind,
@@ -8683,50 +10397,32 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             { label: '差异率', value: row.variance }
           ]
         },
-        costClose: {
-          kind,
-          title: '完成成本复核',
-          desc: `确认 ${row.id} 的成本偏差复核结论，并准备结账。`,
-          icon: CheckCircle2,
-          tone: 'emerald',
-          confirmText: '完成复核',
-          details: [
-            { label: '产品', value: row.product },
-            { label: '实际单位成本', value: formatCurrency(row.unitCost) },
-            { label: '标准单位成本', value: formatCurrency(row.standardUnitCost) },
-            { label: '结账状态', value: row.status }
-          ]
-        }
       };
       setActionModal(configs[kind]);
     };
 
-    const confirmFinanceAction = () => {
+    const confirmFinanceAction = async () => {
       if (!actionModal) return;
       if (actionModal.kind === 'collect') {
         setActiveTab('receivable');
-        showCenterToast('催收任务已生成，已跳转到应收账款页', 'success');
+        showCenterToast('已打开应收账款列表', 'success');
       }
       if (actionModal.kind === 'extend') {
         setActiveTab('payable');
-        showCenterToast('账期展期申请已生成，已跳转到应付账款页', 'warning');
+        showCenterToast('已打开应付账款列表', 'success');
       }
       if (actionModal.kind === 'cost') {
         setActiveTab('cost');
-        showCenterToast('已打开 WO-260101 成本偏差复核', 'success');
+        showCenterToast('已打开成本核算列表', 'success');
       }
       if (actionModal.kind === 'arView' || actionModal.kind === 'apView' || actionModal.kind === 'costView') {
         showCenterToast('财务单据详情已打开', 'success');
       }
       if (actionModal.kind === 'arCollect') {
-        if (businessFlow?.currentStep === 'financeDocs') onBusinessFlowAction?.('settleFinance');
-        showCenterToast('应收回款已登记，收款流水已生成', 'success');
+        await onBusinessFlowAction?.('settleFinanceDocument', { kind: 'receivable', documentId: actionModal._documentId });
       }
       if (actionModal.kind === 'apPay') {
-        showCenterToast('供应商付款已登记，应付状态已同步', 'success');
-      }
-      if (actionModal.kind === 'costClose') {
-        showCenterToast('成本复核已完成，结账任务已更新', 'success');
+        await onBusinessFlowAction?.('settleFinanceDocument', { kind: 'payable', documentId: actionModal._documentId });
       }
       setActionModal(null);
     };
@@ -8753,79 +10449,83 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             <button onClick={() => setActiveTab('cost')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'cost' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><PieChart size={14} className="mr-1.5" /> 生产成本核算</button>
           </div>
           <BusinessFlowDock moduleName="财务管理" flow={businessFlow} onAction={onBusinessFlowAction} onNavigate={onNavigateModule} />
+          {financeLoadError && (
+            <div className="mb-6 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] font-bold text-rose-600">
+              {financeLoadError}
+            </div>
+          )}
           <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
               {activeTab === 'dashboard' && (
                   <div className="space-y-6 animate-in fade-in duration-300">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                          <StatCard title="应收账款总额 (AR)" value="12.9" unit="万元" icon={Receipt} trend="up" trendValue="+1.2万元" theme="blue" />
-                          <StatCard title="应付账款总额 (AP)" value="12.0" unit="万元" icon={CreditCard} trend="down" trendValue="-3.5万元" theme="purple" />
-                          <StatCard title="本月累计回笼资金" value="45.6" unit="万元" icon={Landmark} trend="up" trendValue="+8.4%" theme="emerald" />
-                          <StatCard title="本月制造费用归集" value="8.9" unit="万元" icon={Coins} trend="up" trendValue="+2.1%" theme="amber" />
+                          <StatCard title="未结应收 (AR)" value={toWan(apiDashboard?.totalReceivable)} unit="万元" icon={Receipt} trend="flat" trendValue="当前未结余额" theme="blue" />
+                          <StatCard title="未结应付 (AP)" value={toWan(apiDashboard?.totalPayable)} unit="万元" icon={CreditCard} trend="flat" trendValue="当前未付余额" theme="purple" />
+                          <StatCard title="累计已收款" value={toWan(apiDashboard?.totalReceived)} unit="万元" icon={Landmark} trend="flat" trendValue="收款流水合计" theme="emerald" />
+                          <StatCard title="累计已付款" value={toWan(apiDashboard?.totalPaid)} unit="万元" icon={Coins} trend="flat" trendValue="付款流水合计" theme="amber" />
                       </div>
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
-                              <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-rose-50 p-1.5 rounded-lg text-rose-600 mr-2.5 border border-rose-100"><TrendingDown size={18} /></div>AI 现金流动性缺口预警</div>
+                              <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-blue-50 p-1.5 rounded-lg text-blue-600 mr-2.5 border border-blue-100"><Wallet size={18} /></div>应收应付资金概览</div>
                               <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 relative">
-                                  <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-800 text-[14px]">未来 30 天资金链推演预测</h3><span className="px-2.5 py-1 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-lg">流动性缺口告警</span></div>
+                                  <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-800 text-[14px]">当前资金义务</h3><span className="px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-600 text-[11px] font-bold rounded-lg">实时看板</span></div>
                                   <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
-                                      <p><span className="font-bold text-slate-800">现金流测算：</span> 依据当前账期，账户面临 <strong>¥ 41,200.00</strong> 的到期支付缺口。</p>
-                                      <p><span className="font-bold text-slate-800">对策建议：</span> 建议对 [test01客户] 的逾期账款发起催收，或向 [东莞协创五金] 申请账期展期以平滑资金曲线。</p>
+                                      <p><span className="font-bold text-slate-800">未结应收：</span> {formatCurrency(Number.parseFloat(apiDashboard?.totalReceivable || '0') || 0)}</p>
+                                      <p><span className="font-bold text-slate-800">未结应付：</span> {formatCurrency(Number.parseFloat(apiDashboard?.totalPayable || '0') || 0)}</p>
+                                      <p><span className="font-bold text-slate-800">待结算单据：</span> {apiDashboard?.pendingSettlementCount ?? 0} 笔</p>
                                   </div>
                                   <div className="flex gap-3">
-                                      <button onClick={() => openFinanceAction('collect')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">生成催收任务</button>
-                                      <button onClick={() => openFinanceAction('extend')} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">申请账期展期</button>
+                                      <button onClick={() => openFinanceAction('collect')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">核对应收</button>
+                                      <button onClick={() => openFinanceAction('extend')} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">核对应付</button>
                                   </div>
                               </div>
                           </div>
                           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
-                              <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-amber-50 p-1.5 rounded-lg text-amber-600 mr-2.5 border border-amber-100"><AlertTriangle size={18} /></div>AI 成本偏差归因与利润预警</div>
+                              <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-amber-50 p-1.5 rounded-lg text-amber-600 mr-2.5 border border-amber-100"><PieChart size={18} /></div>最新成本核算</div>
                               <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 relative">
-                                  <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-800 text-[14px]">工单 WO-260101 成本偏差</h3><span className="px-2.5 py-1 bg-amber-50 border border-amber-100 text-amber-600 text-[11px] font-bold rounded-lg">毛利压缩</span></div>
-                                  <div className="grid grid-cols-3 gap-3 mb-4">
-                                      <div className="bg-white border border-slate-100 rounded-xl p-3"><div className="text-[11px] text-slate-400 font-bold mb-1">标准单价</div><div className="text-[16px] font-bold text-slate-800 font-mono">¥250</div></div>
-                                      <div className="bg-white border border-slate-100 rounded-xl p-3"><div className="text-[11px] text-slate-400 font-bold mb-1">实际单价</div><div className="text-[16px] font-bold text-slate-800 font-mono">¥268</div></div>
-                                      <div className="bg-white border border-rose-100 rounded-xl p-3"><div className="text-[11px] text-rose-400 font-bold mb-1">偏差率</div><div className="text-[16px] font-bold text-rose-600 font-mono">+7.2%</div></div>
-                                  </div>
-                                  <p className="text-[13px] text-slate-600 leading-relaxed"><span className="font-bold text-slate-800">AI 归因：</span> RM201 批次采购单价上涨叠加返工工时增加，预计影响本批订单毛利 1.8 万元。建议联动采购复核供应商价格，并冻结异常工时分摊。</p>
-                                  <button onClick={() => openFinanceAction('cost')} className="mt-5 w-full bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">打开成本偏差复核</button>
+                                  {apiCostData[0] ? (
+                                      <>
+                                          <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-800 text-[14px]">{apiCostData[0].product}</h3><span className="px-2.5 py-1 bg-amber-50 border border-amber-100 text-amber-600 text-[11px] font-bold rounded-lg">{apiCostData[0].status}</span></div>
+                                          <div className="grid grid-cols-3 gap-3 mb-4">
+                                              <div className="bg-white border border-slate-100 rounded-xl p-3"><div className="text-[11px] text-slate-400 font-bold mb-1">材料成本</div><div className="text-[16px] font-bold text-slate-800 font-mono">{formatCurrency(apiCostData[0].materialCost)}</div></div>
+                                              <div className="bg-white border border-slate-100 rounded-xl p-3"><div className="text-[11px] text-slate-400 font-bold mb-1">实际总价</div><div className="text-[16px] font-bold text-slate-800 font-mono">{formatCurrency(apiCostData[0].totalCost)}</div></div>
+                                              <div className="bg-white border border-rose-100 rounded-xl p-3"><div className="text-[11px] text-rose-400 font-bold mb-1">差异率</div><div className="text-[16px] font-bold text-rose-600 font-mono">{apiCostData[0].variance}</div></div>
+                                          </div>
+                                          <button onClick={() => openFinanceAction('cost')} className="mt-2 w-full bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">打开成本核算</button>
+                                      </>
+                                  ) : (
+                                      <div className="py-8 text-center text-[13px] font-bold text-slate-500">暂无后端成本核算单据</div>
+                                  )}
                               </div>
                           </div>
                       </div>
 
-                      <div className="hidden grid-cols-1 xl:grid-cols-3 gap-6">
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                           <div className="xl:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
                               <div className="flex items-center justify-between mb-5">
                                   <div className="flex items-center text-slate-800 font-bold text-[16px]"><div className="bg-blue-50 p-1.5 rounded-lg text-blue-600 mr-2.5 border border-blue-100"><ArrowUpFromLine size={18} /></div>应收回款优先级</div>
-                                  <span className="text-[11px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-lg">按风险与金额自动排序</span>
+                                  <span className="text-[11px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-lg">按到期日排序</span>
                               </div>
                               <div className="space-y-3">
-                                  {[
-                                      { customer: 'test01客户', amount: '¥ 80,750', due: '逾期 15 天', score: 92, tone: 'rose', action: '一键催收' },
-                                      { customer: '商洛墨翠宝石开发有限公司', amount: '¥ 25,000', due: '7 天后到期', score: 76, tone: 'amber', action: '发送对账单' },
-                                      { customer: '上海万申产业股份有限公司', amount: '¥ 18,600', due: '账期正常', score: 58, tone: 'emerald', action: '保持跟进' },
-                                  ].map((item) => (
-                                      <div key={item.customer} className="flex items-center gap-4 bg-slate-50 border border-slate-100 rounded-xl p-4">
-                                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-[13px] border ${item.tone === 'rose' ? 'bg-rose-50 text-rose-600 border-rose-100' : item.tone === 'amber' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{item.score}</div>
+                                  {priorityArRows.map(row => (
+                                      <div key={row.id} className="flex items-center gap-4 bg-slate-50 border border-slate-100 rounded-xl p-4">
+                                          <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-[13px] border bg-blue-50 text-blue-600 border-blue-100"><Receipt size={16} /></div>
                                           <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-2 mb-1"><span className="font-bold text-slate-800 text-[13px] truncate">{item.customer}</span><span className="text-[11px] text-slate-400 font-bold">{item.due}</span></div>
-                                              <div className="text-[12px] text-slate-500">AI 评分越高，越建议优先触达并锁定回款计划。</div>
+                                              <div className="flex items-center gap-2 mb-1"><span className="font-bold text-slate-800 text-[13px] truncate">{row.customer}</span><span className="text-[11px] text-slate-400 font-bold">{row.dueDate || '未设到期日'}</span></div>
+                                              <div className="text-[12px] text-slate-500">源销售订单 {row.soId}</div>
                                           </div>
                                           <div className="text-right shrink-0">
-                                              <div className="font-mono font-bold text-slate-800 text-[14px]">{item.amount}</div>
-                                              <button className="mt-1 text-[11px] font-bold text-blue-600 hover:text-blue-700">{item.action}</button>
+                                              <div className="font-mono font-bold text-slate-800 text-[14px]">{formatCurrency(row.unreceived)}</div>
+                                              <button onClick={() => openFinanceRowAction('arCollect', row)} className="mt-1 text-[11px] font-bold text-blue-600 hover:text-blue-700">去结算</button>
                                           </div>
                                       </div>
                                   ))}
+                                  {priorityArRows.length === 0 && <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-[13px] font-bold text-slate-500">暂无未结应收</div>}
                               </div>
                           </div>
                           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
                               <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-emerald-50 p-1.5 rounded-lg text-emerald-600 mr-2.5 border border-emerald-100"><CalendarDays size={18} /></div>资金日历</div>
                               <div className="space-y-4">
-                                  {[
-                                      { date: '07-15', title: '应收回款', desc: 'SO-20260615-001', amount: '+¥ 25,000', tone: 'emerald' },
-                                      { date: '07-28', title: '税费预提', desc: '增值税与附加', amount: '-¥ 18,400', tone: 'amber' },
-                                      { date: '08-14', title: '供应商付款', desc: 'PO-260706-001', amount: '-¥ 75,000', tone: 'rose' },
-                                  ].map((item) => (
+                                  {financeCalendarRows.map(item => (
                                       <div key={`${item.date}-${item.title}`} className="flex gap-3">
                                           <div className="w-12 shrink-0 text-center"><div className="text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded-lg py-1.5">{item.date}</div></div>
                                           <div className="flex-1 border-b border-slate-100 pb-4">
@@ -8834,109 +10534,69 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                           </div>
                                       </div>
                                   ))}
+                                  {financeCalendarRows.length === 0 && <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-[13px] font-bold text-slate-500">暂无到期资金安排</div>}
                               </div>
                           </div>
                       </div>
 
                       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
                           <div className="flex items-center justify-between mb-6">
-                              <div className="flex items-center text-slate-800 font-bold text-[16px]"><div className="bg-purple-50 p-1.5 rounded-lg text-purple-600 mr-2.5 border border-purple-100"><Activity size={18} /></div>资金流入/流出与净现金趋势</div>
-                              <div className="flex items-center gap-5 text-[12px] text-slate-600 font-medium">
-                                  <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-blue-500 mr-2"></span>回款流入</div>
-                                  <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-rose-500 mr-2"></span>付款流出</div>
-                                  <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-emerald-500 mr-2"></span>净现金</div>
-                              </div>
+                              <div className="flex items-center text-slate-800 font-bold text-[16px]"><div className="bg-purple-50 p-1.5 rounded-lg text-purple-600 mr-2.5 border border-purple-100"><Activity size={18} /></div>实际资金收付概览</div>
+                              <span className="text-[11px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-lg">来自财务流水</span>
                           </div>
-                          <div className="bg-slate-50 border border-slate-100 rounded-xl p-6 lg:p-8 flex flex-col xl:flex-row gap-8">
-                              <div className="xl:w-[28%] flex flex-col justify-center border-b xl:border-b-0 xl:border-r border-slate-200 pb-6 xl:pb-0 xl:pr-8">
-                                  <div className="flex items-center mb-5">
-                                      <div className="w-[92px] h-[92px] rounded-full bg-white border-[8px] border-emerald-100 flex flex-col items-center justify-center shadow-sm mr-5 shrink-0">
-                                          <span className="text-[24px] font-bold text-emerald-600">+8.6</span>
-                                          <span className="text-[11px] text-slate-400 font-bold">万元</span>
-                                      </div>
-                                      <div>
-                                          <h4 className="font-bold text-slate-800 text-[14px] mb-2">AI 资金预测</h4>
-                                          <p className="text-[13px] text-slate-600 leading-relaxed">12 月预测净现金转正，但 8 月中旬存在供应商集中付款波峰。</p>
-                                      </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                              {[
+                                  { label: '应收总额', value: apiDashboard?.totalReceivable ? Number.parseFloat(apiDashboard.totalReceivable) : 0, tone: 'text-blue-600' },
+                                  { label: '已收金额', value: apiDashboard?.totalReceived ? Number.parseFloat(apiDashboard.totalReceived) : 0, tone: 'text-emerald-600' },
+                                  { label: '应付总额', value: apiDashboard?.totalPayable ? Number.parseFloat(apiDashboard.totalPayable) : 0, tone: 'text-purple-600' },
+                                  { label: '已付金额', value: apiDashboard?.totalPaid ? Number.parseFloat(apiDashboard.totalPaid) : 0, tone: 'text-rose-600' },
+                              ].map(item => (
+                                  <div key={item.label} className="border border-slate-100 bg-slate-50 rounded-xl p-5">
+                                      <div className="text-[12px] font-bold text-slate-500 mb-2">{item.label}</div>
+                                      <div className={`text-[22px] font-bold font-mono ${item.tone}`}>{formatCurrency(item.value)}</div>
                                   </div>
-                                  <div className="bg-white border border-slate-100 rounded-xl p-4 text-[13px] text-slate-600 leading-relaxed">
-                                      <span className="font-bold text-purple-600">AI 建议：</span> 提前锁定 7 月回款计划，将 08-14 大额应付拆分为两期，可把最低现金水位从 -4.1 万元抬升至 +2.3 万元。
-                                  </div>
-                              </div>
-                              <div className="xl:w-[72%] min-h-[320px] flex flex-col">
-                                  <div className="flex items-center justify-between mb-5">
-                                      <span className="text-[13px] font-bold text-slate-700">近半年资金趋势 (单位: 万元)</span>
-                                      <span className="text-[11px] text-slate-400 font-bold">含 12 月预测值</span>
-                                  </div>
-                                  <div className="relative flex-1 min-h-[260px]">
-                                      <div className="absolute inset-0 right-[24px] left-[38px] z-0">
-                                          {[60, 40, 20, 0, -20].map((val, i) => (
-                                              <div key={val} className="absolute w-full flex items-center" style={{ top: `${i * 25}%` }}>
-                                                  <span className="text-[11px] text-slate-400 w-8 absolute -left-10 text-right">{val}</span>
-                                                  <div className="w-full border-t border-slate-200 border-dashed"></div>
-                                              </div>
-                                          ))}
-                                      </div>
-                                      <div className="absolute inset-0 right-[24px] left-[38px] z-10">
-                                          <svg viewBox="0 0 1000 300" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-                                              <defs>
-                                                  <linearGradient id="financeNetCashGradient" x1="0" y1="0" x2="0" y2="1">
-                                                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.18"/>
-                                                      <stop offset="100%" stopColor="#10b981" stopOpacity="0"/>
-                                                  </linearGradient>
-                                              </defs>
-                                              <path d="M 50 192 C 110 174, 170 168, 230 150 C 290 126, 350 114, 410 132 C 470 150, 530 198, 590 204 C 650 210, 710 174, 770 138 C 830 105, 890 84, 950 72 L 950 300 L 50 300 Z" fill="url(#financeNetCashGradient)" />
-                                              <path d="M 50 96 C 110 90, 170 78, 230 84 C 290 90, 350 66, 410 72 C 470 78, 530 102, 590 96 C 650 90, 710 72, 770 60 C 830 54, 890 48, 950 42" fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" />
-                                              <path d="M 50 156 C 110 144, 170 126, 230 132 C 290 138, 350 150, 410 156 C 470 162, 530 96, 590 72 C 650 96, 710 126, 770 138 C 830 144, 890 156, 950 168" fill="none" stroke="#f43f5e" strokeWidth="4" strokeLinecap="round" />
-                                              <path d="M 50 192 C 110 174, 170 168, 230 150 C 290 126, 350 114, 410 132 C 470 150, 530 198, 590 204 C 650 210, 710 174, 770 138 C 830 105, 890 84, 950 72" fill="none" stroke="#10b981" strokeWidth="4" strokeLinecap="round" />
-                                              <path d="M 770 138 C 830 105, 890 84, 950 72" fill="none" stroke="#8b5cf6" strokeWidth="4" strokeDasharray="8 8" strokeLinecap="round" />
-                                          </svg>
-                                      </div>
-                                      <div className="absolute inset-0 right-[24px] left-[38px] z-20">
-                                          {[
-                                              { x: 5, y: 64, color: '#10b981' },
-                                              { x: 23, y: 50, color: '#10b981' },
-                                              { x: 41, y: 44, color: '#10b981' },
-                                              { x: 59, y: 68, color: '#10b981' },
-                                              { x: 77, y: 46, color: '#10b981' },
-                                              { x: 95, y: 24, color: '#8b5cf6' },
-                                          ].map((pt, i) => (
-                                              <div key={i} className="absolute w-3.5 h-3.5 bg-white rounded-full shadow-sm" style={{ left: `${pt.x}%`, top: `${pt.y}%`, transform: 'translate(-50%, -50%)', border: `3px solid ${pt.color}` }}></div>
-                                          ))}
-                                      </div>
-                                      <div className="absolute top-[100%] right-[24px] left-[38px] h-8 mt-4">
-                                          {['7月', '8月', '9月', '10月', '11月', '12月(预测)'].map((label, i) => {
-                                              const leftPos = [5, 23, 41, 59, 77, 95][i];
-                                              const isPrediction = i === 5;
-                                              return <span key={label} className={`absolute text-[12px] transform -translate-x-1/2 ${isPrediction ? 'text-purple-600 font-bold' : 'text-slate-500 font-medium'}`} style={{ left: `${leftPos}%` }}>{label}</span>;
-                                          })}
-                                      </div>
-                                  </div>
-                              </div>
+                              ))}
+                          </div>
+                          <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">应收单据</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.receivableCount ?? 0} 笔</div></div>
+                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">应付单据</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.payableCount ?? 0} 笔</div></div>
+                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">待结算</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.pendingSettlementCount ?? 0} 笔</div></div>
                           </div>
                       </div>
                   </div>
               )}
               {activeTab === 'receivable' && (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
-                      <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Receipt className="w-4.5 h-4.5 text-blue-600" /> 应收账款明细 (AR)</h4></div>
+                      <div className="px-6 py-5 border-b border-slate-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-50/50">
+                          <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Receipt className="w-4.5 h-4.5 text-blue-600" /> 应收账款明细 (AR)</h4>
+                          <div className="relative bg-white border border-slate-200 rounded-lg flex items-center px-3 py-2 w-full sm:w-[320px]" title="输入完整源销售订单号精准查询">
+                              <Search size={15} className="text-slate-400 mr-2 shrink-0" />
+                              <input value={arSourceOrderInput} onChange={(event) => setArSourceOrderInput(event.target.value)} placeholder="源销售订单精准查询" className="text-[13px] outline-none w-full bg-transparent" />
+                          </div>
+                      </div>
                       <div className="overflow-x-auto">
                           <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">应收单号</th><th className="px-6 py-4 font-bold">客户名称</th><th className="px-6 py-4 font-bold">源销售订单</th><th className="px-6 py-4 font-bold text-right">应收总额</th><th className="px-6 py-4 font-bold text-right text-emerald-600">已收款</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                          <tbody className="divide-y divide-slate-100">{arRows.map(row => (
+                          <tbody className="divide-y divide-slate-100">{visibleArRows.map(row => (
                               <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.customer}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.soId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.received)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'} px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 w-max`}><CheckCircle2 size={12}/>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('arView', row)} /><TableActionButton icon={ArrowDownToLine} label="收款" tone="emerald" onClick={() => openFinanceRowAction('arCollect', row)} disabled={row.status === '已结清'} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
-                      </div><Pagination total={arRows.length} page={1} limit={10} />
+                      </div><Pagination total={visibleArRows.length} page={1} limit={10} />
                   </div>
               )}
               {activeTab === 'payable' && (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
-                      <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CreditCard className="w-4.5 h-4.5 text-blue-600" /> 应付账款明细 (AP)</h4></div>
+                      <div className="px-6 py-5 border-b border-slate-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-50/50">
+                          <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CreditCard className="w-4.5 h-4.5 text-blue-600" /> 应付账款明细 (AP)</h4>
+                          <div className="relative bg-white border border-slate-200 rounded-lg flex items-center px-3 py-2 w-full sm:w-[320px]" title="输入完整源采购订单号精准查询">
+                              <Search size={15} className="text-slate-400 mr-2 shrink-0" />
+                              <input value={apSourceOrderInput} onChange={(event) => setApSourceOrderInput(event.target.value)} placeholder="源采购订单精准查询" className="text-[13px] outline-none w-full bg-transparent" />
+                          </div>
+                      </div>
                       <div className="overflow-x-auto">
-                          <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">应付单号</th><th className="px-6 py-4 font-bold">供应商名称</th><th className="px-6 py-4 font-bold text-right">应付总额</th><th className="px-6 py-4 font-bold text-right text-emerald-600">已付款</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                          <tbody className="divide-y divide-slate-100">{apRows.map(row => (
-                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.supplier}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.paid)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} border px-2.5 py-1 rounded-lg text-[11px] font-bold`}>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('apView', row)} /><TableActionButton icon={ArrowUpFromLine} label="付款" tone="amber" onClick={() => openFinanceRowAction('apPay', row)} disabled={row.status === '已结清'} /></TableActionGroup></td></tr>
+                          <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">应付单号</th><th className="px-6 py-4 font-bold">供应商名称</th><th className="px-6 py-4 font-bold">源采购订单</th><th className="px-6 py-4 font-bold text-right">应付总额</th><th className="px-6 py-4 font-bold text-right text-emerald-600">已付款</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
+                          <tbody className="divide-y divide-slate-100">{visibleApRows.map(row => (
+                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.supplier}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.poId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.paid)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} border px-2.5 py-1 rounded-lg text-[11px] font-bold`}>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('apView', row)} /><TableActionButton icon={ArrowUpFromLine} label="付款" tone="amber" onClick={() => openFinanceRowAction('apPay', row)} disabled={row.status === '已结清'} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
-                      </div><Pagination total={apRows.length} page={1} limit={10} />
+                      </div><Pagination total={visibleApRows.length} page={1} limit={10} />
                   </div>
               )}
               {activeTab === 'cost' && (
@@ -8945,9 +10605,9 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                       <div className="overflow-x-auto">
                           <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">核算单号</th><th className="px-6 py-4 font-bold">产出归集物料</th><th className="px-6 py-4 font-bold text-right bg-slate-50">实际核算总价</th><th className="px-6 py-4 font-bold text-center">差异率</th><th className="px-6 py-4 font-bold">结账状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                           <tbody className="divide-y divide-slate-100">{baseCostRows.map(row => (
-                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.product}</td><td className="px-6 py-4 text-right font-mono font-bold text-slate-900 bg-slate-50/50">{formatCurrency(row.totalCost)}</td><td className="px-6 py-4 text-center font-mono font-bold"><span className={`px-2.5 py-0.5 rounded text-[11px] bg-rose-50 text-rose-600`}>{row.variance}</span></td><td className="px-6 py-4"><span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><RefreshCw size={12} className="animate-spin-slow"/>核算中</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openFinanceRowAction('costView', row)} /><TableActionButton icon={CheckCircle2} label="复核" tone="emerald" onClick={() => openFinanceRowAction('costClose', row)} /></TableActionGroup></td></tr>
+                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.product}</td><td className="px-6 py-4 text-right font-mono font-bold text-slate-900 bg-slate-50/50">{formatCurrency(row.totalCost)}</td><td className="px-6 py-4 text-center font-mono font-bold"><span className={`px-2.5 py-0.5 rounded text-[11px] ${row.variance.startsWith('-') ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{row.variance}</span></td><td className="px-6 py-4"><span className={`${row.status === '已核算' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} border px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max`}>{row.status === '已核算' ? <CheckCircle2 size={12}/> : <RefreshCw size={12} className="animate-spin-slow"/>}{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openFinanceRowAction('costView', row)} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
-                      </div><Pagination total={1} page={1} limit={10} />
+                      </div><Pagination total={baseCostRows.length} page={1} limit={10} />
                   </div>
               )}
           </div>
@@ -8959,14 +10619,52 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 // ==========================================
 // 6. 人员管理模块 (PersonnelManagement)
 // ==========================================
-const hr_directoryData = [{ id: 'EMP-001', name: '王建国', dept: '总装车间', role: '高级装配工', phone: '138****1234', status: '在职' }];
-const hr_attendanceData = [{ id: 'ATT-260710-01', empName: '王建国', date: '2026-07-10', shift: '早班', clockIn: '07:55', clockOut: '16:05', status: '正常' }];
-const hr_skillsData = [{ id: 'CERT-001', empName: '王建国', skillName: '高压电工作业证', issueDate: '2024-05-10', expiryDate: '2027-05-09', level: '高级', status: '有效' }];
-
-const PersonnelManagement = () => {
+const PersonnelManagement = ({ currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [actionModal, setActionModal] = useState(null);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+
+  // Phase 9: 人员管理 API 集成
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const [employees, setEmployees] = useState([]);
+  const [attendances, setAttendances] = useState([]);
+  const [skills, setSkills] = useState([]);
+
+  const mapBackendEmployee = (emp) => ({
+    id: emp.employeeNo, name: emp.name, dept: emp.department, role: emp.position,
+    phone: emp.phone || '138****' + (emp.employeeNo || '').slice(-4),
+    status: emp.status === 'active' ? '在职' : emp.status === 'transferring' ? '调动中' : emp.status === 'leave' ? '休假' : emp.status === 'resigned' ? '离职' : '在职',
+    _backend: emp,
+  });
+  const mapBackendAttendance = (att) => ({
+    id: att.recordNo, empName: att.employeeName, date: att.recordDate,
+    shift: att.shift, clockIn: att.clockIn || '-', clockOut: att.clockOut || '-',
+    status: att.status, _backend: att,
+  });
+  const mapBackendSkill = (sk) => ({
+    id: sk.certNo, empName: sk.employeeName, skillName: sk.skillName,
+    issueDate: sk.issueDate || '-', expiryDate: sk.expiryDate || '-',
+    level: sk.level, status: sk.status, _backend: sk,
+  });
+
+  const refreshPersonnel = async () => {
+    if (!formalContext) return;
+    try {
+      const [empRes, attRes, skillRes] = await Promise.all([
+        personnelApi.listEmployees(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
+        personnelApi.listAttendances(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
+        personnelApi.listSkills(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
+      ]);
+      setEmployees(empRes?.items?.map(mapBackendEmployee) || []);
+      setAttendances(attRes?.items?.map(mapBackendAttendance) || []);
+      setSkills(skillRes?.items?.map(mapBackendSkill) || []);
+    } catch {
+      setEmployees([]);
+      setAttendances([]);
+      setSkills([]);
+    }
+  };
+  useEffect(() => { refreshPersonnel(); }, [formalContext?.tenantId, formalContext?.accessToken]);
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -9227,8 +10925,8 @@ const PersonnelManagement = () => {
                     <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><BookOpen className="w-4.5 h-4.5 text-blue-600" /> 花名册</h4></div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">工号</th><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">部门</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">{hr_directoryData.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>在职</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /><TableActionButton icon={Edit2} label="维护" tone="purple" onClick={() => openHrRowAction('employeeEdit', r)} /></TableActionGroup></td></tr>)}</tbody></table>
-                    </div><Pagination total={1} page={1} limit={10} />
+                        <tbody className="divide-y divide-slate-100">{employees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>在职</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /><TableActionButton icon={Edit2} label="维护" tone="purple" onClick={() => openHrRowAction('employeeEdit', r)} /></TableActionGroup></td></tr>)}</tbody></table>
+                    </div><Pagination total={employees.length} page={1} limit={10} />
                 </div>
             )}
             {activeTab === 'attendance' && (
@@ -9236,8 +10934,8 @@ const PersonnelManagement = () => {
                     <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CalendarDays className="w-4.5 h-4.5 text-blue-600" /> 考勤与排班</h4></div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">日期</th><th className="px-6 py-4 font-bold">班次</th><th className="px-6 py-4 font-bold font-mono">打卡时间</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">{hr_attendanceData.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.date}</td><td className="px-6 py-4 font-medium text-slate-600">{r.shift}</td><td className="px-6 py-4 font-mono font-bold text-slate-800">{r.clockIn} - {r.clockOut}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openHrRowAction('attendanceDetail', r)} /><TableActionButton icon={CalendarRange} label="调班" tone="amber" onClick={() => openHrRowAction('attendanceAdjust', r)} /></TableActionGroup></td></tr>)}</tbody></table>
-                    </div><Pagination total={1} page={1} limit={10} />
+                        <tbody className="divide-y divide-slate-100">{attendances.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.date}</td><td className="px-6 py-4 font-medium text-slate-600">{r.shift}</td><td className="px-6 py-4 font-mono font-bold text-slate-800">{r.clockIn} - {r.clockOut}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openHrRowAction('attendanceDetail', r)} /><TableActionButton icon={CalendarRange} label="调班" tone="amber" onClick={() => openHrRowAction('attendanceAdjust', r)} /></TableActionGroup></td></tr>)}</tbody></table>
+                    </div><Pagination total={attendances.length} page={1} limit={10} />
                 </div>
             )}
             {activeTab === 'skills' && (
@@ -9245,8 +10943,8 @@ const PersonnelManagement = () => {
                     <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Award className="w-4.5 h-4.5 text-blue-600" /> 特种资质防呆库</h4></div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">证书编号</th><th className="px-6 py-4 font-bold">持证人</th><th className="px-6 py-4 font-bold">资质名称</th><th className="px-6 py-4 font-bold">到期日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">{hr_skillsData.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 font-bold text-slate-800">{r.skillName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.expiryDate}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="证书" onClick={() => openHrRowAction('skillView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
-                    </div><Pagination total={1} page={1} limit={10} />
+                        <tbody className="divide-y divide-slate-100">{skills.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 font-bold text-slate-800">{r.skillName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.expiryDate}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="证书" onClick={() => openHrRowAction('skillView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
+                    </div><Pagination total={skills.length} page={1} limit={10} />
                 </div>
             )}
         </div>
@@ -9259,27 +10957,6 @@ const PersonnelManagement = () => {
 // ==========================================
 // 7. 产业链管理模块 (SupplyChainManagement)
 // ==========================================
-const sc_suppliersData = [
-  { id: 'SUP-001', name: '深圳恒通电子科技有限公司', creditCode: '-', type: '上游供应商', category: '电子元器件', qualification: '附件待上传', certs: '营业执照未上传 / ISO9001 可选 / RoHS 可选', expire: '-', admittance: '可建档，关键采购前补附件', rating: 'B', risk: '中', owner: '李明', cooperation: '0 次', amount: '-' },
-  { id: 'SUP-002', name: '深圳华芯科技有限公司', creditCode: '91440300MA5GX9N12C', type: '核心供应商', category: 'AI 算力芯片', qualification: '附件完整', certs: '营业执照 / ISO9001 / IATF16949 / RoHS', expire: '2027-03-18', admittance: '正常合作', rating: 'A', risk: '低', owner: '采购一组', cooperation: '18 次', amount: '¥ 6,280,000' },
-  { id: 'SUP-003', name: '苏州精密传感器有限公司', creditCode: '91320594MA1T8B6Q7R', type: '关键二供', category: '工业传感器', qualification: '附件临期提醒', certs: 'ISO9001 附件60天内到期', expire: '2026-08-12', admittance: '关键件采购前更新附件', rating: 'B+', risk: '中', owner: '采购二组', cooperation: '7 次', amount: '¥ 1,160,000' },
-];
-
-const sc_customersData = [
-  { id: 'CUS-001', name: '中国石油化工股份有限公司', creditCode: '91110000710926094P', legal: '侯启军', operation: '正常', businessStatus: '存续（在营、开业、在册）', size: '大型央企', receivable: '¥ 0', overdueDays: 0, exposure: '低', pressure: '低', role: '产业链客户', industry: '能源化工', revenue: '¥ 12,117,761.37万', alerts: [] },
-  { id: 'CUS-002', name: '上蔡泉洁商贸有限公司', creditCode: '914***********63D', legal: '王献奇', operation: '异常', businessStatus: '存续（在营、开业、在册）', size: '小微企业', receivable: '¥ 186,000', overdueDays: 42, exposure: '高', pressure: '高', role: '下游客户', industry: '商贸流通', revenue: '¥ 100万', alerts: ['未依照《企业信息公示暂行条例》第八条规定的期限公示年度报告'] },
-  { id: 'CUS-003', name: '安徽赐寿植物工厂有限公司', creditCode: '91341802MA2MTEWR1T', legal: '陈晓峰', operation: '正常', businessStatus: '存续（在营、开业、在册）', size: '成长型企业', receivable: '¥ 74,500', overdueDays: 8, exposure: '中', pressure: '中', role: '下游客户', industry: '智慧农业', revenue: '¥ 860万', alerts: [] },
-  { id: 'CUS-004', name: '上海寻梦信息技术有限公司', creditCode: '91310105090037252C', legal: '陈磊', operation: '正常', businessStatus: '存续（在营、开业、在册）', size: '平台企业', receivable: '¥ 0', overdueDays: 0, exposure: '低', pressure: '低', role: '产业链客户', industry: '互联网平台', revenue: '¥ 1,000万', alerts: [] },
-  { id: 'CUS-005', name: '大橘子智能制造', creditCode: '-', legal: '-', operation: '待核验', businessStatus: '-', size: '小企业', receivable: '¥ 92,000', overdueDays: 31, exposure: '高', pressure: '高', role: '下游客户', industry: '智能制造', revenue: '-', alerts: ['工商信息缺失，需补充统一社会信用代码'] },
-  { id: 'CUS-006', name: '美荔枝科技制造有限公司', creditCode: '-', legal: '-', operation: '待核验', businessStatus: '-', size: '小企业', receivable: '¥ 58,000', overdueDays: 19, exposure: '中', pressure: '高', role: '下游客户', industry: '电子制造', revenue: '-', alerts: ['经营信息缺失，客户信用额度需人工复核'] },
-];
-
-const sc_riskEvents = [
-  { company: '上蔡泉洁商贸有限公司', type: '经营异常 + 应收逾期', level: '高风险', owner: '销售 / 财务', action: '冻结新增账期，转预付款或分批交付' },
-  { company: '大橘子智能制造', type: '工商信息缺失 + 逾期31天', level: '高风险', owner: '销售 / 风控', action: '补齐企业经营信息，暂停赊销额度' },
-  { company: '美荔枝科技制造有限公司', type: '经营信息缺失 + 逾期19天', level: '高风险', owner: '销售 / 风控', action: '人工复核授信，保留低额度账期' },
-];
-
 const SupplyRiskBadge = ({ level }) => {
   const tone = level === '高' || level === '高风险'
     ? 'bg-rose-50 text-rose-600 border-rose-100'
@@ -9324,12 +11001,64 @@ const CustomerRiskStrategyCards = ({ items }) => (
   </div>
 );
 
-const SupplyChainManagement = () => {
+const SupplyChainManagement = ({ currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [actionModal, setActionModal] = useState(null);
   const [riskDetailOpen, setRiskDetailOpen] = useState(false);
   const [selectedRiskCustomer, setSelectedRiskCustomer] = useState(null);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+
+  // Phase 9: 产业链管理 API 集成
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [riskEvents, setRiskEvents] = useState([]);
+  const [verifyingCustomerId, setVerifyingCustomerId] = useState<string | null>(null);
+
+  const mapBackendSupplier = (sup) => ({
+    id: sup.supplierNo, name: sup.name, creditCode: sup.creditCode || '-',
+    type: sup.type, category: sup.category,
+    qualification: sup.qualification || '附件待上传',
+    certs: (sup.metadata?.certs) || (sup.qualification === '附件完整' ? '营业执照 / ISO9001' : '附件待上传'),
+    expire: (sup.metadata?.expire) || '-',
+    admittance: sup.admittance || '可建档',
+    rating: sup.rating, risk: sup.riskLevel, owner: sup.owner || '-',
+    cooperation: sup.cooperationCount > 0 ? sup.cooperationCount + ' 次' : '0 次',
+    amount: sup.totalAmount || '-', _backend: sup,
+  });
+  const mapBackendCustomer = (cus) => ({
+    id: cus.customerNo, name: cus.name, creditCode: cus.creditCode || '-',
+    legal: cus.legalRepresentative || '-', operation: cus.operationStatus || '待核验',
+    businessStatus: cus.businessStatus || '-', size: cus.enterpriseSize || '-',
+    receivable: cus.receivable || '¥ 0', overdueDays: cus.overdueDays || 0,
+    exposure: cus.exposureLevel || '低', pressure: cus.pressureLevel || '低',
+    role: cus.role || '下游客户', industry: cus.industry || '-',
+    revenue: cus.revenue || '-', alerts: cus.alerts || [], _backend: cus,
+  });
+  const mapBackendRiskEvent = (risk) => ({
+    company: risk.companyName, type: risk.riskType,
+    level: risk.riskLevel, owner: risk.owner, action: risk.action,
+    _backend: risk,
+  });
+
+  const refreshSupplyChain = async () => {
+    if (!formalContext) return;
+    try {
+      const [supRes, cusRes, riskRes] = await Promise.all([
+        supplyChainApi.listSuppliers(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
+        supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
+        supplyChainApi.listRiskEvents(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
+      ]);
+      setSuppliers(supRes?.items?.map(mapBackendSupplier) || []);
+      setCustomers(cusRes?.items?.map(mapBackendCustomer) || []);
+      setRiskEvents(riskRes?.items?.map(mapBackendRiskEvent) || []);
+    } catch {
+      setSuppliers([]);
+      setCustomers([]);
+      setRiskEvents([]);
+    }
+  };
+  useEffect(() => { refreshSupplyChain(); }, [formalContext?.tenantId, formalContext?.accessToken]);
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -9339,6 +11068,44 @@ const SupplyChainManagement = () => {
   const openCustomerRiskDetail = (customer) => {
     setSelectedRiskCustomer(customer);
     setRiskDetailOpen(true);
+  };
+
+  const verifyCustomerSurvival = async (row) => {
+    if (!formalContext || verifyingCustomerId) return;
+    setVerifyingCustomerId(row.id);
+    try {
+      const verification = await supplyChainApi.verifyCompany(formalContext, {
+        name: row.name,
+        creditCode: row.creditCode === '-' ? undefined : row.creditCode,
+      });
+
+      if (verification.candidates.length !== 1 || !verification.registrationStatus) {
+        showCenterToast(verification.message, verification.result === 'NOT_FOUND' ? 'warning' : 'warning');
+        return;
+      }
+
+      const candidate = verification.candidates[0];
+      const businessStatus = `企查查 ${candidate.registrationStatus} · ${new Date(verification.verifiedAt).toLocaleString('zh-CN')}`;
+      const saved = await supplyChainApi.updateCustomer(formalContext, row._backend, {
+        operationStatus: verification.result === 'SURVIVING' ? '存续' : verification.result === 'NOT_SURVIVING' ? '非存续' : '待确认',
+        businessStatus,
+        metadata: {
+          ...(row._backend.metadata || {}),
+          qccVerification: {
+            keyNo: candidate.keyNo, name: candidate.name, creditCode: candidate.creditCode,
+            legalRepresentative: candidate.legalRepresentative, registrationStatus: candidate.registrationStatus,
+            establishedOn: candidate.establishedOn, result: verification.result, verifiedAt: verification.verifiedAt,
+          },
+        },
+      });
+      setCustomers((prev) => prev.map((item) => item.id === row.id ? mapBackendCustomer(saved.customer) : item));
+      showCenterToast(`已核验：${candidate.name} ${candidate.registrationStatus}`, verification.result === 'SURVIVING' ? 'success' : 'warning');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '企查查核验失败';
+      showCenterToast(message, 'warning');
+    } finally {
+      setVerifyingCustomerId(null);
+    }
   };
 
   const openSupplyAction = (kind) => {
@@ -9607,14 +11374,14 @@ const SupplyChainManagement = () => {
                         <div className="text-[12px] text-slate-500 mt-1">查看供应商基本信息；营业执照、体系证书和行业许可作为附件上传留档</div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="bg-emerald-50 border border-emerald-100 text-emerald-600 px-3 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5"><CheckCircle2 size={13}/> 数据由企查查权威验证</span>
+                        <span className="bg-slate-50 border border-slate-100 text-slate-500 px-3 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5"><ShieldCheck size={13}/> 企业存续支持企查查核验</span>
                         <div className="relative bg-white border border-slate-200 rounded-lg flex items-center px-3 py-2 w-[280px]"><Search size={15} className="text-slate-400 mr-2" /><input placeholder="搜索企业名称、统一社会信用代码" className="text-[13px] outline-none w-full bg-transparent" /></div>
                       </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">企业名称</th><th className="px-6 py-4 font-bold">统一社会信用代码</th><th className="px-6 py-4 font-bold">主营品类</th><th className="px-6 py-4 font-bold">附件档案</th><th className="px-6 py-4 font-bold">合作规则</th><th className="px-6 py-4 font-bold text-center">提醒</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">
-                          {sc_suppliersData.map(r => (
+                          {suppliers.map(r => (
                             <tr key={r.id} className="hover:bg-slate-50/50">
                               <td className="px-6 py-4">
                                 <button type="button" onClick={() => openSupplyRowAction('supplierView', r)} className="font-bold text-blue-600 hover:text-blue-700 hover:underline text-left">{r.name}</button>
@@ -9634,7 +11401,7 @@ const SupplyChainManagement = () => {
                           ))}
                         </tbody></table>
                     </div>
-                    <Pagination total={sc_suppliersData.length} page={1} limit={10} />
+                    <Pagination total={suppliers.length} page={1} limit={10} />
                 </div>
             )}
             {activeTab === 'customers' && (
@@ -9649,7 +11416,7 @@ const SupplyChainManagement = () => {
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">客户企业</th><th className="px-6 py-4 font-bold">统一社会信用代码</th><th className="px-6 py-4 font-bold">企业经营</th><th className="px-6 py-4 font-bold text-right">应收余额</th><th className="px-6 py-4 font-bold text-center">逾期</th><th className="px-6 py-4 font-bold text-center">承压</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">
-                          {sc_customersData.map(r => {
+                          {customers.map(r => {
                             const showRiskButton = isCustomerAbnormal(r);
                             return (
                               <tr key={r.id} className={`${r.exposure === '高' ? 'bg-rose-50/30' : ''} hover:bg-slate-50/60`}>
@@ -9662,6 +11429,9 @@ const SupplyChainManagement = () => {
                                 <td className="px-6 py-4">
                                   <div className="flex items-center justify-end gap-2 min-w-[190px]">
                                     <button type="button" onFocus={() => openSupplyRowAction('customerView', r)} onMouseDown={() => openSupplyRowAction('customerView', r)} onClick={() => openSupplyRowAction('customerView', r)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors shadow-sm text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100"><Landmark size={14} />经营</button>
+                                    <button type="button" onClick={() => verifyCustomerSurvival(r)} disabled={verifyingCustomerId !== null} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors shadow-sm text-emerald-600 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                      <ShieldCheck size={14} />{verifyingCustomerId === r.id ? '核验中' : '存续'}
+                                    </button>
                                     {showRiskButton && (
                                       <button type="button" onClick={() => openCustomerRiskDetail(r)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors shadow-sm text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100"><Receipt size={14} />风控</button>
                                     )}
@@ -9672,7 +11442,7 @@ const SupplyChainManagement = () => {
                           })}
                         </tbody></table>
                     </div>
-                    <Pagination total={sc_customersData.length} page={1} limit={10} />
+                    <Pagination total={customers.length} page={1} limit={10} />
                 </div>
             )}
             {activeTab === 'risk' && (
@@ -9715,8 +11485,8 @@ const SupplyChainManagement = () => {
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">企业名称</th><th className="px-6 py-4 font-bold">异常类型</th><th className="px-6 py-4 font-bold">等级</th><th className="px-6 py-4 font-bold">责任部门</th><th className="px-6 py-4 font-bold">建议动作</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                      <tbody className="divide-y divide-slate-100">{sc_riskEvents.map(r => {
-                        const matchedCustomer = sc_customersData.find(item => item.name === r.company);
+                      <tbody className="divide-y divide-slate-100">{riskEvents.map(r => {
+                        const matchedCustomer = customers.find(item => item.name === r.company);
                         return <tr key={`${r.company}-${r.type}`} className="hover:bg-slate-50/60"><td className="px-6 py-4 font-bold text-blue-600">{r.company}</td><td className="px-6 py-4 text-slate-700">{r.type}</td><td className="px-6 py-4"><SupplyRiskBadge level={r.level} /></td><td className="px-6 py-4 text-slate-600 font-bold">{r.owner}</td><td className="px-6 py-4 text-slate-700">{r.action}</td><td className="px-6 py-4 text-right"><button type="button" onClick={() => openCustomerRiskDetail(matchedCustomer)} disabled={!matchedCustomer} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100"><Eye size={14} />查看</button></td></tr>;
                       })}</tbody></table>
                     </div>
@@ -9981,7 +11751,7 @@ const AIHubManagement = ({ onOpenAssistant }) => {
                           onKeyDown={(event) => event.key === 'Enter' && sendIndustrialAssistantMessage()}
                           aria-label="向 AI 助手提问"
                           placeholder="输入问题，回车发送..."
-                          className="w-full bg-transparent outline-none text-[13px] text-slate-700"
+                          className="w-full bg-transparent outline-none focus-visible:outline-none text-[13px] text-slate-700"
                         />
                       </div>
                       <button type="button" aria-label="发送问题" onClick={() => sendIndustrialAssistantMessage()} className="w-11 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"><Send size={18}/></button>
@@ -10461,19 +12231,6 @@ const AIDataAnalysisManagement = () => {
 // ==========================================
 // 10. 消息管理模块 (MessageManagement)
 // ==========================================
-const msg_mockData = [
-    { id: 'MSG-260621-01', type: 'ai', level: 'critical', title: '财务资金流断裂风险预警', content: '系统测算发现未来 15 天内应付账款波峰叠加，存在 ¥41,200.00 流动性缺口。AI 建议立即向 [test01客户] 发起应收账款催收，以平滑资金曲线。', time: '10分钟前', read: false, source: 'AI 数据分析中心', actions: ['穿透至财务看板', '一键生成催款通知'] },
-    { id: 'MSG-260621-02', type: 'approval', level: 'warning', title: '采购申请特批 (PR-260705-01)', content: 'AI算力芯片 (RM201) 采购申请金额达 12.5 万元，超出系统设定的免批阈值。需部门总监进行合规性复核。', time: '2小时前', read: false, source: '采购管理模块', actions: ['快捷批准', '驳回修改', '查看单据详情'] },
-    { id: 'MSG-260620-03', type: 'system', level: 'info', title: '工业AI平台 工业大模型 V2.4 更新发布', content: '系统将于本周日凌晨 02:00 进行平滑升级。本次更新包含：NL2SQL 查询引擎增强、多模态视觉缺陷识别精度提升至 99.8%。升级期间边缘节点将自动缓存数据，不影响车间生产。', time: '昨天 14:30', read: true, source: '系统管理员Admin' },
-    { id: 'MSG-260620-04', type: 'ai', level: 'warning', title: '订单交期延误高危预警', content: '客户 [上海万申] 订单 WO-2026-105 前置组装实际报工耗时超出标准定额 22%，综合测算逾期概率高达 85%。', time: '昨天 09:15', read: true, source: '生产管理模块', actions: ['调取 APS 重新排产', '忽略预警'] }
-];
-
-const rule_mockData = [
-    { id: 'R-001', name: '高价值订单流失预警拦截', trigger: '商机/订单流失概率 > 80%', target: '销售总监、所属客户经理', channels: ['企微机器人', '系统站内信'], aiRewrite: true, status: true, freq: '即时触达', template: '客户 {customerName} 的订单流失概率已超过 {riskRate}，请客户经理在 30 分钟内跟进。' },
-    { id: 'R-002', name: '车间核心设备宕机阻击', trigger: '关键机台(Level A) OEE < 50% 且持续 > 30分钟', target: '设备维修班组长、生产主管', channels: ['短信 (SMS)', '系统站内信'], aiRewrite: false, status: true, freq: '即时触达，升级报警', template: '设备 {machineName} OEE 已低于 {oeeRate}，持续 {duration}，请立即处理。' },
-    { id: 'R-003', name: '大额采购申请日常审批流', trigger: 'PR 申请表金额 > 50,000 元', target: '采购部经理', channels: ['系统站内信', '邮件 (Email)'], aiRewrite: false, status: false, freq: '每 2 小时聚合发送', template: '采购申请 {prNo} 金额 {amount} 已超过免批阈值，请及时审批。' }
-];
-
 const channelOptions = ['企微机器人', '短信 (SMS)', '系统站内信', '邮件 (Email)', '钉钉机器人'];
 
 const createEmptyRule = (index = 1) => ({
@@ -10592,7 +12349,7 @@ const MessageManagement = ({ onNavigateModule, msgs, setMsgs, focusMsgId, focusT
     const [activeTab, setActiveTab] = useState('inbox');
     const [msgFilter, setMsgFilter] = useState('all'); // all, ai, approval, system
     const [selectedMsgId, setSelectedMsgId] = useState(focusMsgId || msgs[0]?.id);
-    const [rules, setRules] = useState(rule_mockData);
+    const [rules, setRules] = useState([]);
     const [ruleConfig, setRuleConfig] = useState(null);
     const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
     const [actionModal, setActionModal] = useState(null);
@@ -10963,61 +12720,43 @@ const roleWorkbenchMeta = {
   超级管理员: { title: '平台治理台', summary: '管理租户、组织、权限、审批、审计与系统运行状态。' },
 };
 
-const roleMetricSets = {
-  老板: [
-    { title: '本月全盘营收（预估）', value: '1,850', unit: '万', trend: '+12.5%', trendTone: 'emerald', icon: BadgeDollarSign, iconTone: 'blue' },
-    { title: '订单准时交付率', value: '96.8', unit: '%', trend: '+2.4%', trendTone: 'emerald', icon: ClipboardCheck, iconTone: 'purple' },
-    { title: '受控风险资金', value: '126', unit: '万', trend: '3项', trendTone: 'rose', icon: ShieldAlert, iconTone: 'amber' },
-    { title: '经营现金净流入', value: '318', unit: '万', trend: '+8.2%', trendTone: 'emerald', icon: Wallet, iconTone: 'emerald' },
-  ],
-  销售: [
-    { title: '本月新增订单', value: '286', unit: '万', trend: '+18.4%', trendTone: 'emerald', icon: TrendingUp, iconTone: 'blue' },
-    { title: '报价转订单率', value: '41.6', unit: '%', trend: '+3.1%', trendTone: 'emerald', icon: Target, iconTone: 'purple' },
-    { title: '临期交付订单', value: '7', unit: '单', trend: '2高危', trendTone: 'rose', icon: Clock, iconTone: 'amber' },
-    { title: '应收回款达成', value: '92.3', unit: '%', trend: '+1.8%', trendTone: 'emerald', icon: Receipt, iconTone: 'emerald' },
-  ],
-  计划员: [
-    { title: '计划排产达成率', value: '96.8', unit: '%', trend: '+2.4%', trendTone: 'emerald', icon: CalendarCheck, iconTone: 'blue' },
-    { title: '待展算生产需求', value: '18', unit: '项', trend: '5加急', trendTone: 'rose', icon: Calculator, iconTone: 'purple' },
-    { title: '物料齐套率', value: '91.2', unit: '%', trend: '+4.6%', trendTone: 'emerald', icon: Box, iconTone: 'amber' },
-    { title: '产能负荷峰值', value: '86', unit: '%', trend: '可控', trendTone: 'emerald', icon: Gauge, iconTone: 'emerald' },
-  ],
-  采购: [
-    { title: '待处理采购申请', value: '23', unit: '项', trend: '6加急', trendTone: 'rose', icon: FilePlus, iconTone: 'blue' },
-    { title: '供应商准交率', value: '94.5', unit: '%', trend: '+1.7%', trendTone: 'emerald', icon: Truck, iconTone: 'purple' },
-    { title: '本月采购金额', value: '468', unit: '万', trend: '-3.2%', trendTone: 'emerald', icon: ShoppingCart, iconTone: 'amber' },
-    { title: '待对账订单', value: '12', unit: '单', trend: '2逾期', trendTone: 'rose', icon: Receipt, iconTone: 'emerald' },
-  ],
-  仓管: [
-    { title: '今日待入库', value: '18', unit: '单', trend: '4加急', trendTone: 'rose', icon: ArrowDownToLine, iconTone: 'blue' },
-    { title: '今日待出库', value: '27', unit: '单', trend: '完成68%', trendTone: 'emerald', icon: ArrowUpFromLine, iconTone: 'purple' },
-    { title: '低水位预警物料', value: '12', unit: '项', trend: '+3项', trendTone: 'rose', icon: AlertTriangle, iconTone: 'amber' },
-    { title: '账实一致率', value: '99.4', unit: '%', trend: '+0.3%', trendTone: 'emerald', icon: Warehouse, iconTone: 'emerald' },
-  ],
-  车间: [
-    { title: '今日计划工单', value: '32', unit: '单', trend: '完成21', trendTone: 'emerald', icon: Factory, iconTone: 'blue' },
-    { title: '一次检验合格率', value: '98.1', unit: '%', trend: '+0.8%', trendTone: 'emerald', icon: ShieldCheck, iconTone: 'purple' },
-    { title: '异常停机设备', value: '2', unit: '台', trend: '1高危', trendTone: 'rose', icon: Wrench, iconTone: 'amber' },
-    { title: '在制品准时流转', value: '94.7', unit: '%', trend: '+2.1%', trendTone: 'emerald', icon: Route, iconTone: 'emerald' },
-  ],
-  财务: [
-    { title: '本月应收余额', value: '682', unit: '万', trend: '逾期8%', trendTone: 'rose', icon: Receipt, iconTone: 'blue' },
-    { title: '本月应付余额', value: '459', unit: '万', trend: '到期12单', trendTone: 'rose', icon: CreditCard, iconTone: 'purple' },
-    { title: '业财单据匹配率', value: '97.9', unit: '%', trend: '+1.2%', trendTone: 'emerald', icon: GitMerge, iconTone: 'amber' },
-    { title: '待生成凭证', value: '26', unit: '笔', trend: '自动化82%', trendTone: 'emerald', icon: Landmark, iconTone: 'emerald' },
-  ],
-  人事: [
-    { title: '当前在职人数', value: '326', unit: '人', trend: '+6人', trendTone: 'emerald', icon: Users, iconTone: 'blue' },
-    { title: '今日核心岗出勤率', value: '98.5', unit: '%', trend: '+1.2%', trendTone: 'emerald', icon: UserCheck, iconTone: 'purple' },
-    { title: '证书临期人员', value: '9', unit: '人', trend: '3高危', trendTone: 'rose', icon: Award, iconTone: 'amber' },
-    { title: '关键人才风险', value: '3', unit: '人', trend: '需干预', trendTone: 'rose', icon: ShieldAlert, iconTone: 'emerald' },
-  ],
-  超级管理员: [
-    { title: '本月全盘营收（预估）', value: '1,850', unit: '万', trend: '+12.5%', trendTone: 'emerald', icon: BadgeDollarSign, iconTone: 'blue' },
-    { title: '排产达成率', value: '96.8', unit: '%', trend: '+2.4%', trendTone: 'emerald', icon: CalendarCheck, iconTone: 'purple' },
-    { title: '低水位预警物料', value: '12', unit: '项', trend: '+3项', trendTone: 'rose', icon: AlertTriangle, iconTone: 'amber' },
-    { title: '核心岗出勤率', value: '98.5', unit: '%', trend: '+1.2%', trendTone: 'emerald', icon: UserCheck, iconTone: 'emerald' },
-  ],
+const workbenchMetricVisual = (key: string, index: number) => {
+  const tones = ['blue', 'purple', 'amber', 'emerald'] as const;
+  const icons = {
+    monthlyReceivable: BadgeDollarSign,
+    newOrderAmount: BadgeDollarSign,
+    purchaseAmount: ShoppingCart,
+    openReceivable: Receipt,
+    openPayable: CreditCard,
+    overdueReceivable: Coins,
+    settlementDocuments: Landmark,
+    productionCompletionRate: Factory,
+    activeWorkOrders: Factory,
+    overdueWorkOrders: AlertTriangle,
+    pendingDemands: ListTodo,
+    openFqc: Microscope,
+    pendingOrderReviews: ClipboardCheck,
+    dueDeliveryOrders: Clock,
+    pendingPurchaseRequests: FilePlus,
+    pendingPurchaseOrders: Truck,
+    pendingPurchaseReceipts: Microscope,
+    pendingShipments: ArrowUpFromLine,
+    openStocktakes: ClipboardList,
+    lowStockItems: AlertTriangle,
+    attendanceRate: UserCheck,
+  } as Record<string, typeof Factory>;
+  return { icon: icons[key] || Activity, iconTone: tones[index % tones.length] };
+};
+
+const formatMetricValue = (value: string, unit: string) => {
+  const amount = Number(value);
+  if (unit !== '元' || !Number.isFinite(amount) || Math.abs(amount) < 10000) return value;
+  return (amount / 10000).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+};
+
+const formatMetricUnit = (value: string, unit: string) => {
+  const amount = Number(value);
+  return unit === '元' && Number.isFinite(amount) && Math.abs(amount) >= 10000 ? '万' : unit;
 };
 
 const FeedbackManagement = ({ currentTenant, currentUser, onToast }) => {
@@ -11106,7 +12845,9 @@ const FeedbackManagement = ({ currentTenant, currentUser, onToast }) => {
 export default function App() {
   const {
     activeModule,
+    moduleNavigationRevision,
     activeRole,
+    allTenantOptions,
     currentTenant,
     currentTenantId,
     currentUser,
@@ -11115,12 +12856,48 @@ export default function App() {
     setCurrentTenantId,
     setCurrentUser,
   } = useAppRuntime();
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [messages, setMessages] = useState(msg_mockData);
-  const [focusedMessageId, setFocusedMessageId] = useState(msg_mockData[0]?.id);
+  const [loginPageView, setLoginPageView] = useState<'login' | 'forgot' | 'reset-password' | 'register' | 'first-login'>('login');
+  const [passwordResetToken, setPasswordResetToken] = useState('');
+  const [firstLoginSession, setFirstLoginSession] = useState<{ account: string; tempPassword: string } | null>(null);
+  const [messages, setMessages] = useState([]);
+  const [focusedMessageId, setFocusedMessageId] = useState<string | undefined>(undefined);
   const [messageFocusTick, setMessageFocusTick] = useState(0);
+
+  // Phase 7: 消息中心 API 集成
+  const mapBackendMessage = (msg: any) => {
+    const typeMap: Record<string, string> = { order: 'approval', payment: 'system', shipping: 'system', inventory: 'ai', production: 'system', procurement: 'approval', finance: 'ai', system: 'system' };
+    const levelMap: Record<string, string> = { urgent: 'critical', high: 'warning', normal: 'info', low: 'info' };
+    const timeAgo = (iso: string) => {
+      const diff = Date.now() - new Date(iso).getTime();
+      if (diff < 60000) return '刚刚';
+      if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+      if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+      return `${Math.floor(diff / 86400000)}天前`;
+    };
+    return {
+      id: msg.id, type: typeMap[msg.category] || 'system', level: levelMap[msg.priority] || 'info',
+      title: msg.title, content: msg.body, time: timeAgo(msg.createdAt),
+      read: msg.isRead, source: msg.senderName || msg.sourceType || '系统',
+      actions: msg.sourceDocNo ? ['查看单据详情'] : [], _backend: msg,
+    };
+  };
+
+  const refreshMessages = async () => {
+    if (!formalContext) return;
+    try {
+      const response = await messagesApi.listMessages(formalContext, { page: 1, pageSize: 50 });
+      setMessages(response.items.map(mapBackendMessage));
+    } catch {
+      setMessages([]);
+    }
+  };
+
+  useEffect(() => { refreshMessages(); }, [formalContext?.tenantId, formalContext?.accessToken]);
   const [salesResetSignal, setSalesResetSignal] = useState(0);
   const [businessFlow, setBusinessFlow] = useState(null);
+  const [financeRefreshTick, setFinanceRefreshTick] = useState(0);
   const [flowToast, setFlowToast] = useState({ show: false, msg: '', type: 'success' });
   const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
   const [globalAssistantWidth, setGlobalAssistantWidth] = useState(520);
@@ -11132,19 +12909,56 @@ export default function App() {
   const [profileModal, setProfileModal] = useState(null);
   const [platformState, setPlatformState] = useState(() => loadPlatformState(currentTenant));
   const roleMeta = roleWorkbenchMeta[activeRole] || roleWorkbenchMeta.老板;
+  const [workbenchDashboard, setWorkbenchDashboard] = useState<WorkbenchDashboardDto | null>(null);
+  const [workbenchError, setWorkbenchError] = useState('');
+  const [workbenchLoading, setWorkbenchLoading] = useState(false);
+
+  useEffect(() => {
+    if (!formalContext) {
+      setWorkbenchDashboard(null);
+      setWorkbenchError('');
+      return;
+    }
+    let cancelled = false;
+    const role = activeRole as WorkbenchRole;
+    const refresh = async () => {
+      setWorkbenchLoading(true);
+      try {
+        const dashboard = await workbenchApi.getDashboard(formalContext, role);
+        if (!cancelled) {
+          setWorkbenchDashboard(dashboard);
+          setWorkbenchError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWorkbenchDashboard(null);
+          setWorkbenchError(error instanceof Error ? error.message : '工作台数据读取失败');
+        }
+      } finally {
+        if (!cancelled) {
+          setWorkbenchLoading(false);
+        }
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRole, formalContext?.tenantId, formalContext?.accessToken]);
+
   const workbenchMetrics = useMemo(() => {
-    const baseMetrics = roleMetricSets[activeRole] || roleMetricSets.老板;
-    if (currentTenant.id === 'TENANT-SHWS') return baseMetrics;
-    const tenantValues = ['726', '93.4', '7', '96.2'];
-    const tenantTrends = ['+6.8%', '+1.1%', '1项', '+0.5%'];
-    return baseMetrics.map((metric, index) => ({
-      ...metric,
-      value: tenantValues[index] || metric.value,
-      trend: tenantTrends[index] || metric.trend,
-    }));
-  }, [activeRole, currentTenant.id]);
+    if (!workbenchDashboard) return [];
+    const generatedAt = new Date(workbenchDashboard.generatedAt);
+    const updatedAt = `${String(generatedAt.getHours()).padStart(2, '0')}:${String(generatedAt.getMinutes()).padStart(2, '0')}`;
+    return workbenchDashboard.metrics.map((metric, index) => {
+      const { icon, iconTone } = workbenchMetricVisual(metric.key, index);
+      return { ...metric, value: formatMetricValue(metric.value, metric.unit), displayUnit: formatMetricUnit(metric.value, metric.unit), updatedAt, icon, iconTone };
+    });
+  }, [workbenchDashboard]);
   const todayLabel = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
-  const authorizedTenantOptions = tenantOptions.filter((tenant) =>
+  const authorizedTenantOptions = allTenantOptions.filter((tenant) =>
     !currentUser?.tenantIds?.length || currentUser.tenantIds.includes(tenant.id),
   );
 
@@ -11164,8 +12978,19 @@ export default function App() {
     };
   }, [currentTenantId]);
 
-	  const handleLogin = async ({ account, password }) => {
-	    const session = await loginWithPassword(account, password);
+	  const handleLogin = async ({ account, password, phone, smsCode, captchaId, captchaCode }) => {
+      let session;
+      if (phone && smsCode) {
+        session = await loginWithSms(phone, smsCode);
+      } else {
+        const loginResult = await loginWithPassword({ account, password, captchaId, captchaCode });
+        if (loginResult.firstLogin) {
+          setFirstLoginSession({ account: loginResult.account, tempPassword: password });
+          setLoginPageView('first-login');
+          return;
+        }
+        session = loginResult;
+      }
 	    saveAuthenticatedSession(session);
     setCurrentUser(session);
     if (isRoleName(session.role)) setActiveRole(session.role);
@@ -11225,11 +13050,139 @@ export default function App() {
     showFlowToast(`已进入${roleWorkbenchMeta[role]?.title || role + '工作台'}`, 'success');
   };
 
+  const localDate = () => {
+    const value = new Date();
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  };
+
+  const readFinanceError = (error: unknown) => (
+    error instanceof Error ? error.message : '财务操作失败，请稍后重试'
+  );
+
+  const findFinanceDocument = async (kind: 'receivable' | 'payable', sourceOrder: string) => {
+    if (!formalContext || !sourceOrder) return null;
+    const response = kind === 'receivable'
+      ? await financeApi.listReceivables(formalContext, { page: 1, pageSize: 1, sourceOrder })
+      : await financeApi.listPayables(formalContext, { page: 1, pageSize: 1, sourceOrder });
+    return response.items[0] || null;
+  };
+
+  const loadLinkedFinanceDocuments = async (flow) => {
+    const receivable = await findFinanceDocument('receivable', flow?.orderId || '');
+    const payable = flow?.purchaseOrder?.id ? await findFinanceDocument('payable', flow.purchaseOrder.id) : null;
+    return { receivable, payable };
+  };
+
   const handleBusinessFlowAction = async (action, payload = null) => {
     if (action === 'resetFlow') {
-      setBusinessFlow(createInitialBusinessFlow());
-      setActiveModule('销售管理');
-      showFlowToast('已重新开启商机到收款演示流程');
+      setBusinessFlow(null);
+      showFlowToast('当前流程上下文已关闭，请从销售订单重新发起');
+      return;
+    }
+
+    if (action === 'generateFinanceDocs') {
+      if (!formalContext) {
+        showFlowToast('请使用正式登录会话生成财务单据', 'error');
+        return;
+      }
+      if (!businessFlow?.orderId) {
+        showFlowToast('缺少来源销售订单，不能生成财务单据', 'error');
+        return;
+      }
+      try {
+        const documents = await loadLinkedFinanceDocuments(businessFlow);
+        if (!documents.receivable) throw new Error('销售出库尚未回写正式应收单');
+        if (businessFlow.purchaseOrder?.id && !documents.payable) throw new Error('采购入库尚未回写正式应付单');
+        setBusinessFlow(prev => ({
+          ...prev,
+          currentStep: 'financeDocs',
+          receivable: documents.receivable,
+          payable: documents.payable,
+          completed: Array.from(new Set([...prev.completed, 'delivery'])),
+          ledger: [...prev.ledger, { module: '财务管理', text: `已接收正式应收单 ${documents.receivable.docNo}${documents.payable ? ` 和应付单 ${documents.payable.docNo}` : ''}` }],
+        }));
+        setFinanceRefreshTick(value => value + 1);
+        setActiveModule('财务管理');
+        showFlowToast('正式应收应付单据已接收', 'success');
+      } catch (error) {
+        showFlowToast(readFinanceError(error), 'error');
+      }
+      return;
+    }
+
+    if (action === 'settleFinance') {
+      if (!formalContext) {
+        showFlowToast('请使用正式登录会话完成结算', 'error');
+        return;
+      }
+      try {
+        const documents = await loadLinkedFinanceDocuments(businessFlow);
+        if (!documents.receivable) throw new Error('未找到正式应收单');
+        const paymentDate = localDate();
+        const receivableTask = documents.receivable.status === 'done'
+          ? Promise.resolve({ document: documents.receivable })
+          : financeApi.settleReceivable(formalContext, documents.receivable.id, {
+            paymentDate,
+            referenceNo: businessFlow.orderId,
+            remark: '销售订单业务闭环结算',
+          });
+        const payableTask = documents.payable && documents.payable.status !== 'done'
+          ? financeApi.settlePayable(formalContext, documents.payable.id, {
+            paymentDate,
+            referenceNo: businessFlow.purchaseOrder?.orderNo || businessFlow.purchaseOrder?.id,
+            remark: '采购订单业务闭环结算',
+          })
+          : Promise.resolve(documents.payable ? { document: documents.payable } : null);
+        const [receivableResult, payableResult] = await Promise.all([receivableTask, payableTask]);
+        setBusinessFlow(prev => ({
+          ...prev,
+          currentStep: 'settlement',
+          receivable: receivableResult.document,
+          payable: payableResult?.document || null,
+          completed: Array.from(new Set([...prev.completed, 'financeDocs'])),
+          ledger: [...prev.ledger, { module: '财务管理', text: `正式收付款、发票和凭证已完成${payableResult ? '' : '（无采购应付）'}` }],
+        }));
+        setFinanceRefreshTick(value => value + 1);
+        setActiveModule('财务管理');
+        showFlowToast('正式收付款、发票和凭证已完成', 'success');
+      } catch (error) {
+        showFlowToast(readFinanceError(error), 'error');
+      }
+      return;
+    }
+
+    if (action === 'settleFinanceDocument' && payload?.documentId) {
+      if (!formalContext) {
+        showFlowToast('请使用正式登录会话完成结算', 'error');
+        return;
+      }
+      try {
+        const paymentDate = localDate();
+        const result = payload.kind === 'payable'
+          ? await financeApi.settlePayable(formalContext, payload.documentId, { paymentDate, remark: '财务应付结算' })
+          : await financeApi.settleReceivable(formalContext, payload.documentId, { paymentDate, remark: '财务应收结算' });
+        const documents = businessFlow?.orderId ? await loadLinkedFinanceDocuments(businessFlow) : { receivable: null, payable: null };
+        const financeComplete = (!documents.receivable || documents.receivable.status === 'done')
+          && (!businessFlow?.purchaseOrder?.id || !documents.payable || documents.payable.status === 'done');
+        setBusinessFlow(prev => {
+          if (!prev) return prev;
+          const matchesFlow = (doc, orderNo) => doc && (doc.sourceDocNo === orderNo || doc.sourceId === orderNo);
+          return {
+            ...prev,
+            currentStep: matchesFlow(documents.receivable, prev.orderId) && financeComplete ? 'settlement' : prev.currentStep,
+            receivable: matchesFlow(documents.receivable, prev.orderId) ? documents.receivable : prev.receivable,
+            payable: matchesFlow(documents.payable, prev.purchaseOrder?.id) ? documents.payable : prev.payable,
+            completed: matchesFlow(documents.receivable, prev.orderId) && financeComplete
+              ? Array.from(new Set([...prev.completed, 'financeDocs']))
+              : prev.completed,
+            ledger: [...prev.ledger, { module: '财务管理', text: `正式结算完成：${result.document.docNo}` }],
+          };
+        });
+        setFinanceRefreshTick(value => value + 1);
+        showFlowToast(`正式结算完成：${result.document.docNo}`, 'success');
+      } catch (error) {
+        showFlowToast(readFinanceError(error), 'error');
+      }
       return;
     }
 
@@ -11288,21 +13241,36 @@ export default function App() {
     }
 
     if (action === 'formalMrpCompleted' && payload) {
-      setBusinessFlow(prev => ({
-        ...prev,
+      setBusinessFlow(prev => {
+        const base = prev || {
+          ...createInitialBusinessFlow(),
+          id: `FLOW-${payload.demandId}`,
+          orderId: '',
+          customer: '业务来源',
+          product: '',
+          qty: 0,
+          shortage: 0,
+          stockEnough: false,
+          productionDemandId: payload.demandId,
+          productionDemandCode: payload.productionDemandCode || '',
+          correlationId: '',
+        };
+        return {
+        ...base,
         currentStep: 'mpsMrp',
         mrpTaskId: payload.mrpTaskId,
         mrpDemandId: payload.demandId,
         materialShortages: payload.materialShortages || [],
-        completed: Array.from(new Set([...prev.completed, 'productionDemand'])),
-        ledger: [...prev.ledger, { module: '生产管理', text: `正式 MRP ${payload.mrpTaskId} 已完成，采购缺料 ${payload.materialShortages?.length || 0} 项` }],
-      }));
+        completed: Array.from(new Set([...base.completed, 'productionDemand'])),
+        ledger: [...base.ledger, { module: '生产管理', text: `正式 MRP ${payload.mrpTaskId} 已完成，采购缺料 ${payload.materialShortages?.length || 0} 项` }],
+        };
+      });
       return;
     }
 
     if (action === 'formalPrCreated' && payload?.purchaseRequest) {
       setBusinessFlow(prev => ({ ...prev, currentStep: 'purchaseRequest', purchaseRequest: payload.purchaseRequest, completed: Array.from(new Set([...prev.completed, 'mpsMrp'])), ledger: [...prev.ledger, { module: '采购管理', text: `采购申请 ${payload.purchaseRequest.requestNo} 已创建并等待审批` }] }));
-      setActiveModule('采购管理');
+      setActiveModule('采购管理', { query: { procurement: 'pr', focusPr: payload.purchaseRequest.requestNo } });
       showFlowToast(`正式采购申请 ${payload.purchaseRequest.requestNo} 已创建`);
       return;
     }
@@ -11315,7 +13283,7 @@ export default function App() {
 
     if (action === 'formalMaterialInbound' && payload?.receipt) {
       setBusinessFlow(prev => ({ ...prev, currentStep: 'materialInbound', purchaseReceipt: payload.receipt, materialAvailability: payload.availability, completed: Array.from(new Set([...prev.completed, 'purchaseOrder'])), ledger: [...prev.ledger, { module: '库存管理', text: `采购入库 ${payload.receipt.receiptNo} 已过账，物料库存事实 v${payload.receipt.inventoryFactVersion}` }] }));
-      setActiveModule('库存管理');
+      setActiveModule('库存管理', { query: { inventory: 'inbound' } });
       showFlowToast(`采购入库 ${payload.receipt.receiptNo} 已完成，等待生产齐套`);
       return;
     }
@@ -11330,18 +13298,25 @@ export default function App() {
         const aps = await productionOperationsApi.startPlanningTask(context, 'APS', [businessFlow.mrpDemandId], `${businessFlow.mrpDemandId}:after-purchase:${businessFlow.purchaseReceipt?.id || 'none'}`);
         const candidate = aps.result?.scheduleCandidates?.[0];
         if (aps.status !== 'SUCCEEDED' || !candidate) throw new Error('APS 未返回覆盖当前需求的正式候选');
-        const plannedQty = String(businessFlow.shortage || businessFlow.qty);
+        const demandList = await productionOperationsApi.listDemands(context);
+        const demand = demandList.items.find((item) => item.id === businessFlow.mrpDemandId);
+        const inventoryWarehouseId = demand?.source?.payloadSnapshot?.warehouseId
+          || demand?.source?.payloadSnapshot?.inventoryWarehouseId
+          || demand?.source?.inventoryWarehouseId;
+        if (!demand || !inventoryWarehouseId) throw new Error('生产需求缺少发货目标仓库');
+        const plannedQty = demand.qty;
         const workOrder = await productionOperationsApi.createWorkOrder(context, {
-          productId: 'FG001', productName: businessFlow.product, factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
+          productId: demand.productId, productName: demand.productName || businessFlow.product, factoryResourceId: demand.factoryResourceId,
           workCenterResourceId: 'WC-01', plannedQty, inputQty: plannedQty, uom: 'PCS', dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
           bomSnapshotId: crypto.randomUUID(), routingSnapshotId: crypto.randomUUID(), scheduleCandidateId: candidate.id,
           kittingStatus: 'SHORTAGE', correlationId: businessFlow.correlationId,
+          inventoryWarehouseId,
           demandLinks: [{ demandId: businessFlow.mrpDemandId, allocatedQty: plannedQty, customerLocked: true }],
         }, `work-order:${businessFlow.mrpDemandId}:${candidate.id}`);
         const released = await productionOperationsApi.workOrderCommand(context, workOrder, 'release');
         const started = await productionOperationsApi.workOrderCommand(context, released, 'start');
         setBusinessFlow(prev => ({ ...prev, currentStep: 'production', workOrder: started, completed: Array.from(new Set([...prev.completed, 'materialInbound'])), ledger: [...prev.ledger, { module: '生产管理', text: `物料齐套校验通过，工单 ${started.code} 已下达并开工` }] }));
-        setActiveModule('生产管理');
+        setActiveModule('生产管理', { query: { production: 'orders' } });
         showFlowToast(`正式工单 ${started.code} 已开工`);
       } catch (error) {
         showFlowToast(error instanceof Error ? `生产下达失败：${error.message}` : '生产下达失败', 'error');
@@ -11359,10 +13334,12 @@ export default function App() {
         const report = await productionOperationsApi.submitReport(context, businessFlow.workOrder, businessFlow.workOrder.plannedQty);
         const inspection = await productionOperationsApi.createInspection(context, report.workOrder, report.workOrder.plannedQty);
         const passed = await productionOperationsApi.passInspection(context, inspection);
-        const completion = await productionOperationsApi.createCompletion(context, report.workOrder, passed, 'WH-FG-01');
+        const inventoryWarehouseId = report.workOrder.parameterSnapshot?.inventoryWarehouseId;
+        if (!inventoryWarehouseId) throw new Error('生产工单缺少发货目标仓库');
+        const completion = await productionOperationsApi.createCompletion(context, report.workOrder, passed, inventoryWarehouseId);
         await productionOperationsApi.inventoryResult(context, completion.completionId, 'POSTED');
         setBusinessFlow(prev => ({ ...prev, currentStep: 'finishedInbound', completionId: completion.completionId, completed: Array.from(new Set([...prev.completed, 'production'])), ledger: [...prev.ledger, { module: '库存管理', text: `生产完工 ${completion.completionId} 已入库，原销售发货任务进入重新校验` }] }));
-        setActiveModule('库存管理');
+        setActiveModule('库存管理', { query: { inventory: 'inbound' } });
         showFlowToast('生产完工已形成成品库存事实，正在重新校验原销售发货任务');
       } catch (error) {
         showFlowToast(error instanceof Error ? `生产完工失败：${error.message}` : '生产完工失败', 'error');
@@ -11377,23 +13354,23 @@ export default function App() {
     }
 
     if (action === 'confirmReceipt') {
-      setBusinessFlow(prev => ({ ...prev, currentStep: 'settlement', completed: Array.from(new Set([...prev.completed, 'delivery', 'financeDocs'])), ledger: [...prev.ledger, { module: '销售管理', text: '客户已确认收货，销售订单已完成' }] }));
+      setBusinessFlow(prev => ({ ...prev, currentStep: 'delivery', completed: Array.from(new Set([...prev.completed, 'finishedInbound'])), ledger: [...prev.ledger, { module: '销售管理', text: '客户已确认收货，等待财务完成结算' }] }));
       return;
     }
 
     const flowActionConfig = {
-      approveOrder: { next: 'approval', module: '销售管理', msg: '销售订单已提交审批，保留同一业务单号继续流转' },
-      checkStock: { next: 'stockCheck', module: '库存管理', msg: '订单审批通过，已进入库存自动校验' },
-      openProductionDemand: { next: 'productionDemand', module: '生产管理', msg: '已打开持久化生产需求，来源销售订单保持关联' },
-      runMrp: { next: 'mpsMrp', module: '生产管理', msg: '可用库存不足，已生成 MPS/MRP 展算任务', type: 'warning' },
-      createPr: { next: 'purchaseRequest', module: '采购管理', msg: 'MRP 缺料已转采购申请' },
-      approvePr: { next: 'purchaseOrder', module: '采购管理', msg: '采购申请已审批通过，已生成采购订单' },
-      receiveMaterial: { next: 'materialInbound', module: '库存管理', msg: '供应商送货已登记，物料采购入库已接收' },
-      startProduction: { next: 'production', module: '生产管理', msg: '物料齐套，已下达生产工单' },
-      finishProduction: { next: 'finishedInbound', module: '库存管理', msg: '生产质检合格，成品已入库' },
-      shipSales: { next: 'delivery', module: '库存管理', msg: '销售出库并确认发货' },
-      generateFinanceDocs: { next: 'financeDocs', module: '财务管理', msg: '已生成应收单与应付单，财务接收对账' },
-      settleFinance: { next: 'settlement', module: '财务管理', msg: '收付款、发票、流水与凭证已完成' },
+      approveOrder: { next: 'approval', module: '销售管理', query: { tab: 'orders' }, msg: '销售订单已提交审批，保留同一业务单号继续流转' },
+      checkStock: { next: 'stockCheck', module: '库存管理', query: { inventory: 'stock' }, msg: '订单审批通过，已进入库存自动校验' },
+      openProductionDemand: { next: 'productionDemand', module: '生产管理', query: { production: 'mps' }, msg: '已打开持久化生产需求，来源销售订单保持关联' },
+      runMrp: { next: 'mpsMrp', module: '生产管理', query: { production: 'mps' }, msg: '可用库存不足，已生成 MPS/MRP 展算任务', type: 'warning' },
+      createPr: { next: 'purchaseRequest', module: '采购管理', query: { procurement: 'pr' }, msg: 'MRP 缺料已转采购申请' },
+      approvePr: { next: 'purchaseOrder', module: '采购管理', query: { procurement: 'order' }, msg: '采购申请已审批通过，已生成采购订单' },
+      receiveMaterial: { next: 'materialInbound', module: '库存管理', query: { inventory: 'inbound' }, msg: '供应商送货已登记，物料采购入库已接收' },
+      startProduction: { next: 'production', module: '生产管理', query: { production: 'orders' }, msg: '物料齐套，已下达生产工单' },
+      finishProduction: { next: 'finishedInbound', module: '库存管理', query: { inventory: 'inbound' }, msg: '生产质检合格，成品已入库' },
+      shipSales: { next: 'delivery', module: '库存管理', query: { inventory: 'outbound' }, msg: '销售出库并确认发货' },
+      generateFinanceDocs: { next: 'financeDocs', module: '财务管理', query: {}, msg: '已生成应收单与应付单，财务接收对账' },
+      settleFinance: { next: 'settlement', module: '财务管理', query: {}, msg: '收付款、发票、流水与凭证已完成' },
     };
 
     const config = flowActionConfig[action];
@@ -11405,14 +13382,17 @@ export default function App() {
       completed: Array.from(new Set([...prev.completed, prev.currentStep])),
       ledger: [...prev.ledger, { module: config.module, text: config.msg }]
     }));
-    setActiveModule(config.module);
+    setActiveModule(config.module, { query: config.query });
     showFlowToast(config.msg, config.type || 'success');
   };
 
   const linkedFlowProps = {
     businessFlow,
     onBusinessFlowAction: handleBusinessFlowAction,
-    onNavigateModule: setActiveModule
+    onNavigateModule: (moduleLabel, options) => {
+      if (moduleLabel === '销售管理') setSalesResetSignal(prev => prev + 1);
+      setActiveModule(moduleLabel, options);
+    }
   };
 
   const unreadMessages = messages.filter(message => !message.read);
@@ -11422,10 +13402,10 @@ export default function App() {
     setFocusedMessageId(messageId);
     setMessageFocusTick(prev => prev + 1);
     setMessages(prev => prev.map(message => message.id === messageId ? { ...message, read: true } : message));
+    if (formalContext) { const msg = messages.find((m: any) => m.id === messageId); if (msg?._backend) messagesApi.markAsRead(formalContext, msg._backend).catch(() => {}); }
     setActiveModule('消息管理');
     setIsNotificationsOpen(false);
   };
-
   const openMessageCenter = () => {
     setFocusedMessageId(prev => prev || messages[0]?.id);
     setMessageFocusTick(prev => prev + 1);
@@ -11435,8 +13415,8 @@ export default function App() {
 
   const markAllMessagesRead = () => {
     setMessages(prev => prev.map(message => ({ ...message, read: true })));
+    if (formalContext && currentUser) messagesApi.markAllAsRead(formalContext, currentUser.userId || currentUser.username || 'system').catch(() => {});
   };
-
   useEffect(() => {
     if (!isGlobalAssistantResizing) return;
     const handleMouseMove = (event) => {
@@ -11510,7 +13490,19 @@ export default function App() {
   }, [activeRole, activeModule, productionAvailable]);
 
   if (!currentUser) {
-    return <LoginPage onLogin={handleLogin} />;
+    if (loginPageView === 'first-login' && firstLoginSession) {
+      return <FirstLoginPage account={firstLoginSession.account} tempPassword={firstLoginSession.tempPassword} onComplete={() => { setFirstLoginSession(null); setLoginPageView('login'); showFlowToast('密码设置成功，请使用新密码登录', 'success'); }} onLogout={() => { setFirstLoginSession(null); setLoginPageView('login'); }} />;
+    }
+    if (loginPageView === 'forgot') {
+      return <ForgotPasswordPage onBack={() => setLoginPageView('login')} onSuccess={(token) => { setPasswordResetToken(token); setLoginPageView('reset-password'); }} />;
+    }
+    if (loginPageView === 'reset-password') {
+      return <ResetPasswordPage token={passwordResetToken} onBack={() => setLoginPageView('login')} onSuccess={() => { setLoginPageView('login'); showFlowToast('密码已重置，请使用新密码登录', 'success'); }} />;
+    }
+    if (loginPageView === 'register') {
+      return <RegisterPage onBack={() => setLoginPageView('login')} onRegistered={(session) => { saveAuthenticatedSession(session); setCurrentUser(session); if (isRoleName(session.role)) setActiveRole(session.role); setActiveModule('工作台'); showFlowToast('注册成功，欢迎进入工业AI平台', 'success'); }} />;
+    }
+    return <LoginPage onLogin={handleLogin} onForgotPassword={() => setLoginPageView('forgot')} onRegister={() => setLoginPageView('register')} />;
   }
 
   return (
@@ -11523,6 +13515,8 @@ export default function App() {
           onClose={() => setIsGlobalAssistantOpen(false)}
           tenantCode={currentTenant.code}
           roleName={activeRole}
+          apiContext={formalContext}
+          permissions={currentUser?.permissions ?? []}
           onActionSubmit={() => {
             setMessages(prev => [{ id: `MSG-AI-${Date.now()}`, title: 'AI 操作等待审批', content: 'AI 生成的采购申请已提交审批，审批通过后才会写入正式业务单据。', time: '刚刚', source: 'AI智能中枢', level: 'warning', read: false }, ...prev]);
             showFlowToast('AI 操作已提交审批；系统已记录模型、依据、操作者和影响范围', 'success');
@@ -11660,7 +13654,7 @@ export default function App() {
         </AppShellHeader>
 
         {/* 动态内容路由 */}
-        <React.Fragment key={`tenant-content:${currentTenant.id}`}>
+        <React.Fragment key={`tenant-content:${currentTenant.id}:${moduleNavigationRevision}`}>
         {activeModule === '工作台' && (
           <div className="flex-1 overflow-y-auto px-5 py-4 scroll-smooth custom-scrollbar bg-[#f4f7fb]">
             <div className="max-w-[1420px] mx-auto space-y-4 animate-in fade-in duration-300">
@@ -11670,22 +13664,36 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-black shadow-sm">{todayLabel}</span>
                     <span className="px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">{activeRole} · {roleMeta.title}</span>
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[12px] font-black shadow-sm"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>系统运行良好</span>
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${workbenchError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`}></span>
+                    {workbenchError ? '数据读取异常' : workbenchLoading ? '实时取数中' : '实时数据已就绪'}
+                  </span>
                   </div>
                   <h1 className="text-[32px] leading-tight font-black text-slate-950 tracking-tight">早上好，{currentUser.name}</h1>
                   <p className="text-[14px] font-bold text-slate-500 mt-3 max-w-[760px]">
-                    {roleMeta.summary} 今日共归集 <span className="text-blue-600 font-black">5</span> 项岗位待办与 <span className="text-rose-500 font-black">3</span> 项 AI 风险提醒。
+                    {roleMeta.summary} 今日共归集 <span className="text-blue-600 font-black">{workbenchDashboard?.todoTotal ?? 0}</span> 项岗位待办与 <span className="text-rose-500 font-black">{workbenchDashboard?.alertTotal ?? 0}</span> 项业务与 AI 风险提醒。
                   </p>
                 </div>
               </section>
 
               <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
-                {workbenchMetrics.map(item => {
+                {workbenchError ? (
+                  <div className="md:col-span-2 xl:col-span-4 bg-white border border-rose-100 rounded-xl p-8 text-center">
+                    <AlertTriangle size={22} className="mx-auto text-rose-500" />
+                    <div className="mt-3 text-[15px] font-black text-slate-900">工作台数据读取失败</div>
+                    <div className="mt-1 text-[12px] font-bold text-slate-500">{workbenchError}</div>
+                  </div>
+                ) : workbenchMetrics.length === 0 ? (
+                  <div className="md:col-span-2 xl:col-span-4 bg-white border border-slate-100 rounded-xl p-8 text-center">
+                    <RefreshCcw size={22} className={`mx-auto text-blue-500 ${workbenchLoading ? 'animate-spin' : ''}`} />
+                    <div className="mt-3 text-[15px] font-black text-slate-900">{workbenchLoading ? '正在读取岗位指标' : '暂无岗位指标'}</div>
+                    <div className="mt-1 text-[12px] font-bold text-slate-500">{workbenchLoading ? '正在聚合业务单据与人员事实' : '当前岗位暂无可统计的业务事实'}</div>
+                  </div>
+                ) : workbenchMetrics.map(item => {
                   const Icon = item.icon;
                   const iconClass = item.iconTone === 'blue' ? 'bg-blue-50 text-blue-600 border-blue-100' : item.iconTone === 'purple' ? 'bg-purple-50 text-purple-600 border-purple-100' : item.iconTone === 'amber' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100';
-                  const trendClass = item.trendTone === 'rose' ? 'text-rose-500' : 'text-emerald-600';
                   return (
-                    <div key={item.title} className="bg-white border border-slate-200 rounded-xl shadow-[0_8px_22px_rgba(15,23,42,0.05)] p-4 min-h-[118px] flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.08)] transition-all">
+                    <div key={item.key} title={item.definition} className="bg-white border border-slate-200 rounded-xl shadow-[0_8px_22px_rgba(15,23,42,0.05)] p-4 min-h-[118px] flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.08)] transition-all">
                       <div className="flex items-start justify-between gap-4">
                         <div className="text-[12px] font-black text-slate-500 leading-snug">{item.title}</div>
                         <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${iconClass}`}><Icon size={18} /></div>
@@ -11693,12 +13701,11 @@ export default function App() {
                       <div>
                         <div className="flex items-baseline gap-1.5 mt-3">
                           <span className="text-[27px] leading-none font-black text-slate-900 tracking-tight">{item.value}</span>
-                          <span className="text-[13px] font-black text-slate-500">{item.unit}</span>
+                          <span className="text-[13px] font-black text-slate-500">{item.displayUnit}</span>
                         </div>
-                        <div className={`mt-2.5 text-[12px] font-black flex items-center gap-1.5 ${trendClass}`}>
-                          {item.trendTone === 'rose' ? <AlertTriangle size={14} /> : <Activity size={14} />}
-                          {item.trend}
-                          <span className="text-slate-400 font-bold">较昨日</span>
+                        <div className="mt-2.5 text-[12px] font-black text-slate-500 flex items-center gap-1.5">
+                          <Activity size={14} className="text-blue-500" />
+                          更新 {item.updatedAt}
                         </div>
                       </div>
                     </div>
@@ -11713,23 +13720,24 @@ export default function App() {
                     <button onClick={() => setActiveModule('AI数据分析')} className="px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-600 text-[12px] font-black flex items-center gap-1 transition-colors">进入决策舱 <ChevronRight size={15}/></button>
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    {[
-                      { title: '交付违约高危（产业链联动）', desc: '工单 WO-2026-105 受上游供应商环保限电影响，终端客户交期违约率达 85%。', action: '立即排产干预', module: '生产管理', icon: TrendingDown, tone: 'rose' },
-                      { title: '库存呆滞积压预警', desc: '成品「FG001」连续 90 天出库率低于 5%，测算占用资金约 38.5 万元。', action: '生成调拨单', module: '库存管理', icon: Clock, tone: 'amber' },
-                      { title: '核心人员离职预警', desc: '总装车间王建国近期累计加班 85H 且良率波动，系统判定离职风险极高。', action: '调整排班', module: '人员管理', icon: ShieldAlert, tone: 'purple' },
-                    ].map((item, index) => {
-                      const Icon = item.icon;
-                      const shell = item.tone === 'rose' ? 'bg-rose-50/70 border-rose-100 shadow-rose-100/80' : item.tone === 'amber' ? 'bg-amber-50/60 border-amber-100 shadow-amber-100/80' : 'bg-purple-50/60 border-purple-100 shadow-purple-100/80';
-                      const iconTone = item.tone === 'rose' ? 'text-rose-500' : item.tone === 'amber' ? 'text-amber-500' : 'text-purple-500';
-                      const actionTone = index === 0 ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-200' : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-100';
+                    {(workbenchDashboard?.alerts ?? []).slice(0, 6).map((item, index) => {
+                      const iconMap: Record<string, typeof Factory> = {
+                        销售管理: BadgeDollarSign, 生产管理: Factory, 库存管理: Box,
+                        采购管理: ShoppingCart, 财务管理: Coins, 人员管理: ShieldAlert,
+                        产业链管理: Network, AI数据分析: Bot,
+                      };
+                      const Icon = iconMap[item.module] || Sparkles;
+                      const shell = item.severity === 'high' ? 'bg-rose-50/70 border-rose-100 shadow-rose-100/80' : item.severity === 'medium' ? 'bg-amber-50/60 border-amber-100 shadow-amber-100/80' : 'bg-purple-50/60 border-purple-100 shadow-purple-100/80';
+                      const iconTone = item.severity === 'high' ? 'text-rose-500' : item.severity === 'medium' ? 'text-amber-500' : 'text-purple-500';
+                      const actionTone = item.severity === 'high' ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-200' : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-100';
                       return (
-                        <div key={item.title} className={`min-h-[238px] rounded-xl border p-5 flex flex-col justify-between shadow-sm ${shell}`}>
+                        <div key={item.sourceId || item.title} className={`min-h-[238px] rounded-xl border p-5 flex flex-col justify-between shadow-sm ${shell}`}>
                           <div>
                             <div className={`w-10 h-10 rounded-lg bg-white shadow-sm flex items-center justify-center mb-5 ${iconTone}`}><Icon size={19}/></div>
                             <h3 className="text-[15px] font-black text-slate-900 leading-snug">{item.title}</h3>
-                            <p className="mt-3 text-[12px] text-slate-500 leading-relaxed font-bold">{item.desc}</p>
+                            <p className="mt-3 text-[12px] text-slate-500 leading-relaxed font-bold">{item.detail}</p>
                           </div>
-                          <button onClick={() => setActiveModule(item.module)} className={`mt-5 h-10 rounded-lg text-[12px] font-black flex items-center justify-center gap-2 transition-colors ${actionTone}`}><Activity size={14} /> {item.action}</button>
+                          <button onClick={() => setActiveModule(item.module, { query: { focusId: item.sourceId || '', focusNo: item.sourceNo || '' } })} className={`mt-5 h-10 rounded-lg text-[12px] font-black flex items-center justify-center gap-2 transition-colors ${actionTone}`}><Activity size={14} /> 前往处理</button>
                         </div>
                       );
                     })}
@@ -11743,7 +13751,7 @@ export default function App() {
                       { label: '快速开单', icon: Plus, module: '销售管理', tone: 'blue' },
                       { label: '手工入库', icon: ArrowDownToLine, module: '库存管理', tone: 'emerald' },
                       { label: '提报PR', icon: FilePlus, module: '采购管理', tone: 'purple' },
-                      { label: '扫码报工', icon: ScanLine, module: '生产管理', tone: 'amber' },
+                      { label: '报工', icon: ScanLine, module: '生产管理', tone: 'amber' },
                     ].map(item => {
                       const Icon = item.icon;
                       const tone = item.tone === 'blue' ? 'text-blue-600 bg-blue-50' : item.tone === 'emerald' ? 'text-emerald-600 bg-emerald-50' : item.tone === 'purple' ? 'text-purple-600 bg-purple-50' : 'text-amber-600 bg-amber-50';
@@ -11762,32 +13770,37 @@ export default function App() {
                 <div className="bg-white border border-slate-200 rounded-[18px] shadow-[0_10px_28px_rgba(15,23,42,0.055)] overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
                     <div className="text-[18px] font-black text-slate-900 flex items-center gap-2.5"><ListChecks size={20} className="text-blue-600" /> 我的待办事项</div>
-                    <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-500 border border-rose-100 text-[12px] font-black">2 项高危</span>
+                    <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-500 border border-rose-100 text-[12px] font-black">{(workbenchDashboard?.todos ?? []).filter(item => item.urgent).length} 项高危</span>
                   </div>
                   <div className="p-5 space-y-2">
-                    {[
-                      { title: '客户 test01 订单待发货，报价已过期', time: '10分钟前', module: '销售管理', tag: '销售', icon: BadgeDollarSign, tone: 'blue', urgent: true },
-                      { title: '工单 WO-260102 待齐套检查，请核对物料', time: '1小时前', module: '生产管理', tag: '生产', icon: Factory, tone: 'purple' },
-                      { title: '3 项低库存物料已触发 PR 采购申请', time: '2小时前', module: '采购管理', tag: '采购', icon: ShoppingCart, tone: 'emerald', urgent: true },
-                      { title: 'QC-260801 完工检待处理，样本数 150', time: '上午 10:30', module: '生产管理', tag: '生产', icon: ShieldCheck, tone: 'amber' },
-                      { title: '供应商 深圳华芯科技 AP 尾款待支付', time: '昨天 16:00', module: '财务管理', tag: '财务', icon: Wallet, tone: 'indigo' },
-                    ].map(item => {
-                      const Icon = item.icon;
-                      const tone = item.tone === 'blue' ? 'bg-blue-50 text-blue-600 border-blue-100' : item.tone === 'purple' ? 'bg-purple-50 text-purple-600 border-purple-100' : item.tone === 'emerald' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : item.tone === 'amber' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100';
+                    {(workbenchDashboard?.todos ?? []).slice(0, 8).map(item => {
+                      const visualMap: Record<string, { icon: typeof Factory; tone: string }> = {
+                        销售管理: { icon: BadgeDollarSign, tone: 'bg-blue-50 text-blue-600 border-blue-100' },
+                        生产管理: { icon: Factory, tone: 'bg-purple-50 text-purple-600 border-purple-100' },
+                        库存管理: { icon: Box, tone: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+                        采购管理: { icon: ShoppingCart, tone: 'bg-amber-50 text-amber-600 border-amber-100' },
+                        财务管理: { icon: Coins, tone: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
+                        人员管理: { icon: Users, tone: 'bg-slate-50 text-slate-600 border-slate-100' },
+                      };
+                      const visual = visualMap[item.module] || { icon: Activity, tone: 'bg-blue-50 text-blue-600 border-blue-100' };
+                      const Icon = visual.icon;
                       return (
-                        <button key={item.title} onClick={() => setActiveModule(item.module)} className="w-full flex items-center gap-4 text-left group rounded-xl p-2.5 hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
-                          <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${tone}`}><Icon size={19}/></div>
+                        <button key={`${item.sourceType}:${item.sourceId}`} onClick={() => setActiveModule(item.module, { query: { focusId: item.sourceId, focusNo: item.sourceNo || '' } })} className="w-full flex items-center gap-4 text-left group rounded-xl p-2.5 hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                          <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${visual.tone}`}><Icon size={19}/></div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3">
-                              <span className={`px-2 py-0.5 rounded-md text-[11px] font-black border ${tone}`}>{item.tag}</span>
+                              <span className={`px-2 py-0.5 rounded-md text-[11px] font-black border ${visual.tone}`}>{item.module}</span>
                               <div className="text-[14px] font-black text-slate-900 leading-snug group-hover:text-blue-600 transition-colors truncate">{item.title}</div>
                               {item.urgent && <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>}
                             </div>
-                            <div className="mt-1.5 text-[12px] font-bold text-slate-400 flex items-center gap-2"><Clock size={13}/>{item.time}</div>
+                            <div className="mt-1.5 text-[12px] font-bold text-slate-400 flex items-center gap-2"><Clock size={13}/>{item.sourceNo || item.dueDate || item.sourceType}</div>
                           </div>
                         </button>
                       );
                     })}
+                    {(workbenchDashboard?.todos ?? []).length === 0 && (
+                      <div className="py-10 text-center text-[13px] font-bold text-slate-400">当前岗位没有待处理业务</div>
+                    )}
                   </div>
                 </div>
 
@@ -11797,23 +13810,23 @@ export default function App() {
                   </div>
                   <div className="p-6 min-h-[360px]">
                     <div className="relative pl-7 space-y-7 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200">
-                      {[
-                        { title: '工单 WO-260101 组装完成', desc: '操作人：张工（PDA扫码） · 准时达成', time: '15 分钟前', color: 'emerald' },
-                        { title: 'AI 自动下发 MRP 采购需求', desc: '依据 MPS-26001 计划生成 3 笔采购单', time: '45 分钟前', color: 'blue' },
-                        { title: '财务收到预付款到账凭证', desc: currentTenant.id === 'TENANT-HDJG' ? '客户：苏州精密装备 · SO-HDJG-20260718' : '客户：上海万申产业 · SO-20260508', time: '2 小时前', color: 'amber' },
-                        { title: '系统完成日结快照备份', desc: '凌晨 02:00', time: '', color: 'slate' },
-                      ].map(item => {
-                        const dot = item.color === 'emerald' ? 'border-emerald-500 bg-white' : item.color === 'blue' ? 'border-blue-500 bg-white' : item.color === 'amber' ? 'border-amber-500 bg-white' : 'border-slate-300 bg-slate-200';
-                        const accent = item.color === 'emerald' ? 'text-emerald-600' : 'text-slate-500';
+                      {(workbenchDashboard?.activities ?? []).map(item => {
+                        const occurredAt = new Date(item.occurredAt);
+                        const time = Number.isNaN(occurredAt.getTime()) ? '' : new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(occurredAt);
+                        const dot = item.module === '生产管理' ? 'border-emerald-500 bg-white' : item.module === 'AI数据分析' ? 'border-purple-500 bg-white' : item.module === '财务管理' ? 'border-amber-500 bg-white' : 'border-blue-500 bg-white';
+                        const accent = item.module === '生产管理' ? 'text-emerald-600' : item.module === 'AI数据分析' ? 'text-purple-600' : 'text-slate-500';
                         return (
-                          <div key={item.title} className="relative">
+                          <div key={item.id} className="relative">
                             <span className={`absolute -left-[27px] top-1 w-4 h-4 rounded-full border-4 ${dot}`}></span>
                             <div className="text-[14px] font-black text-slate-800 leading-snug">{item.title}</div>
-                            <div className={`mt-1.5 text-[12px] font-bold leading-relaxed ${accent}`}>{item.desc}</div>
-                            {item.time && <div className="mt-2 text-[12px] font-bold text-slate-400">{item.time}</div>}
+                            <div className={`mt-1.5 text-[12px] font-bold leading-relaxed ${accent}`}>{item.detail}</div>
+                            <div className="mt-2 text-[12px] font-bold text-slate-400">{item.sourceNo || item.module}{time ? ` · ${time}` : ''}</div>
                           </div>
                         );
                       })}
+                      {(workbenchDashboard?.activities ?? []).length === 0 && (
+                        <div className="py-20 text-center text-[13px] font-bold text-slate-400">暂无业务动态</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -11826,9 +13839,9 @@ export default function App() {
         {activeModule === '生产管理' && <LegacyProductionManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} />}
         {activeModule === '库存管理' && <InventoryManagement {...linkedFlowProps} currentTenant={currentTenant} currentUser={currentUser} />}
         {activeModule === '采购管理' && <ProcurementManagement {...linkedFlowProps} currentTenant={currentTenant} currentUser={currentUser} />}
-        {activeModule === '财务管理' && <FinancialManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} />}
-        {activeModule === '人员管理' && <PersonnelManagement />}
-        {activeModule === '产业链管理' && <SupplyChainManagement />}
+        {activeModule === '财务管理' && <FinancialManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} refreshSignal={financeRefreshTick} />}
+        {activeModule === '人员管理' && <PersonnelManagement currentTenant={currentTenant} currentUser={currentUser} />}
+        {activeModule === '产业链管理' && <SupplyChainManagement currentTenant={currentTenant} currentUser={currentUser} />}
         {activeModule === 'AI智能中枢' && <AIHubManagementV2 onOpenAssistant={() => setIsGlobalAssistantOpen(true)} />}
         {activeModule === 'AI数据分析' && <AIDataAnalysisManagement />}
         {activeModule === '消息管理' && <MessageManagement onNavigateModule={setActiveModule} msgs={messages} setMsgs={setMessages} focusMsgId={focusedMessageId} focusTick={messageFocusTick} />}

@@ -44,14 +44,15 @@ import {
   loadPlatformState,
   savePlatformState,
 } from './platformSeed';
+import EmployeeAccountManagement from './EmployeeAccountManagement';
 
 type Props = {
   currentTenant?: { id?: string; code?: string; name?: string };
-  currentUser?: { name?: string; account?: string };
+  currentUser?: { name?: string; account?: string; accessToken?: string };
   onToast?: (message: string, type?: string) => void;
 };
 
-type NavId = 'tenant' | 'org' | 'resource' | 'identity' | 'access' | 'adapter' | 'governance' | 'config' | 'audit' | 'init';
+type NavId = 'tenant' | 'org' | 'resource' | 'identity' | 'employee-accounts' | 'access' | 'adapter' | 'governance' | 'config' | 'audit' | 'init';
 type FieldType = 'text' | 'select' | 'combobox' | 'date' | 'textarea';
 type FormOption = { value: string; label: string; description?: string; searchText?: string };
 type FormField = {
@@ -111,6 +112,7 @@ const NAV_GROUPS = [
     icon: ShieldCheck,
     items: [
       { id: 'identity' as NavId, label: '员工与账号', icon: Users },
+      { id: 'employee-accounts' as NavId, label: '登录账号管理', icon: KeyRound },
       { id: 'access' as NavId, label: '角色与权限', icon: ShieldCheck },
     ],
   },
@@ -125,7 +127,7 @@ const NAV_GROUPS = [
     ],
   },
 ];
-const NAV_IDS: NavId[] = ['tenant', 'org', 'resource', 'identity', 'access', 'adapter', 'governance', 'config', 'audit', 'init'];
+const NAV_IDS: NavId[] = ['tenant', 'org', 'resource', 'identity', 'employee-accounts', 'access', 'adapter', 'governance', 'config', 'audit', 'init'];
 const readPlatformViewFromUrl = (): NavId => {
   if (typeof window === 'undefined') return 'tenant';
   const value = new URLSearchParams(window.location.search).get('platform');
@@ -809,8 +811,8 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       { key: 'employeeNo', label: '员工编号', required: true, disabled: Boolean(employee), normalize: (value) => value.toUpperCase(), maxLength: 40, help: '自动转为大写；企业内必须唯一，创建后不可修改。' },
       { key: 'primaryOrgId', label: '所属组织', type: 'combobox', required: true, options: orgOptions, clearOnChange: ['primaryPositionId'], placeholder: '搜索组织名称或编码' },
       { key: 'primaryPositionId', label: '主岗位', type: 'combobox', required: true, optionsFor: (draft) => positionOptions.filter((option) => !draft.primaryOrgId || isSameOrAncestorOrg(positionById[option.value]?.orgId, draft.primaryOrgId)), placeholder: '搜索岗位名称或编码' },
-      { key: 'mobile', label: '手机号', inputMode: 'tel', maxLength: 11, help: '填写 11 位中国大陆手机号。' },
-      { key: 'email', label: '工作邮箱', inputMode: 'email', maxLength: 100, help: '例如 name@company.com。' },
+      { key: 'mobile', label: '手机号', required: true, inputMode: 'tel', maxLength: 11, help: '填写 11 位中国大陆手机号。' },
+      { key: 'email', label: '工作邮箱', required: true, inputMode: 'email', maxLength: 100, help: '例如 name@company.com。' },
     ],
     initial: employee ? { name: employee.name, employeeNo: employee.employeeNo, primaryOrgId: employee.primaryOrgId, primaryPositionId: employee.primaryPositionId, mobile: employee.mobile, email: employee.email } : { name: '', employeeNo: '', primaryOrgId: '', primaryPositionId: '', mobile: '', email: '' },
     validate: (draft) => {
@@ -818,8 +820,10 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       if (nameError) return { key: 'name', message: nameError };
       if (!BUSINESS_CODE_PATTERN.test(draft.employeeNo)) return { key: 'employeeNo', message: '员工编号须以字母开头，仅使用大写字母、数字、下划线或短横线，共 2–40 位。' };
       if (state.employees.some((item) => item.employeeNo.trim().toLowerCase() === draft.employeeNo.trim().toLowerCase() && item.id !== employee?.id)) return { key: 'employeeNo', message: '员工编号已存在，请核对后再保存。' };
-      if (draft.mobile && !MOBILE_PATTERN.test(draft.mobile)) return { key: 'mobile', message: '手机号格式不正确，请填写 11 位中国大陆手机号。' };
-      if (draft.email && !/^\S+@\S+\.\S+$/.test(draft.email)) return { key: 'email', message: '工作邮箱格式不正确，例如 name@company.com。' };
+      if (!draft.mobile?.trim()) return { key: 'mobile', message: '手机号为必填项，请填写 11 位中国大陆手机号。' };
+      if (!MOBILE_PATTERN.test(draft.mobile)) return { key: 'mobile', message: '手机号格式不正确，请填写 11 位中国大陆手机号。' };
+      if (!draft.email?.trim()) return { key: 'email', message: '工作邮箱为必填项，请填写有效邮箱地址。' };
+      if (!/^\S+@\S+\.\S+$/.test(draft.email)) return { key: 'email', message: '工作邮箱格式不正确，例如 name@company.com。' };
       if (draft.primaryPositionId && !isSameOrAncestorOrg(positionById[draft.primaryPositionId]?.orgId, draft.primaryOrgId)) return { key: 'primaryPositionId', message: '所选岗位不属于该组织或其上级组织。' };
       return null;
     },
@@ -1087,7 +1091,15 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     <div data-testid="platform-view-init"><PageHeader eyebrow="首次设置" title="完成企业初始化" description="按业务顺序补齐必要资料；完成后即可开放成员工作区。" actions={initChecks.every((item) => item.ready) ? <Button variant="primary" icon={CheckCircle2} onClick={() => commit((prev) => ({ ...prev, tenant: { ...prev.tenant, status: 'running' } }), '企业已正式启用', '正式启用企业', state.tenant.name)}>正式启用</Button> : undefined} /><Panel><div className="divide-y divide-slate-100">{initChecks.map((item, index) => <div key={item.title} className="flex items-center gap-4 px-5 py-5"><div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-black ${item.ready ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{item.ready ? <Check size={16} /> : index + 1}</div><div className="min-w-0 flex-1"><div className="text-[13px] font-black text-slate-800">{item.title}</div><p className="mt-1 text-[11px] leading-5 text-slate-500">{item.description}</p></div>{item.ready ? <StatusPill value="enabled" label="已完成" /> : <Button icon={ChevronRight} onClick={() => navigateToView(item.route)}>去处理</Button>}</div>)}</div></Panel></div>
   );
 
-  const viewMap: Record<NavId, () => React.ReactNode> = { tenant: renderTenant, org: renderOrg, resource: renderResources, identity: renderIdentity, access: renderAccess, adapter: renderAdapters, governance: renderGovernance, config: renderConfig, audit: renderAudit, init: renderInitialization };
+  const renderEmployeeAccounts = () => (
+    <div data-testid="platform-view-employee-accounts">
+      <div className="p-4">
+        <EmployeeAccountManagement accessToken={currentUser?.accessToken ?? ''} onToast={(msg, type) => toast(msg, type ?? 'success')} />
+      </div>
+    </div>
+  );
+
+  const viewMap: Record<NavId, () => React.ReactNode> = { tenant: renderTenant, org: renderOrg, resource: renderResources, identity: renderIdentity, 'employee-accounts': renderEmployeeAccounts, access: renderAccess, adapter: renderAdapters, governance: renderGovernance, config: renderConfig, audit: renderAudit, init: renderInitialization };
   const visibleGroups = state.tenant.status === 'running'
     ? NAV_GROUPS
     : NAV_GROUPS.map((group, index) => index === 0

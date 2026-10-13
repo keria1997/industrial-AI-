@@ -132,6 +132,15 @@ export const createSalesOutboundNavigationQuery = (orderId: string) => ({
   sourceOrder: orderId,
 });
 
+export const formatSalesOutboundDateTime = (value?: string) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+    + `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
+
 export const loadSalesOutboundTasks = (
   storage: StoragePort,
   tenantId?: string,
@@ -208,6 +217,18 @@ export const cancelSalesOutbound = (
   };
   writeWorkspace(storage, tenantId, workspace.tasks.map((task) => (task.id === current.id ? updated : task)));
   return updated;
+};
+
+export const removeSalesOutboundBySource = (
+  storage: StoragePort,
+  tenantId: string | undefined,
+  sourceOrderId: string,
+): boolean => {
+  const workspace = readWorkspace(storage, tenantId);
+  const tasks = workspace.tasks.filter((task) => task.source !== sourceOrderId);
+  if (tasks.length === workspace.tasks.length) return false;
+  writeWorkspace(storage, tenantId, tasks);
+  return true;
 };
 
 export const completeSalesOutbound = (

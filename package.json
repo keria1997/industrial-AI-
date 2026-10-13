@@ -5,33 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "dev:api": "tsx watch server/src/index.ts",
-    "start:api": "tsx server/src/index.ts",
-    "db:migrate:production": "tsx server/src/migrate.ts",
+    "dev:java-api": "node scripts/dev-java-api.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
     "build": "vite build",
-    "typecheck": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit",
-    "test:api": "vitest run server/test",
+    "typecheck": "tsc --noEmit",
+    "test:routes:java": "node scripts/verify-java-routes.mjs",
     "test:frontend": "vitest run src/app/tests",
-    "test": "npm run test:api && npm run test:frontend"
+    "test:java": "mvn -f server-java/pom.xml -o test",
+    "test": "npm run test:routes:java && npm run test:frontend && npm run test:java"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.21",
-    "fastify": "^5.10.0",
     "lucide-react": "^0.468.0",
-    "pg": "^8.22.0",
     "postcss": "^8.5.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.2",
-    "vite": "^7.0.0",
-    "zod": "^4.4.3"
+    "vite": "^7.0.0"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.4",
-    "@types/pg": "^8.20.0",
-    "tsx": "^4.23.1",
     "vitest": "^3.2.7"
   }
 }

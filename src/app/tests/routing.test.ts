@@ -5,6 +5,8 @@ import {
   moduleRegistry,
 } from '../moduleRegistry';
 import { createModuleUrl, resolveModuleFromLocation } from '../routing';
+import { resolveSalesTab } from '../../features/sales/model/salesRules';
+import { resolveInventoryTab } from '../../features/inventory/model/salesOutboundBridge';
 
 const location = (search = '', hash = '') => ({ pathname: '/', search, hash });
 
@@ -31,22 +33,48 @@ describe('application module routing', () => {
     expect(createModuleUrl(location('?module=production&production=orders'), '工作台')).toBe('/');
   });
 
-  it('preserves module-owned section state only while that module is active', () => {
+  it('starts first-level navigation on the module default section', () => {
     const productionUrl = new URL(createModuleUrl(location('?platform=roles&production=orders&tab=quotes&inventory=outbound&sourceOrder=SO-1&focusOrder=SO-2'), '生产管理'), 'https://example.test');
-    expect(productionUrl.searchParams.get('production')).toBe('orders');
+    expect(productionUrl.searchParams.get('production')).toBe('dashboard');
     expect(productionUrl.searchParams.has('platform')).toBe(false);
     expect(productionUrl.searchParams.has('tab')).toBe(false);
     expect(productionUrl.searchParams.has('inventory')).toBe(false);
     expect(productionUrl.searchParams.has('sourceOrder')).toBe(false);
     expect(productionUrl.searchParams.has('focusOrder')).toBe(false);
+    expect(productionUrl.searchParams.get('module')).toBe('production');
 
     const salesUrl = new URL(createModuleUrl(productionUrl, '销售管理'), 'https://example.test');
     expect(salesUrl.searchParams.has('production')).toBe(false);
     expect(salesUrl.searchParams.get('module')).toBe('sales');
+    expect(salesUrl.searchParams.has('tab')).toBe(false);
 
     const inventoryUrl = new URL(createModuleUrl(location('?module=sales&tab=quotes'), '库存管理'), 'https://example.test');
     expect(inventoryUrl.searchParams.has('tab')).toBe(false);
     expect(inventoryUrl.searchParams.get('inventory')).toBe('dashboard');
+
+    const procurementUrl = new URL(createModuleUrl(location('?module=production&procurement=order&focusPr=PR-1'), '采购管理'), 'https://example.test');
+    expect(procurementUrl.searchParams.get('procurement')).toBe('dashboard');
+    expect(procurementUrl.searchParams.has('focusPr')).toBe(false);
+
+    const workbenchUrl = new URL(createModuleUrl(location('?module=procurement&procurement=pr&focusPr=PR-1&focusMps=MPS-1'), '工作台'), 'https://example.test');
+    expect(workbenchUrl.search).toBe('');
+  });
+
+  it.each(moduleRegistry)('clears stale section and record state when entering $label', (module) => {
+    const url = new URL(createModuleUrl(location(
+      '?module=inventory&inventory=outbound&sourceOrder=SO-1&focusOutbound=OUT-1&warehouseId=WH-1'
+      + '&tab=orders&focusOrder=SO-1&production=orders&focusMps=MPS-1'
+      + '&procurement=pr&focusPr=PR-1&platform=roles&focusId=ID-1&focusNo=NO-1&campaign=spring',
+    ), module.label), 'https://example.test');
+    for (const key of ['sourceOrder', 'focusOutbound', 'warehouseId', 'focusOrder', 'focusMps', 'focusPr', 'focusId', 'focusNo']) {
+      expect(url.searchParams.has(key)).toBe(false);
+    }
+    expect(resolveSalesTab(url.search)).toBe('dashboard');
+    expect(resolveInventoryTab(url.search)).toBe('dashboard');
+    expect(url.searchParams.get('production')).toBe(module.id === 'production' ? 'dashboard' : null);
+    expect(url.searchParams.get('procurement')).toBe(module.id === 'procurement' ? 'dashboard' : null);
+    expect(url.searchParams.get('platform')).toBe(module.id === 'platform' ? 'tenant' : null);
+    expect(url.searchParams.get('campaign')).toBe('spring');
   });
 });
 

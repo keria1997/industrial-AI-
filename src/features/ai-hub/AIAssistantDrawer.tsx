@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, X, Send, UploadCloud, CheckCircle2, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { type ChatMessage, type AIActionPlan, type DomainId, defaultDomainCategories } from './types';
+import { aiApi } from '../../api/ai';
+import type { ApiContext } from '../../api/client';
+import { DataImportPanel } from './import/DataImportPanel';
 
 type Props = {
   isOpen: boolean;
@@ -8,6 +11,8 @@ type Props = {
   tenantCode: string;
   roleName: string;
   onActionSubmit?: (action: AIActionPlan) => void;
+  apiContext?: ApiContext | null;
+  permissions?: string[];
 };
 
 const formatTime = () => {
@@ -30,6 +35,13 @@ const generateReply = (text: string, tenantName: string): { text: string; action
   const isSalesRelated = /(订单|销售|发货|客户)/.test(text);
   const isProductionRelated = /(生产|工单|排产|报工|完工|FQC)/.test(text);
   const isProcurementRelated = /(采购|PR|PO|供应商|交期|到货)/.test(text);
+
+  // Import capability questions
+  if (/导入|上传|批量|文件|格式/i.test(text) && /(什么|哪些|支持|格式|类型|怎么|如何)/.test(text)) {
+    return {
+      text: '当前系统支持通过 AI 助手上传 CSV 文件（UTF-8 编码）批量导入主数据。\n\n支持导入的类型：仓库、产品、物料。\n点击底部上传按钮选择文件，系统会自动识别列名并建议映射。\n暂不支持 Excel（.xlsx）直接导入，请先另存为 CSV 格式。',
+    };
+  }
 
   switch (intent) {
     case 'action':
@@ -76,7 +88,19 @@ const generateReply = (text: string, tenantName: string): { text: string; action
   }
 };
 
-export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onActionSubmit }: Props) => {
+const importEntityPermissionMap: Record<string, string> = {
+  warehouse: 'inventory.warehouse.create',
+  product: 'inventory.product.create',
+  material: 'inventory.material.create',
+  customer: 'sc.customer.create',
+  supplier: 'sc.supplier.create',
+};
+
+export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onActionSubmit, apiContext, permissions = [] }: Props) => {
+  const hasImportPermission = permissions.includes('*') || permissions.includes('ai.import.use');
+  const allowedImportEntities = Object.entries(importEntityPermissionMap)
+    .filter(([, perm]) => permissions.includes('*') || permissions.includes(perm))
+    .map(([entity]) => entity);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -89,9 +113,12 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
   const [expandedBasis, setExpandedBasis] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [activeDomain, setActiveDomain] = useState<DomainId>('all');
+  const [activeDomain, setActiveDomain] = useState<DomainId>('inventory');
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -107,7 +134,7 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
     }
   }, [isOpen]);
 
-  const sendMessage = useCallback((text?: string) => {
+  const sendMessage = useCallback(async (text?: string) => {
     const value = (text ?? input).trim();
     if (!value || isTyping) return;
 
@@ -122,7 +149,39 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
     setInput('');
     setIsTyping(true);
 
-    // 模拟AI思考延迟
+    // 尝试调用后端 AI API，失败时降级到本地规则引擎
+    if (apiContext) {
+      try {
+        const response = await aiApi.chat(apiContext, {
+          conversationId,
+          message: value,
+          domain: activeDomain,
+        });
+        setConversationId(response.conversation.id);
+        const assistantMessage: ChatMessage = {
+          id: response.assistantMessage.id,
+          role: 'assistant',
+          text: response.assistantMessage.content,
+          time: formatTime(),
+          action: response.actionPlan ? {
+            id: response.assistantMessage.id,
+            title: response.actionPlan.title,
+            scope: response.actionPlan.impactScope,
+            basis: response.actionPlan.dataEvidence.map(e => `${e.label}: ${e.value}`).join(' / '),
+            approval: response.actionPlan.approvalPath,
+            risk: response.actionPlan.riskLevel === 'critical' ? 'high' : response.actionPlan.riskLevel,
+            status: 'draft',
+          } : undefined,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsTyping(false);
+        return;
+      } catch {
+        // 降级到本地规则引擎
+      }
+    }
+
+    // 本地规则引擎降级
     setTimeout(() => {
       const reply = generateReply(value, tenantCode);
       const assistantMessage: ChatMessage = {
@@ -135,9 +194,32 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
       setMessages(prev => [...prev, assistantMessage]);
       setIsTyping(false);
     }, 700);
-  }, [input, tenantCode, isTyping]);
+  }, [input, tenantCode, isTyping, apiContext, conversationId, activeDomain]);
 
-  const handleSubmitAction = useCallback((messageId: string) => {
+  const handleSubmitAction = useCallback(async (messageId: string) => {
+    if (apiContext && conversationId) {
+      try {
+        const msg = messages.find(m => m.id === messageId);
+        if (msg?.action) {
+          await aiApi.submitActionPlan(apiContext, {
+            messageId,
+            conversationId,
+            actionPlan: {
+              title: msg.action.title,
+              description: msg.action.scope,
+              targetModule: 'general',
+              targetEntity: 'general',
+              targetAction: 'create',
+              parameters: {},
+              impactScope: msg.action.scope,
+              riskLevel: msg.action.risk === 'high' ? 'high' : msg.action.risk,
+              dataEvidence: [{ label: '审批路径', value: msg.action.approval }],
+              approvalPath: msg.action.approval,
+            },
+          });
+        }
+      } catch { /* 降级到本地状态更新 */ }
+    }
     setMessages(prev => prev.map(msg => {
       if (msg.id === messageId && msg.action) {
         const updatedAction = { ...msg.action, status: 'submitted' as const };
@@ -146,7 +228,7 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
       }
       return msg;
     }));
-  }, [onActionSubmit]);
+  }, [onActionSubmit, apiContext, conversationId, messages]);
 
   const toggleBasis = useCallback((messageId: string) => {
     setExpandedBasis(prev => prev === messageId ? null : messageId);
@@ -159,10 +241,18 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
     }).catch(() => {});
   }, []);
 
+  const handleImportComplete = useCallback((summary: string) => {
+    const importMessage: ChatMessage = {
+      id: `import-${Date.now()}`,
+      role: 'assistant',
+      text: summary,
+      time: formatTime(),
+    };
+    setMessages(prev => [...prev, importMessage]);
+  }, []);
+
   // 获取当前要展示的域列表
-  const visibleDomains = activeDomain === 'all'
-    ? defaultDomainCategories.filter(d => d.id !== 'all')
-    : defaultDomainCategories.filter(d => d.id === activeDomain);
+  const visibleDomains = defaultDomainCategories.filter(d => d.id === activeDomain);
 
   if (!isOpen) return null;
 
@@ -324,10 +414,16 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
         {/* 底部输入区 */}
         <div className="border-t border-slate-100 bg-white shrink-0">
           {/* 域分类标签 */}
-          <div className="px-5 pt-3 pb-1.5 flex items-center gap-1.5 flex-wrap">
+          <div
+            role="group"
+            aria-label="助手业务域"
+            className="px-5 pt-3 pb-1.5 flex items-center gap-1.5 flex-wrap"
+          >
             {defaultDomainCategories.map(cat => (
               <button
                 key={cat.id}
+                type="button"
+                aria-pressed={activeDomain === cat.id}
                 onClick={() => setActiveDomain(cat.id)}
                 className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${
                   activeDomain === cat.id
@@ -341,15 +437,18 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
           </div>
 
           {/* 能力展示区 */}
-          <div className="px-5 pb-2 max-h-[120px] overflow-y-auto custom-scrollbar">
+          <div
+            role="group"
+            aria-label={`${visibleDomains[0]?.label ?? '助手'}快捷提问`}
+            className="px-5 pb-2 max-h-[120px] overflow-y-auto custom-scrollbar"
+          >
             {visibleDomains.map(domain => (
               <div key={domain.id} className="mb-1.5">
-                {activeDomain === 'all' && (
-                  <span className="text-[10px] font-bold text-slate-400 mr-1.5">{domain.label}：</span>
-                )}
                 {domain.features.map(feature => (
                   <button
                     key={feature}
+                    type="button"
+                    aria-label={`发送快捷提问：${feature}`}
                     onClick={() => sendMessage(feature)}
                     disabled={isTyping}
                     className="inline-block mr-1.5 mb-1 px-2.5 py-1 rounded-full bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 hover:border-blue-100 text-[11px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -363,13 +462,27 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
 
           {/* 输入框 */}
           <div className="p-4 flex items-center gap-3">
-            <button
-              type="button"
-              aria-label="上传附件"
-              className="w-11 h-11 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border border-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-            >
-              <UploadCloud size={18} />
-            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={(e) => {
+                const selected = e.target.files?.[0];
+                if (selected) setImportFile(selected);
+                e.target.value = '';
+              }}
+            />
+            {hasImportPermission && (
+              <button
+                type="button"
+                aria-label="上传主数据文件"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-11 h-11 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border border-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <UploadCloud size={18} />
+              </button>
+            )}
             <div className="flex-1 h-11 border border-slate-200 bg-slate-50 rounded-xl px-4 flex items-center focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400 transition-all">
               <input
                 ref={inputRef}
@@ -383,7 +496,7 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
                 }}
                 aria-label="向 AI 助手提问"
                 placeholder="输入问题，回车发送..."
-                className="w-full bg-transparent outline-none text-[13px] text-slate-700"
+                className="w-full bg-transparent outline-none focus-visible:outline-none text-[13px] text-slate-700"
               />
             </div>
             <button
@@ -397,6 +510,17 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
             </button>
           </div>
         </div>
+        {importFile && (
+          <div className="absolute inset-x-4 bottom-[72px] z-10">
+            <DataImportPanel
+              file={importFile}
+              apiContext={apiContext ?? null}
+              allowedEntities={allowedImportEntities}
+              onClose={() => setImportFile(null)}
+              onComplete={handleImportComplete}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

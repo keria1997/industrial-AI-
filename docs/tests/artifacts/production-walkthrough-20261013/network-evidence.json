@@ -1,0 +1,551 @@
+{
+  "date": "2026-10-13",
+  "baseUrl": "http://127.0.0.1:5173",
+  "tenantId": "TENANT-SHWS",
+  "fixtureSetup": "DM-UI-20261013-01 created via API; subsequent operations by frontend clicks",
+  "prototypeApiRequests": {
+    "globalMrp": 0,
+    "report": 0,
+    "fqc": 0,
+    "completion": 0
+  },
+  "refreshRecovery": "MPS-d273ad22\t\n普通生产\t\n紧急\n\tFG001 - 生产页面验收产品\t12 PCS\t2026-10-20\t\n普通生产 (销售订单 / 生产服务)\n业务来源\n\t已展算\t",
+  "pageErrors": [],
+  "commands": [
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders",
+      "status": 201,
+      "body": {
+        "id": "2dd0b2ad-68bd-4d64-befb-ff9e8936d416",
+        "tenantId": "TENANT-SHWS",
+        "orderNo": "SO-20261013-2DD0B2AD",
+        "customerId": "KH-20260612-005",
+        "customerName": "生产流程验收-20261013",
+        "ownerEmployeeId": "test01",
+        "fulfillmentWarehouseId": "d38ac547-8fc0-4e33-b023-cee50cc4d73d",
+        "factoryResourceId": "FAC-SH-01",
+        "requestedDeliveryDate": "2026-10-20",
+        "allowPartialShipment": true,
+        "currency": "CNY",
+        "recipient": {
+          "name": "张新国",
+          "country": "中国",
+          "province": "上海",
+          "city": "上海",
+          "address": "陕西省商洛市商州区产业园",
+          "phoneMasked": "181****7811"
+        },
+        "lines": [
+          {
+            "lineNo": 1,
+            "productId": "FG001",
+            "orderedQty": "1000",
+            "uom": "PCS",
+            "unitPrice": "1",
+            "taxRate": "0",
+            "promisedDate": "2026-10-20",
+            "allowPartialShipment": true,
+            "id": "61227a35-b8e0-44a0-af0a-ca02e42b7779",
+            "shippedQty": "0",
+            "activeRequestedQty": "0",
+            "reservedQty": "0",
+            "remainingQty": "1000",
+            "lineStatus": "OPEN",
+            "version": 1
+          }
+        ],
+        "totalAmount": "1000",
+        "overallStatus": "PENDING_CONFIRMATION",
+        "reviewStatus": "PENDING",
+        "shipmentStatus": "NOT_REQUESTED",
+        "reviewRequired": true,
+        "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+        "correlationId": "35577306-8ff2-4c6f-afc7-1ee928128603",
+        "createdBy": "test01",
+        "version": 1,
+        "createdAt": "2026-10-13T07:01:08.479206Z",
+        "updatedAt": "2026-10-13T07:01:08.479206Z"
+      }
+    },
+    {
+      "actor": "reviewer",
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/2dd0b2ad-68bd-4d64-befb-ff9e8936d416/review-decisions",
+      "status": 200,
+      "body": {
+        "id": "2dd0b2ad-68bd-4d64-befb-ff9e8936d416",
+        "tenantId": "TENANT-SHWS",
+        "orderNo": "SO-20261013-2DD0B2AD",
+        "customerId": "KH-20260612-005",
+        "customerName": "生产流程验收-20261013",
+        "ownerEmployeeId": "test01",
+        "fulfillmentWarehouseId": "d38ac547-8fc0-4e33-b023-cee50cc4d73d",
+        "factoryResourceId": "FAC-SH-01",
+        "requestedDeliveryDate": "2026-10-20",
+        "allowPartialShipment": true,
+        "currency": "CNY",
+        "recipient": {
+          "name": "张新国",
+          "country": "中国",
+          "province": "上海",
+          "city": "上海",
+          "address": "陕西省商洛市商州区产业园",
+          "phoneMasked": "181****7811"
+        },
+        "lines": [
+          {
+            "lineNo": 1,
+            "productId": "FG001",
+            "orderedQty": "1000",
+            "uom": "PCS",
+            "unitPrice": "1",
+            "taxRate": "0",
+            "promisedDate": "2026-10-20",
+            "allowPartialShipment": true,
+            "id": "61227a35-b8e0-44a0-af0a-ca02e42b7779",
+            "shippedQty": "0",
+            "activeRequestedQty": "0",
+            "reservedQty": "0",
+            "remainingQty": "1000",
+            "lineStatus": "OPEN",
+            "version": 1
+          }
+        ],
+        "totalAmount": "1000",
+        "overallStatus": "PENDING_CONFIRMATION",
+        "reviewStatus": "APPROVED",
+        "shipmentStatus": "NOT_REQUESTED",
+        "reviewRequired": true,
+        "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+        "correlationId": "35577306-8ff2-4c6f-afc7-1ee928128603",
+        "createdBy": "test01",
+        "version": 2,
+        "createdAt": "2026-10-13T07:01:08.479206Z",
+        "updatedAt": "2026-10-13T07:04:26.358080Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/2dd0b2ad-68bd-4d64-befb-ff9e8936d416/confirm",
+      "status": 200,
+      "body": {
+        "id": "2dd0b2ad-68bd-4d64-befb-ff9e8936d416",
+        "tenantId": "TENANT-SHWS",
+        "orderNo": "SO-20261013-2DD0B2AD",
+        "customerId": "KH-20260612-005",
+        "customerName": "生产流程验收-20261013",
+        "ownerEmployeeId": "test01",
+        "fulfillmentWarehouseId": "d38ac547-8fc0-4e33-b023-cee50cc4d73d",
+        "factoryResourceId": "FAC-SH-01",
+        "requestedDeliveryDate": "2026-10-20",
+        "allowPartialShipment": true,
+        "currency": "CNY",
+        "recipient": {
+          "name": "张新国",
+          "country": "中国",
+          "province": "上海",
+          "city": "上海",
+          "address": "陕西省商洛市商州区产业园",
+          "phoneMasked": "181****7811"
+        },
+        "lines": [
+          {
+            "lineNo": 1,
+            "productId": "FG001",
+            "orderedQty": "1000",
+            "uom": "PCS",
+            "unitPrice": "1",
+            "taxRate": "0",
+            "promisedDate": "2026-10-20",
+            "allowPartialShipment": true,
+            "id": "61227a35-b8e0-44a0-af0a-ca02e42b7779",
+            "shippedQty": "0",
+            "activeRequestedQty": "0",
+            "reservedQty": "0",
+            "remainingQty": "1000",
+            "lineStatus": "OPEN",
+            "version": 2
+          }
+        ],
+        "totalAmount": "1000",
+        "overallStatus": "CONFIRMED",
+        "reviewStatus": "APPROVED",
+        "shipmentStatus": "NOT_REQUESTED",
+        "reviewRequired": true,
+        "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+        "correlationId": "35577306-8ff2-4c6f-afc7-1ee928128603",
+        "createdBy": "test01",
+        "version": 3,
+        "createdAt": "2026-10-13T07:01:08.479206Z",
+        "updatedAt": "2026-10-13T07:05:24.767930Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/2dd0b2ad-68bd-4d64-befb-ff9e8936d416/shipment-requests",
+      "status": 202,
+      "body": {
+        "id": "3b256539-5d9f-4196-be41-515798a26315",
+        "tenantId": "TENANT-SHWS",
+        "requestNo": "SR-20261013-3B256539",
+        "salesOrderId": "2dd0b2ad-68bd-4d64-befb-ff9e8936d416",
+        "warehouseId": "d38ac547-8fc0-4e33-b023-cee50cc4d73d",
+        "orderRevision": 3,
+        "workflowStatus": "REQUESTED",
+        "availabilityStatus": "UNCHECKED",
+        "replenishmentStatus": "NOT_REQUIRED",
+        "postingStatus": "NOT_STARTED",
+        "version": 1,
+        "correlationId": "35577306-8ff2-4c6f-afc7-1ee928128603",
+        "createdBy": "test01",
+        "createdAt": "2026-10-13T07:05:25.215886Z",
+        "updatedAt": "2026-10-13T07:05:25.215886Z",
+        "lines": [
+          {
+            "orderLineId": "61227a35-b8e0-44a0-af0a-ca02e42b7779",
+            "sourceLineRevision": 2,
+            "requestedQty": "1000",
+            "uom": "PCS",
+            "id": "b46f2bfc-2adf-4cbe-b4cd-9257cfd00286",
+            "productId": "FG001",
+            "reservedQty": "0",
+            "postedQty": "0",
+            "shortageQty": "0"
+          }
+        ]
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/shipment-tasks/00c8e6ab-38f7-4641-b6b3-5846cf005e4a/check-and-reserve",
+      "status": 424,
+      "body": {
+        "error": {
+          "code": "FULFILLMENT_424_DEPENDENCY_FAILED",
+          "message": "库存权威源拒绝预留",
+          "suggestion": "检查库存事实和 WMS 映射后使用原业务操作重试",
+          "retryable": false,
+          "fieldErrors": null,
+          "details": {
+            "adapterKind": "REFERENCE",
+            "failureCode": "AVAILABILITY_FACT_MISSING"
+          },
+          "traceId": "2e5"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/shipment-tasks/00c8e6ab-38f7-4641-b6b3-5846cf005e4a/check-and-reserve",
+      "status": 424,
+      "body": {
+        "error": {
+          "code": "FULFILLMENT_424_DEPENDENCY_FAILED",
+          "message": "库存权威源拒绝预留",
+          "suggestion": "检查库存事实和 WMS 映射后使用原业务操作重试",
+          "retryable": false,
+          "fieldErrors": null,
+          "details": {
+            "adapterKind": "REFERENCE",
+            "failureCode": "AVAILABILITY_FACT_MISSING"
+          },
+          "traceId": "2f9"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/demand-seed-002/validate",
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "PRODUCTION_404_NOT_FOUND",
+          "message": "需求不存在或不在当前数据范围内",
+          "suggestion": "请刷新列表并确认租户与数据权限",
+          "retryable": false,
+          "fieldErrors": [],
+          "details": null,
+          "traceId": "300"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/demand-seed-002/validate",
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "PRODUCTION_404_NOT_FOUND",
+          "message": "需求不存在或不在当前数据范围内",
+          "suggestion": "请刷新列表并确认租户与数据权限",
+          "retryable": false,
+          "fieldErrors": [],
+          "details": null,
+          "traceId": "30b"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands",
+      "status": 201,
+      "body": {
+        "id": "d273ad22-adc6-4254-8ae3-fd23199516be",
+        "tenantId": "TENANT-SHWS",
+        "code": "DM-UI-20261013-01",
+        "sourceType": "MANUAL",
+        "productId": "FG001",
+        "productName": "生产页面验收产品",
+        "qty": "12",
+        "uom": "PCS",
+        "dueDate": "2026-10-20",
+        "priority": 50,
+        "factoryResourceId": "FAC-SH-01",
+        "status": "RECEIVED",
+        "revision": 1,
+        "correlationId": "e75ab931-936e-46ab-b399-7b583b58ec31",
+        "createdBy": "test01",
+        "version": 1,
+        "createdAt": "2026-10-13T07:10:29.581468Z",
+        "updatedAt": "2026-10-13T07:10:29.581501Z",
+        "blockReasons": []
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/d273ad22-adc6-4254-8ae3-fd23199516be/validate",
+      "status": 200,
+      "body": {
+        "id": "d273ad22-adc6-4254-8ae3-fd23199516be",
+        "tenantId": "TENANT-SHWS",
+        "code": "DM-UI-20261013-01",
+        "sourceType": "MANUAL",
+        "productId": "FG001",
+        "productName": "生产页面验收产品",
+        "qty": "12",
+        "uom": "PCS",
+        "dueDate": "2026-10-20",
+        "priority": 50,
+        "factoryResourceId": "FAC-SH-01",
+        "status": "PENDING_REVIEW",
+        "revision": 1,
+        "correlationId": "e75ab931-936e-46ab-b399-7b583b58ec31",
+        "createdBy": "test01",
+        "version": 2,
+        "createdAt": "2026-10-13T07:10:29.581468Z",
+        "updatedAt": "2026-10-13T07:11:47.144659Z",
+        "blockReasons": [],
+        "reviewerId": "test01",
+        "handlerRole": "PRODUCTION_DIRECTOR",
+        "assignedAt": "2026-10-13T07:11:47.144702Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/d273ad22-adc6-4254-8ae3-fd23199516be/approve",
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "PRODUCTION_403_PERMISSION_DENIED",
+          "message": "需求制单人不能审批本人创建的需求",
+          "suggestion": "请由另一名具备审批权限的人员操作",
+          "retryable": false,
+          "fieldErrors": [],
+          "details": null,
+          "traceId": "32d"
+        }
+      }
+    },
+    {
+      "actor": "reviewer",
+      "method": "POST",
+      "path": "/api/v1/production/demands/d273ad22-adc6-4254-8ae3-fd23199516be/approve",
+      "status": 200,
+      "body": {
+        "id": "d273ad22-adc6-4254-8ae3-fd23199516be",
+        "tenantId": "TENANT-SHWS",
+        "code": "DM-UI-20261013-01",
+        "sourceType": "MANUAL",
+        "productId": "FG001",
+        "productName": "生产页面验收产品",
+        "qty": "12",
+        "uom": "PCS",
+        "dueDate": "2026-10-20",
+        "priority": 50,
+        "factoryResourceId": "FAC-SH-01",
+        "status": "APPROVED",
+        "revision": 1,
+        "correlationId": "e75ab931-936e-46ab-b399-7b583b58ec31",
+        "createdBy": "test01",
+        "version": 3,
+        "createdAt": "2026-10-13T07:10:29.581468Z",
+        "updatedAt": "2026-10-13T07:12:29.500938Z",
+        "blockReasons": [],
+        "reviewerId": "test01",
+        "handlerRole": "PRODUCTION_PLANNER",
+        "assignedAt": "2026-10-13T07:12:29.500980Z",
+        "approvedBy": "reviewer",
+        "approvedAt": "2026-10-13T07:12:29.500974Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/d273ad22-adc6-4254-8ae3-fd23199516be/claim",
+      "status": 200,
+      "body": {
+        "id": "d273ad22-adc6-4254-8ae3-fd23199516be",
+        "tenantId": "TENANT-SHWS",
+        "code": "DM-UI-20261013-01",
+        "sourceType": "MANUAL",
+        "productId": "FG001",
+        "productName": "生产页面验收产品",
+        "qty": "12",
+        "uom": "PCS",
+        "dueDate": "2026-10-20",
+        "priority": 50,
+        "factoryResourceId": "FAC-SH-01",
+        "status": "APPROVED",
+        "revision": 1,
+        "correlationId": "e75ab931-936e-46ab-b399-7b583b58ec31",
+        "createdBy": "test01",
+        "version": 4,
+        "createdAt": "2026-10-13T07:10:29.581468Z",
+        "updatedAt": "2026-10-13T07:12:30.262576Z",
+        "blockReasons": [],
+        "reviewerId": "test01",
+        "handlerRole": "PRODUCTION_PLANNER",
+        "assignedAt": "2026-10-13T07:12:29.500980Z",
+        "approvedBy": "reviewer",
+        "approvedAt": "2026-10-13T07:12:29.500974Z",
+        "handlerId": "test01",
+        "acceptedAt": "2026-10-13T07:12:30.262595Z"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/mrp-runs",
+      "status": 202,
+      "body": {
+        "taskId": "08e04a0f-e59b-4cfa-ae22-8b4c153374ce",
+        "status": "SUCCEEDED",
+        "progress": 100,
+        "traceId": "trace-6488219902625",
+        "result": {
+          "solver": "REFERENCE_MPS_MRP_V2",
+          "completedAt": "2026-10-13T07:12:30.545310Z",
+          "canProceedToAps": true,
+          "mpsLines": [
+            {
+              "demandId": "d273ad22-adc6-4254-8ae3-fd23199516be",
+              "demandCode": "DM-UI-20261013-01",
+              "productId": "FG001",
+              "plannedQty": "12",
+              "uom": "PCS",
+              "dueDate": "2026-10-20"
+            }
+          ],
+          "materialShortages": []
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/schedule-runs",
+      "status": 202,
+      "body": {
+        "taskId": "af6f6b11-5659-4842-afb1-3b872e6213c6",
+        "status": "SUCCEEDED",
+        "progress": 100,
+        "traceId": "trace-6558351812291",
+        "result": {
+          "solver": "REFERENCE_APS_V1",
+          "completedAt": "2026-10-13T07:13:40.678918Z",
+          "scheduleCandidates": [
+            {
+              "id": "468b8bbf-1e8a-4c7c-823e-0cc2473a71af",
+              "startAt": "2026-10-13T07:13:40.678955Z",
+              "published": true,
+              "demandIds": [
+                "d273ad22-adc6-4254-8ae3-fd23199516be"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders",
+      "status": 201,
+      "body": {
+        "id": "e51e1e80-37d5-4fe7-8230-b1651899db72",
+        "tenantId": "TENANT-SHWS",
+        "code": "WO-MV6CH9XC5D9E",
+        "productId": "FG001",
+        "productName": "生产页面验收产品",
+        "bomSnapshotId": "11387971-9685-47fd-9e7d-37b1820dfb5b",
+        "routingSnapshotId": "deb3221f-60d7-49be-b7a1-e1a432aa936b",
+        "scheduleCandidateId": "468b8bbf-1e8a-4c7c-823e-0cc2473a71af",
+        "correlationId": "e75ab931-936e-46ab-b399-7b583b58ec31",
+        "factoryResourceId": "FAC-SH-01",
+        "workCenterResourceId": "WC-SH-ASSY-01",
+        "plannedQty": "12",
+        "inputQty": "12",
+        "reportedGoodQty": "0",
+        "reportedDefectQty": "0",
+        "reportedScrapQty": "0",
+        "postedQty": "0",
+        "uom": "PCS",
+        "dueDate": "2026-10-20",
+        "status": "PLANNED",
+        "createdBy": "test01",
+        "version": 1,
+        "createdAt": "2026-10-13T07:13:40.993022Z",
+        "updatedAt": "2026-10-13T07:13:40.993055Z",
+        "parameterSnapshot": {
+          "inventoryWarehouseId": "",
+          "demandIds": [
+            {
+              "demandId": "d273ad22-adc6-4254-8ae3-fd23199516be",
+              "allocatedQty": "12",
+              "promisedDate": "2026-10-20"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/e51e1e80-37d5-4fe7-8230-b1651899db72/release-impact",
+      "status": 200,
+      "body": {
+        "canRelease": false,
+        "version": 1,
+        "blockers": [
+          {
+            "code": "KITTING_NOT_READY",
+            "message": "物料齐套状态为 未检查",
+            "repairAction": "重新执行齐套检查并完成库存预占"
+          }
+        ]
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/inspections/fqc-seed-001/result",
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "PRODUCTION_404_NOT_FOUND",
+          "message": "检验单不存在或不在当前数据范围内",
+          "suggestion": "请刷新列表并确认租户与数据权限",
+          "retryable": false,
+          "fieldErrors": [],
+          "details": null,
+          "traceId": "3a4"
+        }
+      }
+    }
+  ]
+}

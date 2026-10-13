@@ -2,10 +2,14 @@ export type InventoryMasterStatus = '启用' | '停用';
 
 export type InventoryWarehouse = {
   id: string;
+  code?: string;
+  serverId?: string;
+  serverVersion?: number;
   name: string;
   type: string;
   organization: string;
   manager: string;
+  phone?: string;
   address: string;
   capacity: number;
   usedCapacity: number;
@@ -20,6 +24,7 @@ export type InventoryProduct = {
   specification: string;
   category: string;
   unit: string;
+  unitPrice: number;
   defaultWarehouseId: string;
   safetyStock: number;
   traceMode: string;
@@ -33,6 +38,7 @@ export type InventoryMaterial = {
   specification: string;
   materialType: string;
   unit: string;
+  unitPrice: number;
   defaultWarehouseId: string;
   procurementType: string;
   safetyStock: number;
@@ -72,6 +78,7 @@ export type WarehouseInventoryRow = {
   stockQty: number;
   lockQty: number;
   availQty: number;
+  unitPrice: number;
   unit: string;
   status: string;
 };
@@ -118,21 +125,25 @@ const seedProducts: InventoryProduct[] = [
   {
     id: 'FG001', name: '工业控制器顶配版', specification: 'IC-X900 / 32G / 双网口',
     category: '成品', unit: '台', defaultWarehouseId: 'WH-FG-01', safetyStock: 600,
+    unitPrice: 500,
     traceMode: '序列号', status: '启用', updatedAt: '2026-07-26 10:00',
   },
   {
     id: 'FG002', name: '边缘计算网关Pro', specification: 'EG-420 / 8G / 4G',
     category: '成品', unit: '台', defaultWarehouseId: 'WH-FG-01', safetyStock: 120,
+    unitPrice: 1200,
     traceMode: '序列号', status: '启用', updatedAt: '2026-07-25 15:30',
   },
   {
     id: 'FG003', name: '智能视觉检测终端', specification: 'VX-900 / 200万像素 / 千兆网',
     category: '成品', unit: '台', defaultWarehouseId: 'WH-FG-01', safetyStock: 50,
+    unitPrice: 3500,
     traceMode: '序列号', status: '启用', updatedAt: '2026-07-25 16:00',
   },
   {
     id: 'FG004', name: '工业数据采集模块', specification: 'DAQ-100 / 16通道 / Modbus',
     category: '成品', unit: '套', defaultWarehouseId: 'WH-FG-01', safetyStock: 30,
+    unitPrice: 800,
     traceMode: '批次', status: '启用', updatedAt: '2026-07-25 16:30',
   },
 ];
@@ -141,16 +152,19 @@ const seedMaterials: InventoryMaterial[] = [
   {
     id: 'RM201', name: 'AI算力芯片', specification: 'AX-9000 / 工业级', materialType: '原材料',
     unit: 'PCS', defaultWarehouseId: 'WH-RM-01', procurementType: '外购', safetyStock: 800,
+    unitPrice: 125,
     status: '启用', updatedAt: '2026-07-26 10:05',
   },
   {
     id: 'RM202', name: '12层空PCB板', specification: 'PCB-12L / 180x120mm', materialType: '原材料',
     unit: 'PCS', defaultWarehouseId: 'WH-RM-01', procurementType: '外购', safetyStock: 300,
+    unitPrice: 46,
     status: '启用', updatedAt: '2026-07-26 09:55',
   },
   {
     id: 'SA101', name: '核心主板组件', specification: 'MB-X9 / 已贴片', materialType: '半成品',
     unit: '套', defaultWarehouseId: 'WH-WIP-01', procurementType: '自制', safetyStock: 100,
+    unitPrice: 860,
     status: '启用', updatedAt: '2026-07-25 17:20',
   },
 ];
@@ -161,6 +175,9 @@ export const createInventoryMasterDataSeed = (): InventoryMasterData => ({
   products: seedProducts.map((item) => ({ ...item })),
   materials: seedMaterials.map((item) => ({ ...item })),
 });
+
+const defaultProductPriceById = new Map(seedProducts.map((item) => [item.id, item.unitPrice]));
+const defaultMaterialPriceById = new Map(seedMaterials.map((item) => [item.id, item.unitPrice]));
 
 export const inventoryMasterDataStorageKey = (tenantId?: string) =>
   `industrial-ai-inventory-master-data:v1:${tenantId || 'default'}`;
@@ -177,7 +194,21 @@ export const loadInventoryMasterData = (
       || !Array.isArray(parsed.products) || !Array.isArray(parsed.materials)) {
       return createInventoryMasterDataSeed();
     }
-    return parsed as InventoryMasterData;
+    return {
+      ...parsed,
+      products: parsed.products.map((item) => ({
+        ...item,
+        unitPrice: item.unitPrice == null
+          ? defaultProductPriceById.get(item.id) || 0
+          : Number(item.unitPrice),
+      })),
+      materials: parsed.materials.map((item) => ({
+        ...item,
+        unitPrice: item.unitPrice == null
+          ? defaultMaterialPriceById.get(item.id) || 0
+          : Number(item.unitPrice),
+      })),
+    } as InventoryMasterData;
   } catch {
     return createInventoryMasterDataSeed();
   }
@@ -229,6 +260,7 @@ export const getWarehouseInventoryRows = (
       stockQty: Number(fact.stockQty || 0),
       lockQty: Number(fact.lockQty || 0),
       availQty: Number(fact.availQty || 0),
+      unitPrice: Number(product?.unitPrice || material?.unitPrice || 0),
       unit: fact.unit,
       status: fact.status,
     };
@@ -238,13 +270,13 @@ export const getWarehouseInventoryRows = (
     .forEach((item) => rows.push({
       id: item.id, kind: '产品', name: item.name, specification: item.specification,
       category: item.category, warehouseId: warehouse.id, location: '-', stockQty: 0,
-      lockQty: 0, availQty: 0, unit: item.unit, status: '未入库',
+      lockQty: 0, availQty: 0, unitPrice: item.unitPrice, unit: item.unit, status: '未入库',
     }));
   data.materials.filter((item) => item.defaultWarehouseId === warehouse.id && !existingIds.has(item.id))
     .forEach((item) => rows.push({
       id: item.id, kind: '物料', name: item.name, specification: item.specification,
       category: item.materialType, warehouseId: warehouse.id, location: '-', stockQty: 0,
-      lockQty: 0, availQty: 0, unit: item.unit, status: '未入库',
+      lockQty: 0, availQty: 0, unitPrice: item.unitPrice, unit: item.unit, status: '未入库',
     }));
   return rows.sort((left, right) => left.id.localeCompare(right.id));
 };

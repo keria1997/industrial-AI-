@@ -1,0 +1,387 @@
+package com.wanshen.platform.auth;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wanshen.platform.auth.RegisteredUserStore.CreateUserInput;
+import com.wanshen.platform.platform.TenantProvisioningService;
+import com.wanshen.platform.web.ApiException;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
+
+@RestController
+public class AuthController {
+    private final RegisteredUserStore users;
+    private final CaptchaService captchaService;
+    private final PasswordHasher passwordHasher;
+    private final TokenService tokenService;
+    private final TenantProvisioningService provisioningService;
+    private final boolean demoAuthEnabled;
+    private final List<String> demoAccounts;
+    private final String demoPassword;
+    private final String emailProvider;
+    private final String sendGridKey;
+    private final String appBaseUrl;
+    private final boolean smsConsole;
+    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+    private final SecureRandom random = new SecureRandom();
+    private final Map<String, RateWindow> rates = new ConcurrentHashMap<>();
+
+    public AuthController(
+            RegisteredUserStore users, CaptchaService captchaService,
+            PasswordHasher passwordHasher, TokenService tokenService,
+            TenantProvisioningService provisioningService,
+            @Value("${app.auth.demo-enabled}") boolean demoAuthEnabled,
+            @Value("${app.auth.demo-accounts}") String demoAccounts,
+            @Value("${app.auth.demo-password}") String demoPassword,
+            @Value("${app.auth.email-provider:console}") String emailProvider,
+            @Value("${SENDGRID_API_KEY:}") String sendGridKey,
+            @Value("${APP_BASE_URL:http://127.0.0.1:5173}") String appBaseUrl,
+            @Value("${app.auth.sms-provider:console}") String smsProvider
+    ) {
+        this.users = users;
+        this.captchaService = captchaService;
+        this.passwordHasher = passwordHasher;
+        this.tokenService = tokenService;
+        this.provisioningService = provisioningService;
+        this.demoAuthEnabled = demoAuthEnabled;
+        this.demoAccounts = Arrays.stream(demoAccounts.split(",")).map(String::trim).filter(item -> !item.isEmpty()).toList();
+        this.demoPassword = demoPassword;
+        this.emailProvider = emailProvider;
+        this.sendGridKey = sendGridKey;
+        this.appBaseUrl = appBaseUrl;
+        this.smsConsole = !"volcengine".equals(smsProvider);
+    }
+
+    @PostMapping("/api/v1/session/captcha")
+    public CaptchaService.CaptchaResponse captcha() { return captchaService.render(captchaService.generate()); }
+
+    @PostMapping("/api/v1/session/login")
+    public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        limit(httpRequest, "login", 10);
+        validateLogin(request);
+        if (!captchaService.verify(request.captchaId(), request.captchaCode())) throw bad("图形验证码错误或已过期", "刷新验证码后重新输入");
+        if (demoAuthEnabled && demoAccounts.contains(request.account()) && demoPassword.equals(request.password())) {
+            SessionUser user = developmentUser(request.account());
+            return ResponseEntity.ok(response(issue(user, "development-session-v1"), user, null));
+        }
+        RegisteredUser registered = users.findByAccount(request.account()).orElse(null);
+        if (registered != null && passwordHasher.verify(request.password(), registered.passwordHash())) {
+            if ("disabled".equals(registered.status())) throw forbidden("该账号已被禁用", "联系租户管理员");
+            SessionUser user = registeredUser(registered);
+            return ResponseEntity.ok(response(issue(user, "registered-user-v1"), user, null));
+        }
+        throw unauthorized("账号或密码不正确", "检查凭据后重试");
+    }
+
+    @GetMapping("/api/v1/session/me")
+    public Map<String, Object> me(HttpServletRequest request) {
+        TokenService.Claims claims = authenticate(request);
+        String tenantId = request.getHeader("X-Tenant-Id");
+        if (tenantId == null || tenantId.isBlank()) tenantId = claims.tenantIds().get(0);
+        if (!claims.tenantIds().contains(tenantId)) throw forbidden("当前会话无权访问所选租户", "切换到已授权企业后重试");
+        return Map.of("account", claims.sub(), "tenantId", tenantId, "permissions", claims.permissions(),
+                "permissionVersion", claims.permissionVersion());
+    }
+
+    @PostMapping("/api/v1/session/sms/send-code")
+    public Map<String, Object> sendSms(@RequestBody JsonNode input, HttpServletRequest request) {
+        limit(request, "sms", 5);
+        String phone = text(input, "phone");
+        if (!phone.matches("1[3-9]\\d{9}")) throw bad("请输入有效手机号", "检查手机号后重试");
+        String code = users.generateSmsCode(phone);
+        if (!smsConsole) throw dependency("短信服务商调用失败（错误码：UNSUPPORTED_PROVIDER）", "查看后端日志中的 RequestId，或稍后重试");
+        return Map.of("message", "验证码已发送", "expiresIn", 300, "devCode", code);
+    }
+
+    @PostMapping("/api/v1/session/sms/login")
+    public ResponseEntity<?> smsLogin(@RequestBody JsonNode input) {
+        String phone = text(input, "phone"); String code = text(input, "code");
+        if (!phone.matches("1[3-9]\\d{9}") || code.length() != 6) throw bad("请求字段不符合规则", "检查手机号和验证码后重试");
+        if (!users.verifySmsCode(phone, code)) throw unauthorized("验证码错误或已过期", "重新获取验证码后重试");
+        RegisteredUser registered = users.findByPhone(phone).orElse(null);
+        SessionUser user = registered == null ? developmentUser("test01") : registeredUser(registered);
+        return ResponseEntity.ok(response(issue(user, registered == null ? "development-session-v1" : "registered-user-v1"), user, null));
+    }
+
+    @PostMapping("/api/v1/session/password/forgot")
+    public Map<String, Object> forgotPassword(@RequestBody JsonNode input, HttpServletRequest request) {
+        limit(request, "forgot", 3);
+        String email = text(input, "email");
+        if (!email.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) throw bad("请输入有效邮箱地址", "检查邮箱后重试");
+        if (users.findByEmail(email).isEmpty()) return Map.of("message", "如果该邮箱已注册，重置链接已发送");
+        String token = users.generateResetToken(email);
+        sendResetEmail(email, token);
+        return Map.of("message", "如果该邮箱已注册，重置链接已发送", "resetToken", token);
+    }
+
+    @PostMapping("/api/v1/session/password/reset")
+    public ResponseEntity<Void> resetPassword(@RequestBody JsonNode input) {
+        String token = text(input, "token"); String password = text(input, "newPassword");
+        validatePassword(password);
+        RegisteredUserStore.ResetToken record = users.verifyResetToken(token);
+        if (record == null) throw unauthorized("重置链接无效或已过期", "重新申请密码重置");
+        RegisteredUser user = users.findByEmail(record.email()).orElse(null);
+        if (user == null) throw notFound("用户不存在", "检查邮箱地址");
+        users.updatePassword(user.account(), passwordHasher.hash(password));
+        users.markResetTokenUsed(token);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/api/v1/session/register")
+    public ResponseEntity<?> register(@RequestBody JsonNode input, HttpServletRequest request) {
+        limit(request, "register", 3);
+        String account = text(input, "account"); String password = text(input, "password");
+        String name = text(input, "name"); String phone = text(input, "phone");
+        String email = text(input, "email"); String tenantName = text(input, "tenantName");
+        String industry = text(input, "industry");
+        if (account.length() < 2 || account.length() > 50) throw bad("账号长度 2-50 个字符", "检查输入后重试");
+        validatePassword(password);
+        if (name.isBlank() || name.length() > 100) throw bad("姓名不合法", "检查输入后重试");
+        if (!phone.matches("1[3-9]\\d{9}")) throw bad("请输入有效手机号", "检查手机号后重试");
+        if (!email.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) throw bad("请输入有效邮箱地址", "检查邮箱后重试");
+        if (tenantName.length() < 2 || tenantName.length() > 200) throw bad("公司名称至少 2 个字符", "检查输入后重试");
+        if (industry.isBlank()) throw bad("请选择所属行业", "检查输入后重试");
+        RegisteredUser user;
+        try {
+            user = users.createUser(new CreateUserInput(account, passwordHasher.hash(password), name, phone,
+                    email, null, tenantName, industry, true, null, null, null, null));
+        } catch (RegisteredUserStore.DuplicateAccountException exception) { throw conflict("该账号已被注册", "换一个账号名或直接登录"); }
+        catch (RegisteredUserStore.DuplicatePhoneException exception) { throw conflict("该手机号已被注册", "换一个手机号或直接登录"); }
+        catch (RegisteredUserStore.DuplicateEmailException exception) { throw conflict("该邮箱已被注册", "换一个邮箱或直接登录"); }
+        SessionUser sessionUser = registeredUser(user);
+        String baselineProvisioning = "completed";
+        if (provisioningService != null) {
+            try {
+                provisioningService.provisionBaseline(new TenantProvisioningService.Input(
+                        user.tenantId(), tenantName, account, name));
+            } catch (RuntimeException exception) {
+                baselineProvisioning = "pending";
+            }
+        }
+        Map<String, Object> body = response(issue(sessionUser, "registered-user-v1"), sessionUser, null);
+        body.put("baselineProvisioning", baselineProvisioning);
+        return ResponseEntity.status(201).body(body);
+    }
+
+    @PostMapping("/api/v1/platform/tenants/self-provision")
+    public Map<String, Object> selfProvision(HttpServletRequest request) {
+        TokenService.Claims admin = authenticate(request);
+        RegisteredUser user = users.findByAccount(admin.sub()).orElse(null);
+        if (provisioningService != null) {
+            TenantProvisioningService.Result result = provisioningService.provisionBaseline(
+                    new TenantProvisioningService.Input(admin.tenantIds().get(0),
+                            user == null || user.tenantName().isBlank() ? admin.tenantIds().get(0) : user.tenantName(),
+                            admin.sub(), user == null ? admin.sub() : user.name()));
+            return Map.of("created", result.created(), "tenantId", result.tenantId());
+        }
+        return Map.of("created", false, "tenantId", admin.tenantIds().get(0));
+    }
+
+    @GetMapping("/api/v1/platform/employee-accounts")
+    public Map<String, Object> employeeAccounts(HttpServletRequest request) {
+        String tenantId = requireTenantAdmin(request);
+        return Map.of("items", users.listUsersByTenant(tenantId).stream().map(user -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", user.id()); item.put("account", user.account()); item.put("name", user.name());
+            item.put("phone", user.phone()); item.put("email", user.email()); item.put("department", user.department());
+            item.put("position", user.position()); item.put("employeeNo", user.employeeNo()); item.put("role", user.role());
+            item.put("isTenantAdmin", user.isTenantAdmin()); item.put("firstLogin", user.firstLogin());
+            item.put("status", user.status()); item.put("createdAt", user.createdAt());
+            return item;
+        }).toList());
+    }
+
+    @PostMapping("/api/v1/platform/employee-accounts")
+    public ResponseEntity<?> createEmployeeAccount(@RequestBody JsonNode input, HttpServletRequest request) {
+        String tenantId = requireTenantAdmin(request);
+        String name = text(input, "name"); String phone = text(input, "phone"); String email = text(input, "email");
+        String account = text(input, "account"); String department = text(input, "department");
+        String position = text(input, "position"); String employeeNo = optional(input, "employeeNo", "");
+        if (name.isBlank() || name.length() > 100 || !phone.matches("1[3-9]\\d{9}")
+                || !email.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+") || account.length() < 2 || account.length() > 50
+                || department.isBlank() || position.isBlank() || employeeNo.length() > 50) {
+            throw bad("请求字段不符合规则", "检查输入后重试");
+        }
+        String password = temporaryPassword();
+        try {
+            RegisteredUser user = users.createUser(new CreateUserInput(account, passwordHasher.hash(password), name,
+                    phone, email, tenantId, "", "", false, department, position, employeeNo, null));
+            return ResponseEntity.status(201).body(Map.of("id", user.id(), "account", user.account(), "temporaryPassword", password));
+        } catch (RegisteredUserStore.DuplicateAccountException exception) { throw conflict("该账号已被注册", "换一个账号名"); }
+        catch (RegisteredUserStore.DuplicatePhoneException exception) { throw conflict("该手机号已被注册", "换一个手机号"); }
+        catch (RegisteredUserStore.DuplicateEmailException exception) { throw conflict("该邮箱已被注册", "换一个邮箱"); }
+    }
+
+    @PutMapping("/api/v1/platform/employee-accounts/{id}/status")
+    public ResponseEntity<Void> updateEmployeeStatus(@PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request) {
+        String tenantId = requireTenantAdmin(request);
+        String status = text(input, "status");
+        if (!Set.of("active", "disabled").contains(status)) throw bad("状态不合法", "检查输入后重试");
+        RegisteredUser target = users.findById(id).orElse(null);
+        if (target == null || !target.tenantId().equals(tenantId)) throw notFound("员工账号不存在", "检查账号 ID");
+        users.updateUserStatus(id, status);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/api/v1/platform/employee-accounts/{id}/reset-password")
+    public Map<String, String> resetEmployeePassword(@PathVariable String id, HttpServletRequest request) {
+        String tenantId = requireTenantAdmin(request);
+        RegisteredUser target = users.findById(id).orElse(null);
+        if (target == null || !target.tenantId().equals(tenantId)) throw notFound("员工账号不存在", "检查账号 ID");
+        String password = temporaryPassword();
+        users.updatePassword(target.account(), passwordHasher.hash(password));
+        users.updateFirstLogin(target.account(), true);
+        return Map.of("temporaryPassword", password);
+    }
+
+    @PostMapping("/api/v1/session/refresh")
+    public ResponseEntity<?> refresh(HttpServletRequest request) {
+        TokenService.Claims claims = authenticate(request);
+        SessionUser user = developmentUser(claims.sub());
+        return ResponseEntity.ok(response(issue(user, "development-session-v1"), user, null));
+    }
+
+    @PostMapping("/api/v1/session/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        TokenService.Claims claims = authenticate(request);
+        if (provisioningService != null) provisioningService.revokeSession(claims.tenantIds().get(0), claims.sub());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/api/v1/session/change-password")
+    public ResponseEntity<Void> changePassword(@RequestBody JsonNode input, HttpServletRequest request) {
+        TokenService.Claims claims = authenticate(request);
+        String oldPassword = text(input, "oldPassword"); String newPassword = text(input, "newPassword");
+        validatePassword(newPassword);
+        RegisteredUser registered = users.findByAccount(claims.sub()).orElse(null);
+        if (registered != null) {
+            if (!passwordHasher.verify(oldPassword, registered.passwordHash())) throw unauthorized("原密码不正确", "检查原密码后重试");
+            users.updatePassword(claims.sub(), passwordHasher.hash(newPassword));
+        } else if (demoAuthEnabled && !oldPassword.equals(demoPassword)) {
+            throw unauthorized("原密码不正确", "检查原密码后重试");
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/api/v1/session/complete-first-login")
+    public ResponseEntity<Void> completeFirstLogin(@RequestBody JsonNode input) {
+        String account = text(input, "account"); String currentPassword = text(input, "currentPassword");
+        String newPassword = text(input, "newPassword");
+        validatePassword(newPassword);
+        RegisteredUser user = users.findByAccount(account).orElse(null);
+        if (user == null || !passwordHasher.verify(currentPassword, user.passwordHash())) throw unauthorized("验证失败", "检查账号和密码");
+        if (!user.firstLogin()) throw conflict("该账号已完成首次登录设置", "直接登录即可");
+        users.updatePassword(account, passwordHasher.hash(newPassword));
+        users.updateFirstLogin(account, false);
+        return ResponseEntity.noContent().build();
+    }
+
+    private TokenService.IssuedToken issue(SessionUser user, String version) {
+        return tokenService.issue(user.account(), user.name(), user.role(), user.tenantIds(), user.permissions(), version);
+    }
+    private Map<String, Object> response(TokenService.IssuedToken token, SessionUser user, Object extra) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("accessToken", token.accessToken()); result.put("expiresAt", token.expiresAt());
+        result.put("tokenType", "Bearer"); result.put("user", user);
+        if (extra != null) result.put("firstLogin", extra);
+        return result;
+    }
+    private SessionUser registeredUser(RegisteredUser user) {
+        return new SessionUser(user.account(), user.name(), user.role(), user.tenantName(), List.of(user.tenantId()), user.permissions());
+    }
+    private SessionUser developmentUser(String account) {
+        List<String> accounts = List.of("test01", "reviewer", "operator", "inspector");
+        List<String> names = List.of("test01", "生产复核员", "车间操作员", "质量检验员");
+        int index = accounts.indexOf(account);
+        return new SessionUser(account, index < 0 ? account : names.get(index), "超级管理员", "",
+                List.of("TENANT-SHWS", "TENANT-HDJG"), List.of("*"));
+    }
+    private TokenService.Claims authenticate(HttpServletRequest request) {
+        String authorization = request.getHeader("Authorization");
+        String token = authorization == null ? null : authorization.replaceFirst("(?i)^Bearer\\s+", "");
+        if (token == null || token.isBlank()) throw unauthorized("缺少有效登录会话", "使用登录接口取得访问令牌后重试");
+        try {
+            TokenService.Claims claims = tokenService.verify(token);
+            String tenantId = request.getHeader("X-Tenant-Id");
+            if (tenantId != null && provisioningService != null && provisioningService.isSessionRevoked(tenantId, claims.sub())) {
+                throw unauthorized("会话已注销，请重新登录", "使用登录接口取得新的访问令牌");
+            }
+            return claims;
+        } catch (TokenService.InvalidTokenException exception) {
+            throw unauthorized("登录会话无效或已过期", "请重新登录后再试");
+        }
+    }
+    private String requireTenantAdmin(HttpServletRequest request) { return authenticate(request).tenantIds().get(0); }
+    private void sendResetEmail(String email, String token) {
+        String link = appBaseUrl + "/reset-password?token=" + token;
+        if ("sendgrid".equals(emailProvider) && !sendGridKey.isBlank()) {
+            try {
+                Map<String, Object> body = Map.of("personalizations", List.of(Map.of("to", List.of(Map.of("email", email)))),
+                        "from", Map.of("email", "noreply@industrial-ai.com"), "subject", "工业AI平台 - 密码重置",
+                        "content", List.of(Map.of("type", "text/html", "value", "<p>请点击以下链接重置密码：</p><p><a href=\"" + link + "\">" + link + "</a></p>")));
+                HttpRequest request = HttpRequest.newBuilder(URI.create("https://api.sendgrid.com/v3/mail/send"))
+                        .header("Authorization", "Bearer " + sendGridKey).header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(new ObjectMapper().writeValueAsString(body))).build();
+                HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() < 200 || response.statusCode() >= 300) throw new IllegalStateException(response.body());
+                return;
+            } catch (Exception exception) { throw dependency("邮件服务商调用失败", "检查 SENDGRID_API_KEY 配置"); }
+        }
+        System.out.println("[EMAIL:dev] 密码重置链接已生成 to=" + email + " link=" + link);
+    }
+    private void limit(HttpServletRequest request, String operation, int max) {
+        String key = operation + ":" + Optional.ofNullable(request.getHeader("X-Forwarded-For")).orElse("unknown");
+        Instant now = Instant.now();
+        RateWindow window = rates.compute(key, (ignored, value) ->
+                value == null || value.window().isBefore(now) ? new RateWindow(now.plusSeconds(60), new ArrayList<>()) : value);
+        synchronized (window) {
+            window.requests().removeIf(item -> item.isBefore(now.minusSeconds(60)));
+            if (window.requests().size() >= max) throw unauthorized("请求过于频繁，请 60 秒后重试", "稍后再试");
+            window.requests().add(now);
+        }
+    }
+    private String temporaryPassword() {
+        String characters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+        StringBuilder result = new StringBuilder();
+        for (int index = 0; index < 8; index++) result.append(characters.charAt(random.nextInt(characters.length())));
+        return result.toString();
+    }
+    private void validateLogin(LoginRequest request) {
+        if (request == null || request.account() == null || request.account().isBlank() || request.account().length() > 100
+                || request.password() == null || request.password().isBlank() || request.password().length() > 200
+                || request.captchaId() == null || request.captchaCode() == null
+                || !request.captchaCode().trim().toUpperCase().matches("[23456789A-Z]{4}")) {
+            throw bad("请求字段不符合规则", "检查账号、密码和验证码");
+        }
+    }
+    private void validatePassword(String password) {
+        if (password == null || password.length() < 8 || password.length() > 200
+                || !password.matches(".*[A-Za-z].*") || !password.matches(".*\\d.*")) {
+            throw bad("密码必须包含字母和数字，且至少 8 位", "检查密码后重试");
+        }
+    }
+    private String text(JsonNode input, String field) { return input == null || !input.hasNonNull(field) ? "" : input.get(field).asText(); }
+    private String optional(JsonNode input, String field, String fallback) { return input.hasNonNull(field) ? input.get(field).asText() : fallback; }
+    private ApiException bad(String message, String suggestion) { return error(400, "PRODUCTION_400_INVALID_ARGUMENT", message, suggestion); }
+    private ApiException unauthorized(String message, String suggestion) { return error(401, "PRODUCTION_401_UNAUTHENTICATED", message, suggestion); }
+    private ApiException forbidden(String message, String suggestion) { return error(403, "PRODUCTION_403_PERMISSION_DENIED", message, suggestion); }
+    private ApiException notFound(String message, String suggestion) { return error(404, "PRODUCTION_404_NOT_FOUND", message, suggestion); }
+    private ApiException conflict(String message, String suggestion) { return error(409, "PRODUCTION_409_ILLEGAL_STATE", message, suggestion); }
+    private ApiException dependency(String message, String suggestion) { return error(424, "PRODUCTION_424_DEPENDENCY_FAILED", message, suggestion); }
+    private ApiException error(int status, String code, String message, String suggestion) { return new ApiException(status, code, message, suggestion); }
+    public record LoginRequest(String account, String password, String captchaId, String captchaCode) {}
+    public record SessionUser(String account, String name, String role, String tenantName, List<String> tenantIds, List<String> permissions) {}
+    private record RateWindow(Instant window, List<Instant> requests) {}
+}

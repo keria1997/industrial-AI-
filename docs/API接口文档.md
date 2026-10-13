@@ -1,12 +1,14 @@
 # 工业 AI 平台 API 接口文档
 
+> 2026-10-13 五模块检查勘误：当前 Java MRP 固定无缺料，齐套未生成，开工/恢复状态机错误，下达未复用预检，完工事件存在误去重；采购入库未接生产齐套，出库/收货未生成财务 AR/AP。下文历史 Reference 闭环及强制齐套描述不能作为当前实现承诺。Java 采购和财务已有独立后端能力，见 [业务串联检查](tests/五模块业务串联检查-20261013.md)。
+
 ## 1. 文档范围
 
 当前仓库的签名会话、生产管理 P0、销售订单、库存预留/出库，以及“销售缺货 -> MRP 缺料 -> PR/PO -> 采购入库 -> 生产完工 -> 库存重校验 -> 销售出库”的 Reference 履约链路具备可执行后端 API。权威机器可读契约为：
 
-- OpenAPI 3.1：`server/docs/openapi.yaml`
-- Fastify 路由实现：`server/src/app.ts`
-- 业务规则实现：`server/src/service.ts`
+- OpenAPI 3.1：`server-java/docs/openapi/openapi.yaml`
+- Java 路由实现：`server-java/src/main/java`
+- 业务规则实现：`server-java/src/main/java` 各领域服务与仓储
 
 本文描述已经实现的接口，并在末尾单独列出 PRD 规划但尚未实现的接口。规划接口不是可调用承诺。
 
@@ -16,16 +18,16 @@
 | --- | --- |
 | 模块 | 本地签名会话、生产管理 P0、销售订单与库存履约、Reference 采购与物料齐套 |
 | API 版本 | v1 |
-| 本地地址 | `http://127.0.0.1:5185/api/v1/production` |
+| 本地地址 | `http://127.0.0.1:8081/api/v1/production` |
 | 前端同源地址 | `/api/v1/production` |
-| 默认端口 | `5185` |
+| 生产部署模板端口 | `5185` |
 | 内容类型 | `application/json` |
 | 数量格式 | 非负或正数十进制字符串，最多 6 位小数 |
 
 启动方式：
 
 ```bash
-npm run start:api
+npm run dev:java-api
 ```
 
 设置 `DATABASE_URL` 时使用 PostgreSQL；未设置时使用进程内仓储，只适合开发联调和自动化测试。
@@ -50,11 +52,14 @@ npm run start:api
 ### 3.2 本地会话
 
 - `POST /api/v1/session/login`：非生产环境使用开发账号取得 8 小时签名访问令牌。
+- `POST /api/v1/session/captcha`：获取服务端生成的一次性账号登录图形验证码，有效期 5 分钟。
 - `GET /api/v1/session/me`：校验访问令牌和当前租户。
-- 开发账号：`admin`、`reviewer`、`operator`、`inspector`；默认密码 `123456`。
+- 开发账号：`test01`、`reviewer`、`operator`、`inspector`；默认密码 `123456`。
 - 生产环境禁用开发登录并强制配置 `AUTH_SECRET`。
 
 当前会话基线没有刷新令牌、服务端撤销、密码治理、短信服务或企业 SSO/OIDC。令牌保存在浏览器 `sessionStorage`，关闭标签页后清除。
+
+账号登录必须先请求图形验证码，提交 `captchaId` 和 `captchaCode`。验证码一次性有效；校验失败、过期或账号密码错误后，需要重新获取验证码并让用户重新输入。
 
 ### 3.3 响应头
 
@@ -165,7 +170,7 @@ If-Match: "3"
 
 | 业务动作 | 权限码 |
 | --- | --- |
-| 创建/评审/审批需求 | `production.demand.create/review/approve` |
+| 创建/评审/审批/接收需求 | `production.demand.create/review/approve/claim` |
 | 创建工单 | `production.work-order.create` |
 | 下达/开工/暂停/恢复 | `production.work-order.release/start/pause/resume` |
 | 报工/更正 | `production.work-order.report/report.correct` |
@@ -195,13 +200,19 @@ If-Match: "3"
 | POST | `/demands` | 创建 `RECEIVED` 需求 | `demand.create`、幂等 |
 | POST | `/demands/{id}/validate` | 校验产品、工厂、BOM、工艺 | `demand.review`、幂等、ETag |
 | POST | `/demands/{id}/approve` | 审批需求 | `demand.approve`、幂等、ETag、制单审批分离 |
+| POST | `/demands/{id}/claim` | 计划员/MPS 负责人接收已审批需求 | `demand.claim`、幂等、ETag |
 
 需求状态主线：
 
 ```text
-RECEIVED -> VALIDATING -> PENDING_REVIEW -> APPROVED
-                         \-> BLOCKED -> VALIDATING
+RECEIVED -> VALIDATING -> PENDING_REVIEW -> APPROVED(待接收)
+                         \\-> BLOCKED -> VALIDATING
+
+APPROVED(待接收) + production.demand.claim -> APPROVED(待展算)
+APPROVED(待展算) + MRP SUCCEEDED 且结果覆盖需求 -> PLANNED(已展算)
 ```
+
+审批通过时记录 `approvedBy/approvedAt`，写入 `handlerRole=PRODUCTION_PLANNER` 的接收池并发布 `production.demand.approved.v1`；`claim` 记录 `handlerId/acceptedAt`。`production.mrp.run` 必须校验需求已接收，任务成功且 MPS 行覆盖目标需求后才写入 `PLANNED` 和 `mrpTaskId`。
 
 ### 6.3 生产工单与报工
 
@@ -297,8 +308,18 @@ MRP 输入至少包含一个唯一 `demandId`。成功后需求从 `APPROVED` �
 | --- | --- | --- | --- |
 | POST | `/api/v1/sales/sales-orders/{id}/confirm` | 固化销售发货内容和交期，订单从待发货进入已确认 | 已完成复核/审批；不创建仓库任务 |
 | POST | `/api/v1/sales/sales-orders/{id}/shipment-requests` | 已确认订单去发货，创建或恢复仓库任务 | 首次仅 `CONFIRMED`；剩余发货允许 `PARTIALLY_SHIPPED` |
+| POST | `/api/v1/inventory/shipment-tasks/{id}/check-and-reserve` | 按最新仓库事实预留，创建或补足原出库单 | 来源版本、库存版本及未消费预留校验；保持原出库行 ID |
+| POST | `/api/v1/inventory/outbounds/{id}/post` | 部分或全量出库，同事务回写销售 | 正数量、唯一行、单位、预留上限、禁止分批约束；返回权威 `task` 和 `order` |
 
-确认接口要求幂等键和 `If-Match`，成功写入状态历史、审计和 `sales.order.confirmed.v1` Outbox。前端不得在“确认订单”时调用发货申请；“去发货”也不得使用本地展示单号代替正式聚合 UUID。
+确认接口要求幂等键和 `If-Match`，成功写入状态历史、审计和 `sales.order.confirmed.v1` Outbox。审批默认职责分离；制单人显式持有 `sales.order.review.self-approve` 后可审批本人订单，持有 `*` 的超管同样通过。前端不得在“确认订单”时调用发货申请；“去发货”也不得使用本地展示单号代替正式聚合 UUID。
+
+2026-10-13 Java 实现验收：发货申请量为订单行剩余量减去活动申请占用量；已有活动申请可恢复，不再次提交空申请。库存校验合并本任务未消费预留与仓库新可用量，同产品多行只分配一次自由库存。部分发货后补货复用原出库单与行 ID，继续累加已发量，销售保持 `PARTIALLY_SHIPPED`，全量完成后进入 `SHIPPED` 并清零申请占用/未消费预留。
+
+出库、不可变库存流水、库存事实、预留消费、仓库任务、发货申请、销售累计量、审计/历史、Outbox 和幂等结果在同一租户 JDBC 事务内保存。PostgreSQL 事务锁串行化同租户写入，命令执行前重读数据库事实，失败后回滚数据库并恢复缓存。销售、任务、出库及库存查询重新读取正式事实。出库响应的 `task`、`order` 为前端回写来源，不使用本地销售桥接替代正式结果。
+
+客户端保存出库请求键、时间、版本和数量包；网络中断后复用原请求重试。未知结果不提示发货成功。`FulfillmentOutboxWorker` 每 2 秒重试仓库移交；创建任务、Inbox、审计/历史和标记已消费原子保存，不支持的事件继续 `PENDING`，并不代表外部 MQ 已发布。可通过 `FULFILLMENT_WORKER_ENABLED` 与 `FULFILLMENT_WORKER_INTERVAL_MS` 配置。已验收真实 PostgreSQL/RLS、并发抢库存、回滚/重试及两种桌面尺寸真实浏览器，见 [销售到仓库出库开发验收](tests/销售到仓库出库开发验收-20261013.md)。客户 WMS 与生产/采购/财务完整闭环不属于该验收结论。
+
+订单创建和编辑支持十进制字符串 `discountRate`（0 到 100，创建默认 100）、`discountAmount`（非负，创建默认 0）及可选 `expectedTotalAmount`。服务端保存 `originalAmount`、折扣率、优惠金额和 `totalAmount`，按 `max(含税原价合计 × 折扣率 / 100 - 优惠金额, 0)` 计算，最终四舍五入到两位小数；预期金额不一致返回 `422 FULFILLMENT_422_PRICE_MISMATCH`，不保存变更。编辑未传优惠或产品明细时保留原值。审批、确认和发货申请沿用持久化订单金额，同一订单在待发货和已确认列表及详情中展示相同总额。历史本地/报价转单在建立正式订单时完整传入优惠与预期金额，不能只传单价和数量。
 
 ### 6.10 销售订单与生产需求接入
 
@@ -321,14 +342,37 @@ shortageQty = max(orderedQty - availableQty, 0)
 - 库存事实缺失、过期或计量单位不一致：返回 424，不保存接入、需求、Outbox 或幂等成功记录；调用方使用同一幂等键重试。
 - 同一库存 `eventId` 重复到达：Inbox 返回重复结果；较旧 `factVersion` 不覆盖新事实。
 
+### 6.11 发货任务缺口转生产需求
+
+| 方法 | 路径 | 说明 | 权限/控制 |
+| --- | --- | --- | --- |
+| POST | `/api/v1/inventory/shipment-tasks/{id}/production-requests` | 对已完成权威校验且存在缺口的发货任务创建或恢复生产需求 | `inventory.production-request.create`、幂等、`If-Match` |
+
+请求只需要标识缺口行；服务端以发货任务行重算生产数量，并按优先级兜底工厂和交期：
+
+```text
+productionQty = max(shipmentRequestLine.requestedQty - shipmentRequestLine.postedQty - selectedWarehouseAvailability, 0)
+factoryResourceId = request.line > shipmentTask > salesOrder
+dueDate = shipmentTaskLine.promisedDate > request.line > salesOrder.requestedDeliveryDate
+sourceRevision = request.line > shipmentTaskLine.sourceLineRevision > task.orderRevision > 1
+```
+
+调用方传来的 `sourceRevision`、`factoryResourceId` 和 `dueDate` 都是可选兜底提示；不能把缺口数量改大。服务端会重新校验 `replenishmentStatus=REQUIRED`、任务版本和租户来源关系。创建成功返回 `201`，需求关联已存在且没有新增需求时返回 `200`。响应中的 `restored` / `recovered` 表示恢复既有需求；`demands`、`links` 和更新后的发货任务包含需求编号、订单/行、仓库、工厂、交期、来源版本和库存事实版本。
+
+同一发货任务和缺口行重复提交必须返回原需求，不重复写入生产需求、任务关联或 `production.demand.created.v1` Outbox。前端创建成功后使用 `focusMps=<demandCode>` 定位生产主计划草稿；库存满足时必须先提示“不需要创建生产需求”，不得创建零数量需求。
+
 ## 7. 典型调用
 
 先在非生产环境取得访问令牌，并从响应中读取 `accessToken` 赋给 `ACCESS_TOKEN`：
 
 ```bash
+# 1. 先调用验证码接口，向前端返回 captchaId 和 SVG 图片。
+curl -X POST 'http://127.0.0.1:5185/api/v1/session/captcha'
+
+# 2. 登录时提交用户识别出的图形验证码。
 curl -X POST 'http://127.0.0.1:5185/api/v1/session/login' \
   -H 'Content-Type: application/json' \
-  -d '{"account":"admin","password":"123456"}'
+  -d '{"account":"test01","password":"123456","captchaId":"<captchaId>","captchaCode":"<image-code>"}'
 ```
 
 ### 7.1 创建生产需求
@@ -439,15 +483,19 @@ curl -X POST 'http://127.0.0.1:5185/api/v1/production/sales-order-intakes' \
 
 ## 8. OpenAPI 维护规则
 
+- 2026-10-13 销售审批新增 `sales.order.review.self-approve` 覆盖权限：默认制单人不得自审；显式授权或 `*` 超管可审批本人订单。平台权限目录同步补充该权限。
+- 2026-10-13 库存产品/物料主数据新增 `unitPrice` 参考价格字段；JSON 主数据、前端 DTO、迁移 026/027 和 InventoryMaster OpenAPI 契约同步支持，更新接口校验非负 decimal，OpenAPI 版本升级为 1.10.0。
+- 2026-10-11 发货仓库弹窗改为默认未选仓；`check-and-reserve` 补充可选 `warehouseId` 与期望库存事实版本契约。发货任务生产需求改为服务端重算缺口，工厂、交期和来源版本可由服务端兜底，响应补充 `restored` / `recovered`，OpenAPI 版本升级为 1.8.0。
+- 2026-10-11 生产需求审批后新增计划员接收动作；`production.demand.claim`、审批路由字段和 MRP 接收校验进入契约，OpenAPI 版本升级为 1.9.0。
 - 2026-07-26 按最新销售 PRD 修订 `/sales-order-intakes` 的业务触发说明；路径、Schema 和实现行为不变，因此 API 版本保持 1.3.0。
-- 2026-07-26 实现销售—库存—生产—发货首期履约接口，`server/docs/openapi.yaml` 通过外部 Path Item 引用纳入 19 条销售/库存路径，版本升级为 1.4.0；Reference Adapter 只用于开发和自动化验证。
+- 2026-07-26 实现销售—库存—生产—发货首期履约接口，OpenAPI 契约通过外部 Path Item 引用纳入 19 条销售/库存路径，版本升级为 1.4.0；Reference Adapter 只用于开发和自动化验证。
 - 2026-07-26 对齐库存可用量和生产完工内部接口的统一事件信封；生产 `POSTED` 完工在本地事务写入 `production.completion.posted.v1`，参考转发 Worker 通过库存 Inbox 幂等记录入库流水。契约版本不变，本次修正实现偏差。
 - 2026-07-26 增加生产需求来源追溯字段、Reference 完工库存事实推进和关联任务重校验；Reference MPS/MRP/APS 任务返回持久化成功结果，带需求工单强制校验 APS 候选，OpenAPI 版本升级为 1.5.0。Reference 能力不代表客户正式优化器或 WMS 已联调。
 - 2026-07-27 增加 MRP V2 实际缺料、PR 制单审批分离、PO、采购入库、物料库存事实同步和服务端齐套阻断，OpenAPI 版本升级为 1.6.0；该 Reference 闭环不代表完整采购域或 ERP/SRM/WMS 已联调。
 - 2026-07-27 增加销售订单确认接口，状态顺序调整为“待发货确认内容 -> 已确认去发货 -> 仓库任务”，OpenAPI 版本升级为 1.7.0；确认阶段不再调用出库接口。
 - 2026-07-26 新增签名会话接口，生产 API 改为 Bearer Token 和令牌内租户/权限声明，OpenAPI 版本升级为 1.3.0。
 - 2026-07-25 新增库存事实 Inbox 投影、销售订单接入和生产需求事务接口，OpenAPI 版本升级为 1.2.0。
-- 路由、Zod schema、状态码或权限变化必须同步更新 `server/docs/openapi.yaml`。
+- 路由、请求/响应契约、状态码或权限变化必须同步更新 `server-java/docs/openapi/openapi.yaml` 和 Java 路由基线。
 - OpenAPI 的 `servers` 基地址已经包含 `/api/v1/production`，各 path 不再重复前缀。
 - 新增写接口必须声明 `X-Idempotency-Key`；修改聚合的接口必须声明 `If-Match`。
 - 数量字段引用 `Decimal` 或 `PositiveDecimal`，不得使用 `type: number`。
@@ -456,7 +504,7 @@ curl -X POST 'http://127.0.0.1:5185/api/v1/production/sales-order-intakes' \
 
 ## 9. PRD 规划与首期实现状态
 
-首期销售/库存目标路径、命令 DTO、错误语义和事件载荷冻结在 `server/docs/openapi-sales-inventory-draft.yaml` `0.2.0-development-baseline`。对应的正式迁移、领域服务、Reference WMS Adapter、履约 Worker、生产完工转发 Worker、销售确认命令及 Reference PR/PO/采购入库链路已进入当前代码，并由 `server/docs/openapi.yaml` 1.7.0 纳入已实现契约。该结论只表示开发与参考集成基线可执行，不能作为客户真实 ERP/SRM/WMS、OIDC、KMS、消息代理或 UAT 已通过的证据。
+首期销售/库存目标路径、命令 DTO、错误语义和事件载荷冻结在 `server-java/docs/openapi/openapi-sales-inventory-draft.yaml` `0.2.0-development-baseline`。对应的正式迁移、领域服务、Reference WMS Adapter、履约 Worker、生产完工转发 Worker、销售确认命令及 Reference PR/PO/采购入库链路已迁移到 Java 后端，并由 `server-java/docs/openapi/openapi.yaml` 纳入已实现契约。该结论只表示开发与参考集成基线可执行，不能作为客户真实 ERP/SRM/WMS、OIDC、KMS、消息代理或 UAT 已通过的证据。
 
 | 规划域 | 目标接口能力 | 依赖/说明 |
 | --- | --- | --- |

@@ -16,6 +16,7 @@ export type SalesShipmentOrderDraft = {
   qty?: number | string;
   unitPrice?: number | string;
   amount: string;
+  originalAmount?: number | string;
   lines?: { productName?: string; spec?: string; unit?: string; quantity?: number; qty?: number; unitPrice?: number; warehouseId?: string; productId?: string }[];
   availableStock?: number | string;
   discountRate?: number | string;
@@ -72,8 +73,8 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
     ? order.lines
     : order.productName ? [{ productName: order.productName, spec: order.spec, unit: order.unit, qty: order.qty, unitPrice: order.unitPrice }] : [];
   const originalAmount = useMemo(
-    () => formatMoney(productLines.length > 0 ? productLines.reduce((sum, l) => sum + Number(l.qty || (l as any).quantity || 0) * Number(l.unitPrice || 0), 0) : quantity * unitPrice),
-    [quantity, unitPrice, productLines],
+    () => formatMoney(order.originalAmount ?? (productLines.length > 0 ? productLines.reduce((sum, l) => sum + Number(l.qty || (l as any).quantity || 0) * Number(l.unitPrice || 0), 0) : quantity * unitPrice)),
+    [order.originalAmount, quantity, unitPrice, productLines],
   );
 
   const submit = () => {

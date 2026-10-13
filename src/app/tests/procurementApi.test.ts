@@ -49,7 +49,9 @@ describe('procurement API client', () => {
     const order = {
       id: 'po-1', orderNo: 'PO-001', purchaseRequestId: 'pr-1', demandId: 'demand-1', materialId: 'RM201',
       warehouseId: 'WH-RM-01', orderedQty: '20', receivedQty: '0', uom: 'PCS', supplierId: 'SUP-001',
-      supplierName: '深圳华芯科技', promisedDate: '2026-08-01', status: 'CONFIRMED', version: 2,
+      supplierName: '深圳华芯科技', promisedDate: '2026-08-01',
+      unitPrice: '50.00', taxRate: '13', currency: 'CNY', totalAmount: '1130.00',
+      status: 'CONFIRMED', version: 2,
       createdAt: '2026-07-27T00:00:00.000Z', updatedAt: '2026-07-27T00:00:00.000Z',
     } satisfies PurchaseOrderDto;
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ order, receipt: {} }), {
