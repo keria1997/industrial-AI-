@@ -1,8 +1,10 @@
 openapi: 3.1.0
 info:
   title: 工业 AI 平台生产与首期履约 API
-  version: 1.13.0
+  version: 1.14.0
   description: |
+    2026-10-13 快速开单的 orderDate、validUntil、remark 与行 productName/specification
+    由销售订单创建/修改接口校验并同事务保存，读取接口返回；不依赖浏览器销售缓存。
     2026-10-13 仓库详情、现存量、发货校验和实际扣库存共用履约库存事实。
     /inventory/availability 支持省略筛选查询租户全部事实；仓库编码兼容映射至主数据 ID。
     2026-10-13 实现勘误：下述 Reference 缺料/齐套描述与当前 Java 实现存在差异；

@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const baseUrl = process.env.SALES_UI_URL || 'http://127.0.0.1:5175';
-const outputDirectory = new URL('../docs/tests/artifacts/sales-outbound-dialog-20261013/', import.meta.url);
+const outputDirectory = new URL(process.env.SALES_TEST_ARTIFACTS || '../docs/tests/artifacts/sales-outbound-dialog-20261013/', import.meta.url);
 await mkdir(outputDirectory, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });

@@ -54,6 +54,29 @@ class SalesShipmentRealJdbcTests {
     }
 
     @Test
+    void quickOrderMetadataAndReplaySurviveDatabaseReload() {
+        String tenant = "quick-order-metadata-" + UUID.randomUUID();
+        var input = QuickSalesOrderMetadataTests.input();
+        JsonNode order;
+        try (var dataSource = dataSource()) {
+            try (var store = new JdbcFulfillmentStore(dataSource, MAPPER)) {
+                order = service(store).createOrder(context(tenant, null, "quick-order-metadata"), input).body();
+            }
+            try (var store = new JdbcFulfillmentStore(dataSource, MAPPER)) {
+                var service = service(store);
+                QuickSalesOrderMetadataTests.assertMetadata(
+                        service.order(context(tenant, null, null), order.path("id").asText()), input);
+                var replay = service.createOrder(context(tenant, null, "quick-order-metadata"), input);
+                assertThat(replay.replayed()).isTrue();
+                assertThat(replay.body()).isEqualTo(order);
+                assertThat(store.orders(tenant)).hasSize(1);
+                assertThat(store.orders("other-tenant")).noneMatch(value -> value.path("id").equals(order.path("id")));
+                assertThat(store.shipmentTasks(tenant)).isEmpty();
+            }
+        }
+    }
+
+    @Test
     void legacyWarehouseMappingAndDeductionSurviveDatabaseReload() {
         String tenant = "warehouse-mapping-jdbc-" + UUID.randomUUID();
         JsonNode fact;

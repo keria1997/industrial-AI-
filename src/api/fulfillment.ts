@@ -5,6 +5,7 @@ import { compareQuantity, subtractQuantity } from '../shared/decimal';
 export type { ApiContext };
 
 export type FulfillmentOrderLine = {
+  productName?: string; specification?: string;
   id: string; lineNo: number; productId: string; orderedQty: string; shippedQty: string;
   activeRequestedQty: string; reservedQty: string; remainingQty: string; uom: string;
   unitPrice: string; taxRate: string; promisedDate: string; allowPartialShipment: boolean;
@@ -12,6 +13,7 @@ export type FulfillmentOrderLine = {
 };
 
 export type FulfillmentOrder = {
+  orderDate?: string; validUntil?: string; remark?: string;
   id: string; orderNo: string; customerId: string; customerName: string; ownerEmployeeId: string;
   fulfillmentWarehouseId: string; factoryResourceId: string; requestedDeliveryDate: string;
   allowPartialShipment: boolean; currency: string; totalAmount: string; originalAmount?: string;

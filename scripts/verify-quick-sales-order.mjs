@@ -1,14 +1,32 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createHmac } from 'node:crypto';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const baseUrl = process.env.SALES_UI_URL || 'http://127.0.0.1:5175';
-const outputDirectory = new URL('../docs/tests/artifacts/quick-sales-order-20261013/', import.meta.url);
+const outputDirectory = new URL(process.env.SALES_TEST_ARTIFACTS || '../docs/tests/artifacts/quick-sales-order-20261013/', import.meta.url);
 await mkdir(outputDirectory, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const evidence = [];
 try {
   const page = await browser.newPage();
+  let testTenant;
+  if (process.env.SALES_TEST_ISOLATED === 'true') {
+    process.loadEnvFile('.env.local');
+    assert.ok(process.env.AUTH_SECRET, 'AUTH_SECRET is required for isolated tenant verification');
+    testTenant = `quick-order-verification-${Date.now()}`;
+    const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const now = Math.floor(Date.now() / 1000);
+    const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({
+      sub: 'quick-order-verification', name: 'Quick order verification', role: '销售专员',
+      tenantIds: [testTenant], permissions: ['sales.order.read', 'sales.order.create'],
+      permissionVersion: 'test', iat: now, exp: now + 1800, iss: 'industrial-ai-platform',
+    })}`;
+    const token = `${unsigned}.${createHmac('sha256', process.env.AUTH_SECRET).update(unsigned).digest('base64url')}`;
+    await page.route('**/api/v1/sales/sales-orders**', route => route.continue({
+      headers: { ...route.request().headers(), authorization: `Bearer ${token}`, 'x-tenant-id': testTenant },
+    }));
+  }
   const errors = [];
   const shipmentRequests = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -86,16 +104,20 @@ try {
     await firstRow.locator('select').nth(1).selectOption(selectedProducts[0]);
     await firstRow.locator('input[type="number"]').nth(0).fill('2');
     await firstRow.locator('input[type="number"]').nth(1).fill('120');
+    await firstRow.locator('input').first().fill('QUICK-SPEC-1');
     await dialog.getByRole('button', { name: '添加产品', exact: true }).click();
     const secondRow = dialog.locator('tbody tr').nth(1);
     await secondRow.locator('select').nth(0).selectOption(warehouse);
     await secondRow.locator('select').nth(1).selectOption(selectedProducts[1]);
     await secondRow.locator('input[type="number"]').nth(0).fill('3');
     await secondRow.locator('input[type="number"]').nth(1).fill('80');
+    await secondRow.locator('input').first().fill('QUICK-SPEC-2');
     const discounts = dialog.locator('input[type="number"]');
     await discounts.nth(4).fill('90');
     await discounts.nth(5).fill('12');
     const marker = `QUICK-ORDER-${viewport.width}-${Date.now()}`;
+    const expectedOrderDate = await dialog.getByLabel('报价日期', { exact: true }).inputValue();
+    const expectedValidUntil = await dialog.getByLabel('有效至', { exact: true }).inputValue();
     await dialog.locator('textarea').fill(marker);
     await dialog.getByText('¥420.00', { exact: true }).waitFor();
     await page.screenshot({ path: new URL(`filled-${viewport.width}.png`, outputDirectory).pathname });
@@ -130,6 +152,11 @@ try {
     assert.equal(order.overallStatus, 'PENDING_CONFIRMATION');
     assert.equal(order.shipmentStatus, 'NOT_REQUESTED');
     assert.equal(Number(order.totalAmount), 420);
+    assert.equal(order.remark, marker);
+    assert.equal(order.orderDate, expectedOrderDate);
+    assert.equal(order.validUntil, expectedValidUntil);
+    assert.deepEqual(order.lines.map(line => line.specification), ['QUICK-SPEC-1', 'QUICK-SPEC-2']);
+    assert.ok(order.lines.every(line => line.productName));
     assert.deepEqual(order.lines.map(line => line.productId), selectedProducts);
     assert.deepEqual(order.lines.map(line => line.orderedQty), ['2', '3']);
     await dialog.waitFor({ state: 'hidden' });
@@ -146,6 +173,7 @@ try {
     await page.getByText(marker, { exact: true }).first().waitFor();
     await page.screenshot({ path: new URL(`details-${viewport.width}.png`, outputDirectory).pathname });
     await page.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.evaluate(() => localStorage.removeItem('industrial-ai-sales:v8:TENANT-SHWS'));
     await page.reload();
     await row.getByTitle('查看', { exact: true }).waitFor();
     assert.match(await row.innerText(), /待发货/);
@@ -156,8 +184,9 @@ try {
       JSON.parse(localStorage.getItem('industrial-ai-sales:v8:TENANT-SHWS') || '{}').quotes?.length);
     assert.equal(currentQuotes, quotesBefore, 'Quick creation must not create a quotation');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    evidence.push({ viewport, orderId: order.id, orderNo: order.orderNo, amount: order.totalAmount, lineCount: order.lines.length });
-    console.log(`${viewport.width}x${viewport.height}: shared form, validation, retry, pending order and refresh passed`);
+    evidence.push({ viewport, testTenant, orderId: order.id, orderNo: order.orderNo, amount: order.totalAmount,
+      lineCount: order.lines.length, persistedMetadata: true, salesCacheCleared: true });
+    console.log(`${viewport.width}x${viewport.height}: shared form, retry, pending order and refresh without sales cache passed`);
   }
   assert.deepEqual(errors, []);
   assert.deepEqual(shipmentRequests, []);

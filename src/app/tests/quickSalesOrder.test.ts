@@ -5,9 +5,9 @@ import type { SalesQuoteForConversion } from '../../features/sales/model/salesRu
 const context = { tenantId: 'TENANT-SHWS', accessToken: 'signed-token' };
 const draft: SalesQuoteForConversion = {
   id: 'SO-DRAFT-1', client: '测试客户', date: '2026-10-13', validUntil: '2026-11-12',
-  qty: 5, amount: '¥780.00', discountRate: 80, discountAmount: 20,
+  qty: 5, amount: '¥780.00', discountRate: 80, discountAmount: 20, remark: '快速开单备注',
   lines: [
-    { warehouseId: 'WH-FG-01', productId: 'FG001', productName: '产品一', quantity: 2, unitPrice: 200, unit: '件' },
+    { warehouseId: 'WH-FG-01', productId: 'FG001', productName: '产品一', spec: '规格一', quantity: 2, unitPrice: 200, unit: '件' },
     { warehouseId: 'WH-FG-01', productId: 'FG002', productName: '产品二', quantity: 3, unitPrice: 200, unit: '套' },
   ],
 };
@@ -36,8 +36,9 @@ describe('quick sales order creation from the quotation form', () => {
       fulfillmentWarehouseId: 'warehouse-uuid', customerId: 'CUSTOMER-1',
       discountRate: '80', discountAmount: '20', expectedTotalAmount: '780.00',
       requestedDeliveryDate: '2026-10-13',
+      orderDate: '2026-10-13', validUntil: '2026-11-12', remark: '快速开单备注',
       lines: [
-        { lineNo: 1, productId: 'FG001', orderedQty: '2', unitPrice: '200', uom: 'PCS' },
+        { lineNo: 1, productId: 'FG001', productName: '产品一', specification: '规格一', orderedQty: '2', unitPrice: '200', uom: 'PCS' },
         { lineNo: 2, productId: 'FG002', orderedQty: '3', unitPrice: '200', uom: '套' },
       ],
     });

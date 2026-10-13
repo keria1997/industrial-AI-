@@ -64,6 +64,39 @@ class FulfillmentControllerTests {
     private FulfillmentService service;
 
     @Test
+    void createsAndReadsQuickOrderMetadataWithValidationAndPermissionChecks() throws Exception {
+        ObjectNode input = QuickSalesOrderMetadataTests.input();
+        MvcResult result = mockMvc.perform(post("/api/v1/sales/sales-orders")
+                        .header("Authorization", "Bearer " + makerToken)
+                        .header("X-Tenant-Id", "TENANT-SHWS").header("X-Idempotency-Key", "quick-metadata")
+                        .contentType(MediaType.APPLICATION_JSON).content(input.toString()))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.remark").value("Order remark"))
+                .andExpect(jsonPath("$.lines[1].specification").value("Spec 1")).andReturn();
+        JsonNode order = objectMapper.readTree(result.getResponse().getContentAsString());
+        mockMvc.perform(get("/api/v1/sales/sales-orders/" + order.path("id").asText())
+                        .header("Authorization", "Bearer " + makerToken).header("X-Tenant-Id", "TENANT-SHWS"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.orderDate").value(input.path("orderDate").asText()))
+                .andExpect(jsonPath("$.validUntil").value(input.path("validUntil").asText()));
+        mockMvc.perform(post("/api/v1/sales/sales-orders")
+                        .header("Authorization", "Bearer " + makerToken)
+                        .header("X-Tenant-Id", "TENANT-SHWS").header("X-Idempotency-Key", "quick-metadata")
+                        .contentType(MediaType.APPLICATION_JSON).content(input.toString()))
+                .andExpect(status().isCreated()).andExpect(header().string("X-Idempotent-Replay", "true"));
+        mockMvc.perform(post("/api/v1/sales/sales-orders")
+                        .header("Authorization", "Bearer " + makerToken)
+                        .header("X-Tenant-Id", "TENANT-SHWS").header("X-Idempotency-Key", "invalid-metadata")
+                        .contentType(MediaType.APPLICATION_JSON).content(input.deepCopy().put("orderDate", "2026-02-30").toString()))
+                .andExpect(status().isBadRequest());
+        String readOnlyToken = new TokenService("test-secret", objectMapper).issue("reader", "Reader", "销售专员",
+                List.of("TENANT-SHWS"), List.of("sales.order.read"), "test").accessToken();
+        mockMvc.perform(post("/api/v1/sales/sales-orders")
+                        .header("Authorization", "Bearer " + readOnlyToken)
+                        .header("X-Tenant-Id", "TENANT-SHWS").header("X-Idempotency-Key", "denied-metadata")
+                        .contentType(MediaType.APPLICATION_JSON).content(input.toString()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void listsTenantStockAndResolvesWarehouseCodesWithPermissionAndInputChecks() throws Exception {
         var store = service.repository();
         SalesShipmentWorkflowTests.stock(service, "TENANT-SHWS", "FG-0", "5", "0");

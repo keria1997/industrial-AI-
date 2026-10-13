@@ -94,7 +94,7 @@ public class FulfillmentService {
                     .put("orderNo", "SO-" + timestamp.substring(0, 10).replace("-", "") + "-" + id.substring(0, 8).toUpperCase())
                     .put("customerId", text(input, "customerId"));
             copyIfPresent(order, input, "customerName", "ownerEmployeeId", "fulfillmentWarehouseId",
-                    "factoryResourceId", "requestedDeliveryDate");
+                    "factoryResourceId", "requestedDeliveryDate", "orderDate", "validUntil", "remark");
             order.put("allowPartialShipment", input.path("allowPartialShipment").asBoolean())
                     .put("currency", text(input, "currency"));
             copyIfPresent(order, input, "sourceQuoteId", "sourceQuoteRevision");
@@ -174,7 +174,8 @@ public class FulfillmentService {
             }
             ObjectNode updated = order.deepCopy();
             copyPatch(updated, input, "customerName", "ownerEmployeeId", "fulfillmentWarehouseId",
-                    "factoryResourceId", "requestedDeliveryDate");
+                    "factoryResourceId", "requestedDeliveryDate", "orderDate", "validUntil", "remark");
+            validateCommercialMetadata(updated);
             if (input.hasNonNull("allowPartialShipment")) {
                 updated.put("allowPartialShipment", input.get("allowPartialShipment").asBoolean());
             }
@@ -2695,6 +2696,7 @@ public class FulfillmentService {
     }
 
     private void validateOrder(JsonNode input, boolean patch) {
+        validateCommercialMetadata(input);
         for (String field : List.of("discountRate", "discountAmount", "expectedTotalAmount")) {
             if (!input.has(field)) continue;
             requireDecimal(input, field, false);
@@ -2752,6 +2754,8 @@ public class FulfillmentService {
     }
 
     private void validateLine(JsonNode input) {
+        requireOptionalString(input, "productName", 200);
+        requireOptionalString(input, "specification", 200);
         if (input.path("lineNo").asInt(-1) < 1) {
             throw badRequest("lineNo 必须大于 0", List.of(new ApiException.FieldError("lineNo", "invalid")));
         }
@@ -2763,6 +2767,37 @@ public class FulfillmentService {
         requireDate(input, "promisedDate", true);
         if (!input.hasNonNull("allowPartialShipment")) {
             throw badRequest("allowPartialShipment 必填", List.of(new ApiException.FieldError("allowPartialShipment", "required")));
+        }
+    }
+
+    private void validateCommercialMetadata(JsonNode input) {
+        for (String field : List.of("orderDate", "validUntil")) {
+            if (!input.has(field)) continue;
+            JsonNode value = input.get(field);
+            try {
+                if (!value.isTextual() || !value.asText().matches("\\d{4}-\\d{2}-\\d{2}")) {
+                    throw new java.time.DateTimeException("Invalid date");
+                }
+                LocalDate.parse(value.asText());
+            } catch (java.time.DateTimeException exception) {
+                throw badRequest(field + " 必须是有效日期",
+                        List.of(new ApiException.FieldError(field, "invalid_date")));
+            }
+        }
+        if (input.hasNonNull("orderDate") && input.hasNonNull("validUntil")
+                && text(input, "validUntil").compareTo(text(input, "orderDate")) < 0) {
+            throw badRequest("有效期不能早于订单日期",
+                    List.of(new ApiException.FieldError("validUntil", "before_order_date")));
+        }
+        requireOptionalString(input, "remark", 1000);
+    }
+
+    private void requireOptionalString(JsonNode input, String field, int max) {
+        if (!input.has(field)) return;
+        JsonNode value = input.get(field);
+        if (!value.isTextual() || value.asText().length() > max) {
+            throw badRequest(field + " 必须是最多 " + max + " 字的文本",
+                    List.of(new ApiException.FieldError(field, "invalid_text")));
         }
     }
 

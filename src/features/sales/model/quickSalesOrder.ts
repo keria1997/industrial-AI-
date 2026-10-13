@@ -42,6 +42,9 @@ export const createQuickSalesOrder = async (
     ...salesOrderPricingInput(draft),
     customerId: customer.id,
     customerName: customer.name,
+    orderDate: draft.date,
+    validUntil: draft.validUntil,
+    remark: draft.remark || '',
     ownerEmployeeId: options.ownerEmployeeId,
     fulfillmentWarehouseId: warehouse.id,
     factoryResourceId: options.factoryResourceId,
@@ -56,6 +59,8 @@ export const createQuickSalesOrder = async (
     lines: lines.map((line, index) => ({
       lineNo: index + 1,
       productId: line.productId,
+      productName: line.productName || '',
+      specification: line.spec || '',
       orderedQty: String(line.quantity),
       uom: line.unit === '件' ? 'PCS' : line.unit || 'PCS',
       unitPrice: String(line.unitPrice),

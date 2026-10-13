@@ -615,6 +615,8 @@ components:
       properties:
         lineNo: { type: integer, minimum: 1 }
         productId: { type: string, minLength: 1, maxLength: 100 }
+        productName: { type: string, maxLength: 200, description: 制单时产品名称快照 }
+        specification: { type: string, maxLength: 200, description: 制单时规格型号快照 }
         orderedQty: { $ref: '#/components/schemas/PositiveDecimal' }
         uom: { type: string, minLength: 1, maxLength: 20 }
         unitPrice: { $ref: '#/components/schemas/NonNegativeMoney' }
@@ -628,6 +630,10 @@ components:
       required: [customerId, ownerEmployeeId, fulfillmentWarehouseId, factoryResourceId, requestedDeliveryDate, allowPartialShipment, currency, recipient, lines]
       properties:
         customerId: { type: string, minLength: 1, maxLength: 100 }
+        customerName: { type: string, maxLength: 200 }
+        orderDate: { type: string, format: date, description: 开单表单日期，独立于承诺交期 }
+        validUntil: { type: string, format: date, description: 商务有效期，不得早于 orderDate }
+        remark: { type: string, maxLength: 1000 }
         ownerEmployeeId: { type: string, minLength: 1, maxLength: 100 }
         fulfillmentWarehouseId: { type: string, minLength: 1, maxLength: 100 }
         factoryResourceId: { type: string, minLength: 1, maxLength: 100 }
@@ -653,6 +659,9 @@ components:
       minProperties: 1
       description: 仅允许编辑无活动履约事实的待确认订单；未传折扣或优惠时保留原值。lines 存在时是按稳定 lineNo 匹配的完整目标集合，既有行保留 ID，缺失行转取消而不物理删除；未传 lines 时保留产品明细
       properties:
+        orderDate: { type: string, format: date }
+        validUntil: { type: string, format: date, description: 合并修改后不得早于 orderDate }
+        remark: { type: string, maxLength: 1000 }
         ownerEmployeeId: { type: string, minLength: 1, maxLength: 100 }
         fulfillmentWarehouseId: { type: string, minLength: 1, maxLength: 100 }
         factoryResourceId: { type: string, minLength: 1, maxLength: 100 }
@@ -689,6 +698,9 @@ components:
         orderNo: { type: string }
         customerId: { type: string }
         customerName: { type: string }
+        orderDate: { type: string, format: date }
+        validUntil: { type: string, format: date }
+        remark: { type: string, maxLength: 1000 }
         ownerEmployeeId: { type: string }
         fulfillmentWarehouseId: { type: string }
         originalAmount:
