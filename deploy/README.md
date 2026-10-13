@@ -10,6 +10,8 @@
 
 发布状态、日志、PID、数据库备份和 `current` 位于忽略版本控制的 `deploy/artifacts/local-runtime/`；发布包保留在 `deploy/artifacts/releases/`。`.env.local` 不进入发布包，现有数据不重置，不运行生成订单或库存的验收脚本。构建独立源码快照时，可用 `BUILD_GIT_COMMIT` 和 `BUILD_GIT_BRANCH` 记录该快照来源。
 
+并发开发时，先固定所有待发布源码再构建，使用 `BUILD_SOURCE_TREE` 记录快照树 ID，`BUILD_SOURCE_STATE=working-tree-snapshot` 标明含其他任务尚未提交的源码。此时 `git-commit` 是快照的基础提交，不代表全部源码已提交。完整门禁通过后才部署固定制品，不从实时变化的工作区直接启动。
+
 本机发布沿用现有登录配置。公网正式上线必须先开通真实租户账号并设置 `DEMO_AUTH_ENABLED=false`，再完成目标服务器、HTTPS、服务托管及客户库存来源联调；不能将本机端口可访问认定为整个平台已具备全部上线条件。
 
 发布后的只读验收使用 `deploy/verify-local-inventory.mjs`。通过 `PLAYWRIGHT_MODULE` 和 `PLAYWRIGHT_CHROME_PATH` 指定已有 Playwright/Chrome，通过 `RELEASE_VERIFY_ACCOUNT`、`RELEASE_VERIFY_PASSWORD`、`RELEASE_VERIFY_TENANT` 指定已有账号和租户。脚本校验 5175/8081 响应、数据库数量、仓库编码/ID、仓库详情、现存量及已有任务/出库来源；只发起登录和查询，不创建订单、仓库或库存事件。截图和证据保存在 `deploy/artifacts/local-runtime/verification/`，不将账号密钥纳入记录。

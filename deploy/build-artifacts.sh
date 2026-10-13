@@ -96,6 +96,8 @@ industrial-ai $VERSION
 build-time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 git-commit: ${BUILD_GIT_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)}
 git-branch: ${BUILD_GIT_BRANCH:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}
+source-tree: ${BUILD_SOURCE_TREE:-unknown}
+source-state: ${BUILD_SOURCE_STATE:-unknown}
 node: $(node -v)
 npm: $(npm -v)
 java: $(java -version 2>&1 | head -n1)
