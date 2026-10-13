@@ -32,6 +32,7 @@ public class JdbcProductionStore extends ProductionStore implements AutoCloseabl
         inboxEvents = collections.jsonMap("inboxEvent");
         salesOrderIntakes = collections.jsonMap("salesOrderIntake");
         materialTransactionBlockers = collections.jsonMap("materialTransactionBlocker");
+        bomSnapshots = collections.jsonMap("bomSnapshot");
     }
 
     @Override
@@ -40,25 +41,39 @@ public class JdbcProductionStore extends ProductionStore implements AutoCloseabl
     }
 
     @Override
+    public synchronized <T> T transaction(String tenantId, java.util.function.Function<ProductionStore, T> work) {
+        return collections.transaction(tenantId, () -> work.apply(this));
+    }
+
+    @Override
+    public <T> T transaction(java.util.function.Supplier<T> work) {
+        return collections.transaction(work);
+    }
+
+    @Override
     public synchronized List<JsonNode> pendingOutbox(String tenantId, String eventType) {
-        return outboxEvents.stream()
+        return transaction(tenantId, repository -> outboxEvents.stream()
                 .filter(value -> "PENDING".equals(ProductionStore.text(value, "status"))
                         || "RETRY_WAIT".equals(ProductionStore.text(value, "status")))
                 .filter(value -> (tenantId == null || ProductionStore.text(value, "tenantId").equals(tenantId))
                         && (eventType == null || ProductionStore.text(value, "eventType").equals(eventType)))
                 .map(value -> (JsonNode) value.deepCopy())
-                .toList();
+                .toList());
     }
 
     @Override
     public synchronized List<String> pendingOutboxTenantIds(String eventType) {
-        return outboxEvents.stream()
-                .filter(value -> "PENDING".equals(ProductionStore.text(value, "status")))
-                .filter(value -> ProductionStore.text(value, "eventType").equals(eventType))
-                .map(value -> ProductionStore.text(value, "tenantId"))
-                .distinct()
-                .sorted()
-                .toList();
+        return collections.pendingTenantIds("outbox", eventType);
+    }
+
+    @Override
+    public synchronized void markOutboxPublished(String tenantId, String eventId) {
+        transaction(tenantId, repository -> { super.markOutboxPublished(tenantId, eventId); return null; });
+    }
+
+    @Override
+    public synchronized void markOutboxFailed(String tenantId, String eventId, String error, int maxAttempts) {
+        transaction(tenantId, repository -> { super.markOutboxFailed(tenantId, eventId, error, maxAttempts); return null; });
     }
 
     @Override

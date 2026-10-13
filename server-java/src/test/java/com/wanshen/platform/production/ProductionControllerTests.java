@@ -30,8 +30,19 @@ class ProductionControllerTests {
         objectMapper = new ObjectMapper();
         TokenService tokenService = new TokenService("test-secret", objectMapper);
         RequestContextService contexts = new RequestContextService(tokenService);
+        ProductionStore store = new ProductionStore();
+        var inventory = new com.wanshen.platform.fulfillment.FulfillmentStore();
+        ProductionService production = new ProductionService(store, objectMapper);
+        production.setInventoryPort(new com.wanshen.platform.fulfillment.ProductionInventoryAdapter(inventory, objectMapper));
+        store.bomSnapshots.put("TENANT-SHWS:FG001", objectMapper.createObjectNode()
+                .put("id", "bom-1").put("routingSnapshotId", "routing-1")
+                .set("lines", objectMapper.createArrayNode().add(objectMapper.createObjectNode()
+                        .put("materialId", "RM1").put("qtyPer", "1").put("uom", "PCS").put("warehouseId", "WH1"))));
+        inventory.saveAvailability(objectMapper.createObjectNode().put("tenantId", "TENANT-SHWS")
+                .put("warehouseId", "WH1").put("productId", "RM1").put("uom", "PCS").put("fulfillableQty", "100")
+                .put("qualifiedOnHandQty", "100").put("allocatedReservedQty", "0").put("factVersion", 1));
         mockMvc = MockMvcBuilders.standaloneSetup(new ProductionController(
-                new ProductionService(new ProductionStore(), objectMapper), contexts, objectMapper
+                production, contexts, objectMapper
         )).setControllerAdvice(new ApiExceptionHandler()).build();
         adminToken = tokenService.issue("admin", "系统管理员", "超级管理员",
                 List.of("TENANT-SHWS"), List.of("*"), "development-session-v1").accessToken();

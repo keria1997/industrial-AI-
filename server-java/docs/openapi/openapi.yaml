@@ -7,10 +7,10 @@ info:
     由销售订单创建/修改接口校验并同事务保存，读取接口返回；不依赖浏览器销售缓存。
     2026-10-13 仓库详情、现存量、发货校验和实际扣库存共用履约库存事实。
     /inventory/availability 支持省略筛选查询租户全部事实；仓库编码兼容映射至主数据 ID。
-    2026-10-13 实现勘误：下述 Reference 缺料/齐套描述与当前 Java 实现存在差异；
-    当前 MRP 固定无缺料，齐套未生成，开工/恢复及完工事件存在缺陷，
-    采购入库未接生产齐套，销售/采购事件未生成财务 AR/AP。
-    以 docs/tests/五模块业务串联检查-20261013.md 的代码与隔离复现为当前验收依据。
+    2026-10-13 生产修复：MRP 按服务端 BOM 与真实库存计算缺料，齐套预留物料，
+    开工生成物料出库流水；完工请求由 Worker 写入库存后回写 POSTED，重复消费不重复入账。
+    返工完成创建复检，报废和结案异人审批。APS 仍为 Reference 候选，客户优化器未接入；
+    销售/采购事件未生成财务 AR/AP，不能据此认定五模块均已完成。
     2026-10-13 销售订单到仓库任务、部分/剩余出库到销售回写已通过 Java/JDBC 及真实浏览器验收；
     出库成功响应返回权威 task 与 order，库存流水、预留消费、销售累计量及 Outbox 同事务保存。
     租户事务使用 PostgreSQL 锁并重读事实；发货移交失败由履约 Worker 重试，
@@ -28,7 +28,7 @@ info:
 servers:
   - url: /api/v1/production
     description: 当前来源的同源代理地址
-  - url: http://127.0.0.1:5185/api/v1/production
+  - url: http://127.0.0.1:8081/api/v1/production
     description: 本地生产 API 服务
 security:
   - BearerAuth: []
@@ -364,6 +364,42 @@ paths:
       parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/WorkOrderCommandInput' } } } }
       responses: { '200': { description: 已下达 }, default: { $ref: '#/components/responses/Error' } }
+  /work-orders/{id}/kitting-check:
+    post:
+      tags: [WorkOrder]
+      summary: 按工单 BOM 快照检查并原子预留全部物料
+      description: 需要 production.work-order.release；缺库存事实或缺料返回 409。稳定工单预留关系用于失败恢复，重复请求不会重复预留。
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: 最新工单及 materialReservation }, default: { $ref: '#/components/responses/Error' } }
+  /bom-snapshots:
+    post:
+      tags: [Planning]
+      summary: 保存生效 BOM 与工艺快照关联
+      description: 需要 production.bom.manage；覆盖同产品 BOM 应携带已有 version 的 If-Match。物料行按仓库和物料唯一，数量为正十进制字符串。
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, routingSnapshotId, lines]
+              properties:
+                productId: { type: string }
+                routingSnapshotId: { type: string }
+                lines:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [materialId, warehouseId, qtyPer, uom]
+                    properties:
+                      materialId: { type: string }
+                      warehouseId: { type: string }
+                      qtyPer: { type: string, pattern: '^(0|[1-9]\d*)(\.\d{1,6})?$' }
+                      uom: { type: string }
+      responses: { '201': { description: 生效快照及 version }, default: { $ref: '#/components/responses/Error' } }
   /work-orders/{id}/start:
     post:
       tags: [WorkOrder]
@@ -407,7 +443,8 @@ paths:
       responses: { '200': { description: 检验列表 } }
     post:
       tags: [Quality]
-      summary: 创建 FQC 或返工复检
+      summary: 创建 FQC，数量不能超过未送检良品报工量
+      description: 返工复检只允许从返工单完成动作生成，不接受调用方自行指定 parentInspectionId。
       parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InspectionInput' } } } }
       responses: { '201': { description: 已创建 }, default: { $ref: '#/components/responses/Error' } }
@@ -432,6 +469,25 @@ paths:
       parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DispositionInput' } } } }
       responses: { '200': { description: 已报废 }, default: { $ref: '#/components/responses/Error' } }
+  /rework-orders/{id}/complete:
+    post:
+      tags: [Quality]
+      summary: 完成返工并创建关联复检单
+      description: 需要 production.work-order.report；原返工单必须为 CREATED，完成后返回 REINSPECTION 检验单；原 FQC 仍保持 REWORK，直到复检通过或报废才变为 REWORKED。
+      parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { remark: { type: string } } } } } }
+      responses: { '201': { description: 关联复检单 }, default: { $ref: '#/components/responses/Error' } }
+  /completions:
+    get:
+      tags: [Completion]
+      summary: 查询当前租户完工入库记录
+      parameters: [ { $ref: '#/components/parameters/WorkOrderIdQuery' } ]
+      responses: { '200': { description: POSTING、FAILED、POSTED 记录数组 }, default: { $ref: '#/components/responses/Error' } }
+  /work-order-closes:
+    get:
+      tags: [Close]
+      summary: 查询当前租户结案申请
+      responses: { '200': { description: 结案申请数组 }, default: { $ref: '#/components/responses/Error' } }
   /work-orders/{id}/completion-allocation-preview:
     post:
       tags: [Completion]
@@ -978,6 +1034,9 @@ components:
             code: { type: string }
             status: { type: string, enum: [DRAFT, PLANNED, SCHEDULED, KITTING, RELEASED, IN_PROGRESS, PAUSED, COMPLETED, CLOSING, CLOSED, CANCELLING, CANCELLED] }
             reportedGoodQty: { $ref: '#/components/schemas/Decimal' }
+            qualityRecoveredQty:
+              allOf: [{ $ref: '#/components/schemas/Decimal' }]
+              description: 质量确认恢复的报工不良品量；不覆盖原报工历史，计入可完工上限。
             reportedDefectQty: { $ref: '#/components/schemas/Decimal' }
             reportedScrapQty: { $ref: '#/components/schemas/Decimal' }
             postedQty: { $ref: '#/components/schemas/Decimal' }
@@ -1028,7 +1087,9 @@ components:
       required: [workOrderId, sampleQty]
       properties:
         workOrderId: { type: string, format: uuid }
-        sampleQty: { $ref: '#/components/schemas/PositiveDecimal' }
+        sampleQty:
+          allOf: [{ $ref: '#/components/schemas/PositiveDecimal' }]
+          description: 根检验批累计不得超过报工良品与不良品之和；返工复检仅由返工完成动作创建。
         parentInspectionId: { type: string, format: uuid }
     InspectionResultInput:
       type: object

@@ -126,7 +126,7 @@ public final class JdbcJsonCollections implements AutoCloseable {
             bindBootstrapMode(connection);
             List<String> tenants = execute(connection, """
                     SELECT DISTINCT tenant_id FROM module_document
-                    WHERE module = ? AND kind = ? AND data->>'status' = 'PENDING' AND data->>'eventType' = ?
+                    WHERE module = ? AND kind = ? AND data->>'status' IN ('PENDING', 'RETRY_WAIT') AND data->>'eventType' = ?
                     ORDER BY tenant_id
                     """, statement -> {
                 statement.setString(1, module);
@@ -186,7 +186,8 @@ public final class JdbcJsonCollections implements AutoCloseable {
     }
 
     private String mapKey(String tenantId, String docId) {
-        return module.equals("fulfillment") && !docId.startsWith(tenantId + ":") ? tenantId + ":" + docId : docId;
+        return (module.equals("fulfillment") || module.equals("production")) && !docId.startsWith(tenantId + ":")
+                ? tenantId + ":" + docId : docId;
     }
 
     private void forEachDocument(String kind, DocumentReader reader) {

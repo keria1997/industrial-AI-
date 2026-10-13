@@ -35,6 +35,9 @@ type PlannedDemandLike = {
   productName?: string;
   status: string;
   mrpTaskId?: string;
+  scheduleCandidateId?: string;
+  workOrderId?: string;
+  workOrderCode?: string;
   source?: {
     salesOrderId?: string;
     inventoryFactVersion?: number;
@@ -67,7 +70,10 @@ export const recoverMpsFromPlannedDemand = (demand: PlannedDemandLike, task: Pla
     product: `${demand.productId} - ${demand.productName || demand.productId}`,
     quantity: Number(line.plannedQty || 0),
     date: line.dueDate || "",
-    status: "已展算",
+    status: demand.workOrderId ? "已建工单" : demand.scheduleCandidateId ? "已排程" : "已展算",
+    scheduleCandidateId: demand.scheduleCandidateId,
+    workOrderId: demand.workOrderId,
+    workOrderCode: demand.workOrderCode,
     formalMps: true,
     priority: "紧急",
     sourceSalesOrder: demand.source?.salesOrderId || "",

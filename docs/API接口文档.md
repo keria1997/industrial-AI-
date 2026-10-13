@@ -1,5 +1,19 @@
 # 工业 AI 平台 API 接口文档
 
+> 2026-10-13 生产修复：MRP 已按服务端 BOM 和履约库存计算缺料；齐套预留全部物料，开工消费预留并产生实际出库流水；完工请求由 Worker 写入库存后回写 POSTED，失败重试沿用原库存流水身份。返工完成生成复检，报废和结案要求异人审批。以下较早“固定无缺料/不能开工”记录已由本次修复更新；客户 MES/WMS、完整主数据维护和财务 AR/AP 尚未验收。见 [修复验收](tests/生产阻断修复验收-20261013.md)。
+
+生产新增路径均以 `/api/v1/production` 为前缀；写操作使用 `X-Idempotency-Key`，齐套使用工单 `If-Match`。
+
+| 方法 | 路径 | 行为与权限 |
+| --- | --- | --- |
+| POST | `/work-orders/{id}/kitting-check` | `production.work-order.release`；真实库存全行预留，缺料/缺事实返回 409，返回新工单版本 |
+| POST | `/bom-snapshots` | `production.bom.manage`；保存产品、工艺快照关联和物料行；qtyPer 正十进制字符串，同仓库同物料唯一，更新校验已有版本 |
+| POST | `/rework-orders/{id}/complete` | `production.work-order.report`；完成返工并创建 REINSPECTION；复检通过或报废后关闭原质量处置 |
+| GET | `/completions` | 当前租户完工记录数组，可选 workOrderId，区分 POSTING/FAILED/POSTED |
+| GET | `/work-order-closes` | 当前租户结案申请数组，支持刷新恢复异人复核 |
+
+根检验批累计送检量不得超过报工良品与不良品之和，返工复检由返工完成动作创建。检验合格与失败量之和必须等于送检量；返工或报废覆盖全部失败量。`qualityRecoveredQty` 记录质量确认后恢复的报工不良品量，保留原报工数量和历史。完工累计量不得超过对应检验合格量及“报工良品 + qualityRecoveredQty”；失败任务占用额度，必须重试原任务。UNKNOWN 保持 POSTING，不增加库存。报工更正先撤销原量再加入替代量，已送检报工不能更正。
+
 > 2026-10-13 五模块检查勘误：当前 Java MRP 固定无缺料，齐套未生成，开工/恢复状态机错误，下达未复用预检，完工事件存在误去重；采购入库未接生产齐套，出库/收货未生成财务 AR/AP。下文历史 Reference 闭环及强制齐套描述不能作为当前实现承诺。Java 采购和财务已有独立后端能力，见 [业务串联检查](tests/五模块业务串联检查-20261013.md)。
 
 ## 1. 文档范围

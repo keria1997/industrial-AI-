@@ -123,6 +123,17 @@ public class ProductionController {
         return command(request, () -> service.releaseWorkOrder(context(request), id, object(body)));
     }
 
+    @PostMapping("/api/v1/production/work-orders/{id}/kitting-check")
+    public ResponseEntity<?> checkKitting(@PathVariable String id, @RequestBody(required = false) ObjectNode body,
+                                          HttpServletRequest request) {
+        return command(request, () -> service.checkKitting(context(request), id, object(body)));
+    }
+
+    @PostMapping("/api/v1/production/bom-snapshots")
+    public ResponseEntity<?> saveBom(@RequestBody(required = false) ObjectNode body, HttpServletRequest request) {
+        return command(request, () -> service.saveBom(context(request), object(body)));
+    }
+
     @PostMapping("/api/v1/production/work-orders/{id}/start")
     public ResponseEntity<?> startWorkOrder(@PathVariable String id, @RequestBody(required = false) ObjectNode body,
                                              HttpServletRequest request) {
@@ -182,6 +193,12 @@ public class ProductionController {
         return command(request, () -> service.scrapInspection(context(request), id, object(body)));
     }
 
+    @PostMapping("/api/v1/production/rework-orders/{id}/complete")
+    public ResponseEntity<?> completeRework(@PathVariable String id, @RequestBody(required = false) ObjectNode body,
+                                            HttpServletRequest request) {
+        return command(request, () -> service.completeRework(context(request), id, object(body)));
+    }
+
     @PostMapping("/api/v1/production/work-orders/{id}/completion-allocation-preview")
     public ResponseEntity<?> allocationPreview(@PathVariable String id, @RequestBody(required = false) ObjectNode body,
                                                 HttpServletRequest request) {
@@ -199,6 +216,18 @@ public class ProductionController {
     public ResponseEntity<?> completion(@PathVariable String id, HttpServletRequest request) {
         RequestContext context = contexts.from(request);
         return ok(context, service.completion(context, id));
+    }
+
+    @GetMapping("/api/v1/production/completions")
+    public ResponseEntity<?> completions(@RequestParam(required = false) String workOrderId, HttpServletRequest request) {
+        RequestContext context = contexts.from(request);
+        return ok(context, service.completions(context, workOrderId));
+    }
+
+    @GetMapping("/api/v1/production/work-order-closes")
+    public ResponseEntity<?> closes(HttpServletRequest request) {
+        RequestContext context = contexts.from(request);
+        return ok(context, service.closes(context));
     }
 
     @PostMapping("/api/v1/production/completions/{id}/retry")

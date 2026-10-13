@@ -36,7 +36,14 @@ public class FulfillmentStoreConfig {
                 : encodedKey;
         FulfillmentService service = new FulfillmentService(store, mapper, keyId, key);
         service.setProductionTaskReader(productionStore::task);
-        service.setProductionDemandCreator((context, input) -> productionService.createDemand(context, input).body());
+        service.setProductionDemandCreator((context, input) -> {
+            String lineKey = "warehouse-demand:" + context.tenantId() + ":"
+                    + input.path("payloadSnapshot").path("shipmentRequestLineId").asText()
+                    + ":" + input.path("sourceRevision").asInt(1);
+            var demandContext = new com.wanshen.platform.web.RequestContextService.RequestContext(
+                    context.tenantId(), context.actorId(), context.permissions(), context.traceId(), lineKey, null);
+            return productionService.createDemand(demandContext, input).body();
+        });
         return service;
     }
 }

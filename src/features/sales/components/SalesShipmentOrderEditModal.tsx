@@ -1,5 +1,7 @@
 import { Check, ShoppingCart, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ApiContext } from '../../../api/client';
+import { inventoryApi } from '../../../api/fulfillment';
 
 import { validateShipmentDeliveryDate } from '../model/salesRules';
 
@@ -29,6 +31,7 @@ type Props = {
   mode?: 'confirm' | 'shipment';
   pending?: boolean;
   products?: Array<{ id: string; name?: string; warehouseId?: string; availQty?: number }>;
+  apiContext?: ApiContext | null;
   onClose: () => void;
   onSubmit: (order: SalesShipmentOrderDraft) => void | Promise<void>;
 };
@@ -53,7 +56,7 @@ const WAREHOUSE_NAMES: Record<string, string> = {
 
 const normalizedDate = (value?: string) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : '';
 
-export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending = false, products = [], onClose, onSubmit }: Props) => {
+export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending = false, products = [], apiContext, onClose, onSubmit }: Props) => {
   const [deliveryDate, setDeliveryDate] = useState(() => normalizedDate(order.deliveryDate));
   const [error, setError] = useState('');
   const deliveryDateRef = useRef<HTMLInputElement>(null);
@@ -72,6 +75,25 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
   const productLines = order.lines && order.lines.length > 0
     ? order.lines
     : order.productName ? [{ productName: order.productName, spec: order.spec, unit: order.unit, qty: order.qty, unitPrice: order.unitPrice }] : [];
+  const [formalStock, setFormalStock] = useState<Record<number, string>>({});
+  const stockRequests = JSON.stringify(productLines.map(line => ({
+    warehouseId: line.warehouseId || order.fulfillmentWarehouseId || order.warehouse || 'WH-FG-01',
+    productId: line.productId || order.productId || products.find(product => product.name && line.productName?.includes(product.name))?.id
+      || line.productName?.split(/\s+/)[0] || '',
+  })));
+  useEffect(() => {
+    let cancelled = false;
+    setFormalStock({});
+    if (!apiContext) return;
+    const requests: { warehouseId: string; productId: string }[] = JSON.parse(stockRequests);
+    void Promise.all(requests.map(async ({ warehouseId, productId }, index) => {
+      try {
+        const facts = await inventoryApi.getAvailability(apiContext, warehouseId, [productId]);
+        return [index, facts.find(fact => fact.productId === productId)?.fulfillableQty ?? '未提供'] as const;
+      } catch { return [index, '读取失败'] as const; }
+    })).then(entries => { if (!cancelled) setFormalStock(Object.fromEntries(entries)); });
+    return () => { cancelled = true; };
+  }, [apiContext?.tenantId, apiContext?.accessToken, stockRequests]);
   const originalAmount = useMemo(
     () => formatMoney(order.originalAmount ?? (productLines.length > 0 ? productLines.reduce((sum, l) => sum + Number(l.qty || (l as any).quantity || 0) * Number(l.unitPrice || 0), 0) : quantity * unitPrice)),
     [order.originalAmount, quantity, unitPrice, productLines],
@@ -195,7 +217,7 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
                         <td className="px-4 py-4 font-bold text-slate-800">{line.productName || '-'}</td>
                         <td className="px-4 py-4 text-slate-600">{line.spec || '-'}</td>
                         <td className="px-4 py-4 text-center text-slate-600">{line.unit || '件'}</td>
-                        <td className={`px-4 py-4 text-center font-mono font-bold ${idx === 0 && shortage > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{lineAvail != null ? lineAvail : '-'}</td>
+                        <td className={`px-4 py-4 text-center font-mono font-bold ${apiContext ? 'text-slate-700' : idx === 0 && shortage > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{apiContext ? formalStock[idx] ?? '读取中' : lineAvail != null ? lineAvail : '-'}</td>
                         <td className="px-4 py-4 text-center font-mono font-bold text-slate-700">{lineQty}</td>
                         <td className="px-4 py-4 text-right font-mono text-slate-700">{formatMoney(linePrice)}</td>
                         <td className="px-4 py-4 text-right font-mono font-bold text-slate-800">{formatMoney(lineAmount)}</td>

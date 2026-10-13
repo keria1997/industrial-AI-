@@ -35,13 +35,41 @@ public class ProductionStore {
     Map<String, JsonNode> inboxEvents = new LinkedHashMap<>();
     Map<String, JsonNode> salesOrderIntakes = new LinkedHashMap<>();
     Map<String, JsonNode> materialTransactionBlockers = new LinkedHashMap<>();
+    Map<String, JsonNode> bomSnapshots = new LinkedHashMap<>();
 
     public synchronized <T> T transaction(Supplier<T> work) {
         return work.get();
     }
 
     public synchronized <T> T transaction(java.util.function.Function<ProductionStore, T> work) {
-        return work.apply(this);
+        List<Map<String, JsonNode>> maps = List.of(demands, demandSources, workOrders, workOrderDemands,
+                workReports, reportCorrections, inspections, reworkOrders, completions, completionAllocations,
+                closeRequests, tasks, idempotency, inventoryAvailability, inboxEvents, salesOrderIntakes,
+                materialTransactionBlockers, bomSnapshots);
+        List<Map<String, JsonNode>> before = maps.stream().map(source -> {
+            Map<String, JsonNode> copy = new LinkedHashMap<>();
+            source.forEach((key, value) -> copy.put(key, value.deepCopy()));
+            return copy;
+        }).toList();
+        List<JsonNode> history = statusHistory.stream().map(ProductionStore::copy).toList();
+        List<JsonNode> outbox = outboxEvents.stream().map(ProductionStore::copy).toList();
+        List<JsonNode> audits = auditLogs.stream().map(ProductionStore::copy).toList();
+        try { return work.apply(this); }
+        catch (RuntimeException exception) {
+            for (int index = 0; index < maps.size(); index++) { maps.get(index).clear(); maps.get(index).putAll(before.get(index)); }
+            statusHistory.clear(); statusHistory.addAll(history);
+            outboxEvents.clear(); outboxEvents.addAll(outbox);
+            auditLogs.clear(); auditLogs.addAll(audits);
+            throw exception;
+        }
+    }
+
+    public <T> T transaction(String tenantId, java.util.function.Function<ProductionStore, T> work) {
+        return transaction(work);
+    }
+
+    public synchronized Optional<JsonNode> bom(String tenantId, String productId) {
+        return Optional.ofNullable(bomSnapshots.get(key(tenantId, productId))).map(ProductionStore::copy);
     }
 
     public synchronized List<JsonNode> pendingOutbox(String tenantId, String eventType) {

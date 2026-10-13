@@ -32,6 +32,9 @@ public class ProductionService {
 
     private final ProductionStore store;
     private final ObjectMapper mapper;
+    private ProductionInventoryPort inventoryPort;
+
+    public void setInventoryPort(ProductionInventoryPort port) { this.inventoryPort = port; }
 
     public ProductionService(ProductionStore store, ObjectMapper mapper) {
         this.store = store;
@@ -49,22 +52,26 @@ public class ProductionService {
 
     public Map<String, Object> listDemands(RequestContext context, String status, String factoryResourceId,
                                            String search, int page, int pageSize) {
+        return store.transaction(context.tenantId(), repository -> {
         List<JsonNode> all = store.demands(context.tenantId(), status, factoryResourceId, search, Integer.MAX_VALUE, 0);
         return pageResult(all.stream().map(this::demandWithSource).skip((long) (page - 1) * pageSize).limit(pageSize).toList(), all.size());
+        });
     }
 
     public Map<String, Object> listWorkOrders(RequestContext context, String status, String factoryResourceId,
                                               String search, int page, int pageSize) {
+        return store.transaction(context.tenantId(), repository -> {
         List<JsonNode> all = store.workOrders(context.tenantId(), status, factoryResourceId, search, Integer.MAX_VALUE, 0);
         return pageResult(all.stream().skip((long) (page - 1) * pageSize).limit(pageSize).toList(), all.size());
+        });
     }
 
     public JsonNode workOrder(RequestContext context, String id) {
-        return require(store.workOrder(context.tenantId(), id), "工单");
+        return store.transaction(context.tenantId(), repository -> require(store.workOrder(context.tenantId(), id), "工单"));
     }
 
     public JsonNode task(RequestContext context, String id) {
-        return require(store.task(context.tenantId(), id), "任务");
+        return store.transaction(context.tenantId(), repository -> require(store.task(context.tenantId(), id), "任务"));
     }
 
     public JsonNode salesOrderIntake(RequestContext context, String salesOrderId, String sourceLineId, int sourceRevision) {
@@ -76,7 +83,7 @@ public class ProductionService {
 
     public Object receiveInventoryAvailability(RequestContext context, JsonNode input) {
         require(context, "production.inventory.sync");
-        return store.transaction((ProductionStore repository) -> {
+        return store.transaction(context.tenantId(), (ProductionStore repository) -> {
             String eventKey = ProductionStore.key(context.tenantId(), "production.inventory-availability-projection", text(input, "eventId"));
             boolean duplicate = store.inboxEvents.containsKey(eventKey);
             String projection = "DUPLICATE";
@@ -112,12 +119,15 @@ public class ProductionService {
 
     public Command createDemand(RequestContext context, JsonNode input) {
         require(context, "production.demand.create");
+        positive(input, "qty");
+        if (text(input, "productId").isBlank() || text(input, "uom").isBlank() || text(input, "factoryResourceId").isBlank()) invalid("需求缺少产品、单位或工厂");
+        try { LocalDate.parse(text(input, "dueDate")); } catch (RuntimeException exception) { invalid("需求日期无效"); }
         return command(context, "CreateDemand", input, repository -> {
             ObjectNode demand = mapper.createObjectNode()
                     .put("id", uuid()).put("tenantId", context.tenantId())
                     .put("code", text(input, "code", "DM-" + codeSuffix()))
                     .put("sourceType", text(input, "sourceType")).put("productId", text(input, "productId"));
-            copyIfPresent(demand, input, "productName");
+            copyIfPresent(demand, input, "productName", "inventoryWarehouseId");
             demand.put("qty", text(input, "qty")).put("uom", text(input, "uom"))
                     .put("dueDate", text(input, "dueDate"))
                     .put("priority", input.path("priority").asInt(50))
@@ -222,6 +232,9 @@ public class ProductionService {
             requireStatus(demand, "需求", "RECEIVED", "BLOCKED");
             requireVersion(context, version(demand));
             ArrayNode missing = arrayNode();
+            JsonNode bom = store.bom(context.tenantId(), text(demand, "productId")).orElse(null);
+            if (bom == null) missing.add("缺少服务端生效 BOM");
+            else if (text(bom, "routingSnapshotId").isBlank()) missing.add("缺少服务端工艺快照关联");
             if (input.path("productActive").isBoolean() && !input.path("productActive").asBoolean()) missing.add("产品未启用");
             if (input.path("factoryActive").isBoolean() && !input.path("factoryActive").asBoolean()) missing.add("工厂不可用");
             if (input.path("bomEffective").isBoolean() && !input.path("bomEffective").asBoolean()) missing.add("缺少有效 BOM");
@@ -280,20 +293,49 @@ public class ProductionService {
         require(context, "production.work-order.create");
         return command(context, "CreateWorkOrder", input, repository -> {
             ArrayNode links = input.withArray("demandLinks");
+            if (links.isEmpty()) invalid("工单必须关联正式生产需求");
+            positive(input, "plannedQty");
+            String warehouseId = text(input, "inventoryWarehouseId");
+            JsonNode bom = require(store.bom(context.tenantId(), text(input, "productId")), "生效 BOM");
+            String allocated = "0";
+            for (JsonNode link : links) {
+                JsonNode demand = require(store.demand(context.tenantId(), text(link, "demandId")), "关联需求");
+                requireStatus(demand, "关联需求", "PLANNED");
+                if (!text(demand, "workOrderId").isBlank()) {
+                    throw new ApiException(409, "PRODUCTION_409_ILLEGAL_STATE", "需求已生成工单", "继续处理原工单");
+                }
+                if (!text(demand, "productId").equals(text(input, "productId"))
+                        || !text(demand, "uom").equals(text(input, "uom"))
+                        || !text(demand, "factoryResourceId").equals(text(input, "factoryResourceId"))
+                        || compare(text(link, "allocatedQty"), text(demand, "qty")) != 0) invalid("工单来源或分配数量与需求不一致");
+                if (!text(demand, "scheduleCandidateId").equals(text(input, "scheduleCandidateId"))
+                        || text(input, "scheduleCandidateId").isBlank()) invalid("工单必须引用当前需求的有效 APS 候选");
+                String sourceWarehouse = text(demand, "inventoryWarehouseId");
+                JsonNode source = store.demandSource(context.tenantId(), text(demand, "id")).orElse(null);
+                if (sourceWarehouse.isBlank() && source != null) sourceWarehouse = text(source.path("payloadSnapshot"), "warehouseId");
+                if (warehouseId.isBlank()) warehouseId = sourceWarehouse;
+                if (!sourceWarehouse.isBlank() && !warehouseId.equals(sourceWarehouse)) invalid("工单入库仓库与来源需求不一致");
+                allocated = add(allocated, text(link, "allocatedQty"));
+            }
+            if (warehouseId.isBlank()) invalid("工单必须指定成品入库仓库");
+            if (compare(allocated, text(input, "plannedQty")) != 0) invalid("需求分配合计必须等于工单数量");
             ObjectNode order = mapper.createObjectNode().put("id", uuid()).put("tenantId", context.tenantId())
                     .put("code", text(input, "code", "WO-" + codeSuffix())).put("productId", text(input, "productId"));
             copyIfPresent(order, input, "productName", "workshopResourceId", "lineResourceId", "bomSnapshotId",
                     "routingSnapshotId", "scheduleCandidateId", "assigneeEmployeeId", "correlationId");
+            order.put("bomSnapshotId", text(bom, "id")).put("routingSnapshotId", text(bom, "routingSnapshotId"))
+                    .put("kittingStatus", "UNCHECKED");
+            order.set("bomSnapshot", bom.deepCopy());
             order.put("factoryResourceId", text(input, "factoryResourceId"))
                     .put("workCenterResourceId", text(input, "workCenterResourceId"))
                     .put("plannedQty", text(input, "plannedQty")).put("inputQty", text(input, "inputQty", "0"))
                     .put("reportedGoodQty", "0").put("reportedDefectQty", "0").put("reportedScrapQty", "0")
                     .put("postedQty", "0").put("uom", text(input, "uom")).put("dueDate", text(input, "dueDate"))
-                    .put("status", input.hasNonNull("bomSnapshotId") && input.hasNonNull("routingSnapshotId") ? "PLANNED" : "DRAFT")
+                    .put("status", "PLANNED")
                     .put("correlationId", text(input, "correlationId", uuid()))
                     .put("createdBy", context.actorId()).put("version", 1).put("createdAt", now()).put("updatedAt", now());
             ObjectNode parameterSnapshot = mapper.createObjectNode()
-                    .put("inventoryWarehouseId", text(input, "inventoryWarehouseId"));
+                    .put("inventoryWarehouseId", warehouseId);
             parameterSnapshot.set("demandIds", links.deepCopy());
             order.set("parameterSnapshot", parameterSnapshot);
             store.workOrders.put(ProductionStore.key(context.tenantId(), text(order, "id")), order);
@@ -301,17 +343,8 @@ public class ProductionService {
                 JsonNode link = links.get(index);
                 JsonNode demand = require(store.demand(context.tenantId(), text(link, "demandId")), "关联需求");
                 requireStatus(demand, "关联需求", "PLANNED");
-                if (index == 0) {
-                    JsonNode source = store.demandSource(context.tenantId(), text(demand, "id")).orElse(null);
-                    String demandWarehouse = source == null ? ""
-                            : text(source.path("payloadSnapshot"), "inventoryWarehouseId");
-                    if (demandWarehouse.isBlank() && source != null) {
-                        demandWarehouse = text(source.path("payloadSnapshot"), "warehouseId");
-                    }
-                    if (text(input, "inventoryWarehouseId").isBlank() && !demandWarehouse.isBlank()) {
-                        ((ObjectNode) input).put("inventoryWarehouseId", demandWarehouse);
-                    }
-                }
+                store.demands.put(ProductionStore.key(context.tenantId(), text(demand, "id")),
+                        nextVersion(demand).put("workOrderId", text(order, "id")).put("workOrderCode", text(order, "code")));
                 ObjectNode linkValue = mapper.createObjectNode().put("id", uuid()).put("tenantId", context.tenantId())
                         .put("workOrderId", text(order, "id")).put("demandId", text(link, "demandId"))
                         .put("allocatedQty", text(link, "allocatedQty")).put("priorityRank", index + 1)
@@ -332,12 +365,37 @@ public class ProductionService {
         return Map.of("canRelease", blockers.isEmpty(), "blockers", blockers, "version", version(order));
     }
 
+    public Command checkKitting(RequestContext context, String id, JsonNode input) {
+        require(context, "production.work-order.release");
+        Optional<Command> replay = replay(context, "CheckKitting", payloadWithId(id, input));
+        if (replay.isPresent()) return replay.get();
+        JsonNode order = workOrder(context, id);
+        requireStatus(order, "工单", "PLANNED", "SCHEDULED", "KITTING");
+        requireVersion(context, version(order));
+        JsonNode bom = order.path("bomSnapshot");
+        if (bom.isMissingNode()) bom = require(store.bom(context.tenantId(), text(order, "productId")), "生效 BOM");
+        if (inventoryPort == null) unavailableInventory();
+        JsonNode snapshot = inventoryPort.reserve(context, id, materialRequirements(bom, text(order, "plannedQty")));
+        return command(context, "CheckKitting", payloadWithId(id, input), repository -> {
+            JsonNode current = require(store.workOrder(context.tenantId(), id), "工单");
+            requireStatus(current, "工单", "PLANNED", "SCHEDULED", "KITTING");
+            ObjectNode result = nextVersion(current).put("kittingStatus", "READY").put("kittingCheckedAt", now());
+            result.set("materialReservation", snapshot);
+            store.workOrders.put(ProductionStore.key(context.tenantId(), id), result);
+            audit(repository, context, "KITTING_CHECK", "WorkOrder", id, current, result, null);
+            return updated(result, "WorkOrder", id);
+        });
+    }
+
     public Command releaseWorkOrder(RequestContext context, String id, JsonNode input) {
         require(context, "production.work-order.release");
         return command(context, "ReleaseWorkOrder", payloadWithId(id, input), repository -> {
             JsonNode order = require(store.workOrder(context.tenantId(), id), "工单");
             requireStatus(order, "工单", "PLANNED", "SCHEDULED", "KITTING");
             requireVersion(context, version(order));
+            List<Map<String, String>> blockers = releaseBlockers(order);
+            if (!blockers.isEmpty()) throw new ApiException(409, "PRODUCTION_409_KITTING_NOT_READY",
+                    "下达条件未满足", "完成齐套与排程后重试", Map.of("blockers", blockers));
             ObjectNode result = nextVersion(order).put("status", "RELEASED");
             store.workOrders.put(ProductionStore.key(context.tenantId(), id), result);
             transition(repository, context, "WorkOrder", id, text(order, "status"), "RELEASED", version(result), Map.of(),
@@ -348,6 +406,17 @@ public class ProductionService {
     }
 
     public Command startWorkOrder(RequestContext context, String id, JsonNode input) {
+        require(context, "production.work-order.start");
+        Optional<Command> replay = replay(context, "StartWorkOrder", payloadWithId(id, input));
+        if (replay.isPresent()) return replay.get();
+        JsonNode order = workOrder(context, id);
+        if ("IN_PROGRESS".equals(text(order, "status"))) {
+            return command(context, "StartWorkOrder", payloadWithId(id, input), repository -> updated(order, "WorkOrder", id));
+        }
+        requireStatus(order, "工单", "RELEASED");
+        requireVersion(context, version(order));
+        if (inventoryPort == null) unavailableInventory();
+        inventoryPort.consume(context, id);
         return changeWorkOrder(context, id, "StartWorkOrder", "production.work-order.start", "IN_PROGRESS", input);
     }
 
@@ -362,6 +431,7 @@ public class ProductionService {
 
     public Command submitReport(RequestContext context, String workOrderId, JsonNode input) {
         require(context, "production.work-order.report");
+        nonnegative(input, "goodQty"); nonnegative(input, "defectQty"); nonnegative(input, "scrapQty"); nonnegative(input, "inputQty");
         ObjectNode payload = mapper.createObjectNode().put("workOrderId", workOrderId).setAll(object(input));
         return command(context, "SubmitWorkReport", payload, repository -> {
             JsonNode order = require(store.workOrder(context.tenantId(), workOrderId), "工单");
@@ -386,6 +456,7 @@ public class ProductionService {
                     .put("reportedGoodQty", add(text(order, "reportedGoodQty"), text(input, "goodQty")))
                     .put("reportedDefectQty", add(text(order, "reportedDefectQty"), text(input, "defectQty", "0")))
                     .put("reportedScrapQty", add(text(order, "reportedScrapQty"), text(input, "scrapQty", "0")));
+            if (compare(text(result, "reportedScrapQty"), text(order, "plannedQty")) == 0) result.put("status", "COMPLETED");
             store.workReports.put(ProductionStore.key(context.tenantId(), text(report, "id")), report);
             store.workOrders.put(ProductionStore.key(context.tenantId(), workOrderId), result);
             transition(repository, context, "WorkReport", text(report, "id"), null, "SUBMITTED", 1, Map.of());
@@ -402,13 +473,19 @@ public class ProductionService {
 
     public Command correctReport(RequestContext context, String reportId, JsonNode input) {
         require(context, "production.work-order.report.correct");
+        nonnegative(input, "goodQty"); nonnegative(input, "defectQty"); nonnegative(input, "scrapQty"); nonnegative(input, "inputQty");
+        if (text(input, "reason").isBlank()) invalid("更正报工必须填写原因");
         ObjectNode payload = mapper.createObjectNode().put("reportId", reportId).setAll(object(input));
         return command(context, "CorrectWorkReport", payload, repository -> {
             JsonNode original = require(java.util.Optional.ofNullable(
                     store.workReports.get(ProductionStore.key(context.tenantId(), reportId))), "报工记录");
             requireStatus(original, "报工记录", "POSTED");
+            requireVersion(context, version(original));
             JsonNode order = require(store.workOrder(context.tenantId(), text(original, "workOrderId")), "工单");
-            requireStatus(order, "工单", "IN_PROGRESS", "PAUSED", "COMPLETED");
+            requireStatus(order, "工单", "IN_PROGRESS", "PAUSED");
+            if (!store.inspections(context.tenantId(), text(order, "id")).isEmpty()) {
+                invalid("已有质量送检记录，不能更正来源报工");
+            }
             ObjectNode corrected = nextVersion(original).put("status", "CORRECTED");
             ObjectNode replacement = object(original).deepCopy().put("id", uuid()).put("goodQty", text(input, "goodQty"))
                     .put("defectQty", text(input, "defectQty", "0")).put("scrapQty", text(input, "scrapQty", "0"))
@@ -428,6 +505,10 @@ public class ProductionService {
                     .put("reportedGoodQty", add(subtract(text(order, "reportedGoodQty"), text(original, "goodQty")), text(input, "goodQty")))
                     .put("reportedDefectQty", add(subtract(text(order, "reportedDefectQty"), text(original, "defectQty")), text(input, "defectQty", "0")))
                     .put("reportedScrapQty", add(subtract(text(order, "reportedScrapQty"), text(original, "scrapQty")), text(input, "scrapQty", "0")));
+            if (compare(add(text(updatedOrder, "reportedGoodQty"), text(updatedOrder, "reportedDefectQty"),
+                    text(updatedOrder, "reportedScrapQty")), min(text(updatedOrder, "inputQty"), text(order, "plannedQty"))) > 0) {
+                invalid("更正后累计报工数量超过投入量或计划量");
+            }
             store.workReports.put(ProductionStore.key(context.tenantId(), reportId), corrected);
             store.workReports.put(ProductionStore.key(context.tenantId(), text(replacement, "id")), replacement);
             store.reportCorrections.put(ProductionStore.key(context.tenantId(), text(correction, "id")), correction);
@@ -445,14 +526,24 @@ public class ProductionService {
     }
 
     public List<JsonNode> inspections(RequestContext context, String workOrderId) {
-        return store.inspections(context.tenantId(), workOrderId);
+        return store.transaction(context.tenantId(), repository -> store.inspections(context.tenantId(), workOrderId));
     }
 
     public Command createInspection(RequestContext context, JsonNode input) {
         require(context, "production.quality.inspect");
+        positive(input, "sampleQty");
+        if (input.hasNonNull("parentInspectionId")) invalid("返工复检必须从返工单完成动作创建");
         return command(context, "CreateInspection", input, repository -> {
             JsonNode order = require(store.workOrder(context.tenantId(), text(input, "workOrderId")), "工单");
             requireStatus(order, "工单", "IN_PROGRESS", "PAUSED", "COMPLETED");
+            String inspectionQty = "0";
+            for (JsonNode previous : store.inspections(context.tenantId(), text(order, "id"))) {
+                if (!previous.hasNonNull("parentInspectionId")) inspectionQty = add(inspectionQty, text(previous, "sampleQty"));
+            }
+            if (compare(add(inspectionQty, text(input, "sampleQty")),
+                    add(text(order, "reportedGoodQty"), text(order, "reportedDefectQty"))) > 0) {
+                throw new ApiException(422, "PRODUCTION_422_QUANTITY_VIOLATION", "送检数量超过未送检的良品与不良品报工量", "核对报工及已送检数量");
+            }
             ObjectNode inspection = mapper.createObjectNode().put("id", uuid()).put("tenantId", context.tenantId())
                     .put("code", "FQC-" + codeSuffix()).put("workOrderId", text(order, "id")).put("inspectionType", "FQC")
                     .put("sampleQty", text(input, "sampleQty")).put("passedQty", "0").put("failedQty", "0")
@@ -468,6 +559,7 @@ public class ProductionService {
 
     public Command submitInspectionResult(RequestContext context, String id, JsonNode input) {
         require(context, "production.quality.inspect");
+        nonnegative(input, "passedQty"); nonnegative(input, "failedQty");
         return command(context, "SubmitInspectionResult", payloadWithId(id, input), repository -> {
             JsonNode inspection = require(store.inspection(context.tenantId(), id), "检验单");
             requireStatus(inspection, "检验单", "CREATED", "REINSPECTION");
@@ -481,6 +573,19 @@ public class ProductionService {
                     .put("status", compare(failed, "0") > 0 ? "DISPOSITION_PENDING" : "PASSED");
             copyIfPresent(result, input, "resultReason");
             store.inspections.put(ProductionStore.key(context.tenantId(), id), result);
+            JsonNode order = require(store.workOrder(context.tenantId(), text(inspection, "workOrderId")), "工单");
+            String inspectedPassed = "0";
+            for (JsonNode item : store.inspections(context.tenantId(), text(order, "id"))) {
+                inspectedPassed = add(inspectedPassed, text(item, "passedQty"));
+            }
+            BigDecimal recovered = new BigDecimal(inspectedPassed).subtract(new BigDecimal(text(order, "reportedGoodQty")))
+                    .max(BigDecimal.ZERO).min(new BigDecimal(text(order, "reportedDefectQty")));
+            ObjectNode qualityOrder = nextVersion(order).put("qualityRecoveredQty", decimal(recovered));
+            store.workOrders.put(ProductionStore.key(context.tenantId(), text(order, "id")), qualityOrder);
+            audit(repository, context, "QUALITY_RECOVERY", "WorkOrder", text(order, "id"), order, qualityOrder, null);
+            if ("PASSED".equals(text(result, "status")) && result.hasNonNull("parentInspectionId")) {
+                closeReworkParents(context.tenantId(), result);
+            }
             transition(repository, context, "Inspection", id, text(inspection, "status"), "INSPECTING", version(inspection) + 1, Map.of());
             transition(repository, context, "Inspection", id, "INSPECTING", text(result, "status"), version(result),
                     Map.of("passedQty", text(input, "passedQty"), "failedQty", failed));
@@ -494,7 +599,9 @@ public class ProductionService {
         return command(context, "CreateRework", payloadWithId(id, input), repository -> {
             JsonNode inspection = require(store.inspection(context.tenantId(), id), "检验单");
             requireStatus(inspection, "检验单", "DISPOSITION_PENDING");
-            if (compare(text(input, "qty"), text(inspection, "failedQty")) > 0) {
+            requireVersion(context, version(inspection));
+            positive(input, "qty");
+            if (compare(text(input, "qty"), text(inspection, "failedQty")) != 0) {
                 throw new ApiException(422, "PRODUCTION_422_QUANTITY_VIOLATION", "返工数量超过不合格数量", "调整返工数量");
             }
             ObjectNode rework = mapper.createObjectNode().put("id", uuid()).put("tenantId", context.tenantId())
@@ -502,6 +609,7 @@ public class ProductionService {
                     .put("workOrderId", text(inspection, "workOrderId")).put("qty", text(input, "qty"))
                     .put("status", "CREATED").put("createdBy", context.actorId()).put("createdAt", now());
             ObjectNode result = nextVersion(inspection).put("status", "REWORK");
+            result.put("reworkOrderId", text(rework, "id"));
             store.reworkOrders.put(ProductionStore.key(context.tenantId(), text(rework, "id")), rework);
             store.inspections.put(ProductionStore.key(context.tenantId(), id), result);
             transition(repository, context, "Inspection", id, text(inspection, "status"), "REWORK", version(result),
@@ -519,6 +627,7 @@ public class ProductionService {
         return command(context, "ScrapInspection", payloadWithId(id, input), repository -> {
             JsonNode inspection = require(store.inspection(context.tenantId(), id), "检验单");
             requireStatus(inspection, "检验单", "DISPOSITION_PENDING");
+            requireVersion(context, version(inspection));
             if (text(inspection, "inspectorId").equals(context.actorId())) {
                 throw new ApiException(403, "PRODUCTION_403_PERMISSION_DENIED", "检验人与报废审批人必须分离", "请由另一名质量主管审批报废");
             }
@@ -526,7 +635,14 @@ public class ProductionService {
                 throw new ApiException(422, "PRODUCTION_422_QUANTITY_VIOLATION", "P0 报废处置必须覆盖本检验单全部不合格数量", "按不合格数量提交，或先走返工路径");
             }
             ObjectNode result = nextVersion(inspection).put("status", "SCRAPPED");
+            JsonNode order = require(store.workOrder(context.tenantId(), text(inspection, "workOrderId")), "工单");
+            ObjectNode updatedOrder = nextVersion(order).put("qualityScrapQty",
+                    add(text(order, "qualityScrapQty", "0"), text(input, "qty")));
+            if (compare(add(text(order, "postedQty"), text(updatedOrder, "qualityScrapQty"),
+                    text(order, "reportedScrapQty", "0")), text(order, "plannedQty")) >= 0) updatedOrder.put("status", "COMPLETED");
+            store.workOrders.put(ProductionStore.key(context.tenantId(), text(order, "id")), updatedOrder);
             store.inspections.put(ProductionStore.key(context.tenantId(), id), result);
+            closeReworkParents(context.tenantId(), result);
             transition(repository, context, "Inspection", id, text(inspection, "status"), "SCRAP_PENDING", version(inspection) + 1,
                     Map.of("qty", text(input, "qty")), "SCRAP_APPROVAL", text(input, "reason"));
             transition(repository, context, "Inspection", id, "SCRAP_PENDING", "SCRAPPED", version(result),
@@ -536,6 +652,39 @@ public class ProductionService {
         });
     }
 
+    public Command completeRework(RequestContext context, String id, JsonNode input) {
+        require(context, "production.work-order.report");
+        return command(context, "CompleteRework", payloadWithId(id, input), repository -> {
+            JsonNode rework = require(Optional.ofNullable(store.reworkOrders.get(ProductionStore.key(context.tenantId(), id))), "返工单");
+            requireStatus(rework, "返工单", "CREATED");
+            JsonNode parent = require(store.inspection(context.tenantId(), text(rework, "sourceInspectionId")), "原检验单");
+            requireStatus(parent, "原检验单", "REWORK");
+            ObjectNode inspection = mapper.createObjectNode().put("id", uuid()).put("tenantId", context.tenantId())
+                    .put("code", "FQC-" + codeSuffix()).put("workOrderId", text(rework, "workOrderId"))
+                    .put("parentInspectionId", text(parent, "id")).put("sampleQty", text(rework, "qty"))
+                    .put("passedQty", "0").put("failedQty", "0").put("status", "REINSPECTION")
+                    .put("version", 1).put("createdAt", now()).put("updatedAt", now()).put("createdBy", context.actorId());
+            ObjectNode completed = copy(rework).put("status", "COMPLETED").put("completedBy", context.actorId())
+                    .put("completedAt", now()).put("reinspectionId", text(inspection, "id"));
+            store.reworkOrders.put(ProductionStore.key(context.tenantId(), id), completed);
+            store.inspections.put(ProductionStore.key(context.tenantId(), text(inspection, "id")), inspection);
+            store.inspections.put(ProductionStore.key(context.tenantId(), text(parent, "id")),
+                    nextVersion(parent).put("reinspectionId", text(inspection, "id")));
+            audit(repository, context, "REWORK_COMPLETE", "ReworkOrder", id, rework, completed, text(input, "remark"));
+            transition(repository, context, "Inspection", text(inspection, "id"), null, "REINSPECTION", 1, Map.of("reworkOrderId", id));
+            return created(inspection, "Inspection", text(inspection, "id"));
+        });
+    }
+
+    private void closeReworkParents(String tenantId, JsonNode inspection) {
+        String parentId = text(inspection, "parentInspectionId");
+        while (!parentId.isBlank()) {
+            JsonNode parent = require(store.inspection(tenantId, parentId), "返工来源检验单");
+            store.inspections.put(ProductionStore.key(tenantId, parentId), nextVersion(parent).put("status", "REWORKED"));
+            parentId = text(parent, "parentInspectionId");
+        }
+    }
+
     public Map<String, Object> allocationPreview(RequestContext context, String workOrderId, String qty) {
         JsonNode order = workOrder(context, workOrderId);
         return Map.of("workOrderId", workOrderId, "qty", qty, "allocations", calculateAllocations(order, qty, "PREVIEW"));
@@ -543,14 +692,33 @@ public class ProductionService {
 
     public Command createCompletion(RequestContext context, String workOrderId, JsonNode input) {
         require(context, "production.completion.post");
+        positive(input, "qty");
         ObjectNode payload = mapper.createObjectNode().put("workOrderId", workOrderId).setAll(object(input));
         return command(context, "CreateCompletion", payload, repository -> {
             JsonNode order = require(store.workOrder(context.tenantId(), workOrderId), "工单");
             requireStatus(order, "工单", "IN_PROGRESS", "PAUSED", "COMPLETED");
             JsonNode inspection = require(store.inspection(context.tenantId(), text(input, "inspectionId")), "FQC 检验单");
             if (!text(inspection, "workOrderId").equals(workOrderId)) notFound("FQC 检验单");
-            if (!"PASSED".equals(text(inspection, "status"))) {
+            if (!Set.of("PASSED", "SCRAPPED", "REWORKED").contains(text(inspection, "status"))) {
                 throw new ApiException(409, "PRODUCTION_409_ILLEGAL_STATE", "FQC 未通过或处置未关闭，禁止完工入库", "完成 FQC 并确保结果为 PASSED");
+            }
+            if (!text(input, "uom").equals(text(order, "uom"))
+                    || !text(input, "inventoryWarehouseId").equals(text(order.path("parameterSnapshot"), "inventoryWarehouseId"))) {
+                invalid("完工入库单位或仓库与工单不一致");
+            }
+            String inspectionCompleted = "0";
+            String orderCompleted = "0";
+            for (JsonNode previous : store.completions(context.tenantId(), workOrderId)) {
+                if (!Set.of("POSTING", "POSTED", "FAILED").contains(text(previous, "status"))) continue;
+                orderCompleted = add(orderCompleted, text(previous, "qty"));
+                if (text(previous, "inspectionId").equals(text(inspection, "id"))) {
+                    inspectionCompleted = add(inspectionCompleted, text(previous, "qty"));
+                }
+            }
+            if (compare(add(inspectionCompleted, text(input, "qty")), text(inspection, "passedQty")) > 0
+                    || compare(add(orderCompleted, text(input, "qty")),
+                            add(text(order, "reportedGoodQty"), text(order, "qualityRecoveredQty", "0"))) > 0) {
+                throw new ApiException(422, "PRODUCTION_422_QUANTITY_VIOLATION", "累计完工入库超过检验合格量或报工良品量", "核对已有完工任务，失败任务使用原任务重试");
             }
             String completionId = uuid();
             String taskId = uuid();
@@ -581,6 +749,13 @@ public class ProductionService {
                     Map.of("workOrderId", workOrderId, "qty", text(input, "qty"), "taskId", taskId), null, null,
                     text(order, "correlationId"));
             audit(repository, context, "COMPLETION_SUBMIT", "Completion", completionId, null, completion, text(input, "remark"));
+            outbox(repository, "production.completion.requested.v1", "Completion", completionId, 1,
+                    text(order, "correlationId"), context, Map.of(
+                            "completionId", completionId, "workOrderId", workOrderId,
+                            "externalTransactionId", "production-completion:" + context.tenantId() + ":" + completionId,
+                            "warehouseId", text(completion, "inventoryWarehouseId"), "productId", text(order, "productId"),
+                            "qty", text(completion, "qty"), "uom", text(completion, "uom"),
+                            "allocations", calculateAllocations(order, text(completion, "qty"), completionId)));
             ObjectNode body = mapper.createObjectNode().put("completionId", completionId).put("taskId", taskId)
                     .put("status", "POSTING").put("idempotencyKey", context.idempotencyKey()).put("traceId", context.traceId());
             return new Command(202, body, "Completion", completionId, false);
@@ -588,8 +763,10 @@ public class ProductionService {
     }
 
     public JsonNode completion(RequestContext context, String id) {
+        return store.transaction(context.tenantId(), repository -> {
         JsonNode value = require(store.completion(context.tenantId(), id), "完工记录");
         return object(value).set("allocations", mapper.valueToTree(store.completionAllocations(context.tenantId(), id)));
+        });
     }
 
     public Command inventoryResult(RequestContext context, String id, JsonNode input) {
@@ -635,7 +812,8 @@ public class ProductionService {
             result.remove("failureCode");
             result.remove("failureMessage");
             ObjectNode updatedOrder = nextVersion(order).put("postedQty", add(text(order, "postedQty"), text(completion, "qty")));
-            if (compare(text(updatedOrder, "postedQty"), text(order, "plannedQty")) >= 0) updatedOrder.put("status", "COMPLETED");
+            if (compare(add(text(updatedOrder, "postedQty"), text(order, "qualityScrapQty", "0"),
+                    text(order, "reportedScrapQty", "0")), text(order, "plannedQty")) >= 0) updatedOrder.put("status", "COMPLETED");
             List<JsonNode> allocations = calculateAllocations(order, text(completion, "qty"), id);
             store.completions.put(ProductionStore.key(context.tenantId(), id), result);
             store.workOrders.put(ProductionStore.key(context.tenantId(), text(order, "id")), updatedOrder);
@@ -648,7 +826,7 @@ public class ProductionService {
                     Map.of("workOrderId", text(order, "id"), "qty", text(completion, "qty"),
                             "externalTransactionId", text(input, "externalTransactionId")), null, null,
                     text(order, "correlationId"));
-            if (!allocations.isEmpty()) {
+            {
                 outbox(repository, "production.completion.posted.v1", "Completion", id, version(result),
                         text(order, "correlationId"), context, Map.of(
                                 "completionId", id, "workOrderId", text(order, "id"),
@@ -691,6 +869,14 @@ public class ProductionService {
             store.tasks.put(ProductionStore.key(context.tenantId(), text(task, "id")), retryTask);
             transition(repository, context, "Completion", id, "FAILED", "POSTING", version(result), Map.of(), "RETRY", text(input, "remark"));
             audit(repository, context, "COMPLETION_RETRY", "Completion", id, completion, result, text(input, "remark"));
+            JsonNode order = require(store.workOrder(context.tenantId(), text(completion, "workOrderId")), "工单");
+            outbox(repository, "production.completion.requested.v1", "Completion", id, version(result),
+                    text(order, "correlationId"), context, Map.of(
+                            "completionId", id, "workOrderId", text(order, "id"),
+                            "externalTransactionId", "production-completion:" + context.tenantId() + ":" + id,
+                            "warehouseId", text(completion, "inventoryWarehouseId"), "productId", text(order, "productId"),
+                            "qty", text(completion, "qty"), "uom", text(completion, "uom"),
+                            "allocations", calculateAllocations(order, text(completion, "qty"), id)));
             ObjectNode body = mapper.createObjectNode().put("completionId", id).put("taskId", text(completion, "taskId"))
                     .put("status", "POSTING").put("inventoryIdempotencyKey", text(completion, "inventoryIdempotencyKey"));
             return new Command(202, body, "Completion", id, false);
@@ -736,6 +922,7 @@ public class ProductionService {
             JsonNode close = require(java.util.Optional.ofNullable(
                     store.closeRequests.get(ProductionStore.key(context.tenantId(), closeId))), "结案申请");
             requireStatus(close, "结案申请", "REVIEW_PENDING");
+            requireVersion(context, version(close));
             if (text(close, "submittedBy").equals(context.actorId())) {
                 throw new ApiException(403, "PRODUCTION_403_PERMISSION_DENIED", "结案制单人与复核人必须为不同账号", "请由另一名具备结案复核权限的人员操作");
             }
@@ -761,13 +948,43 @@ public class ProductionService {
 
     public Command startPlanningTask(RequestContext context, String type, JsonNode input) {
         require(context, "MRP".equals(type) ? "production.mrp.run" : "production.aps.run");
+        Optional<Command> replay = replay(context, "Start" + type + "Task", input);
+        if (replay.isPresent()) return replay.get();
+        List<JsonNode> shortages = new ArrayList<>();
+        Set<String> uniqueDemands = new java.util.HashSet<>();
+        Map<String, BigDecimal> plannedConsumption = new LinkedHashMap<>();
+        for (JsonNode demandId : input.withArray("demandIds")) {
+            if (demandId.asText().isBlank() || !uniqueDemands.add(demandId.asText())) invalid("计划任务需求编号不能为空或重复");
+            JsonNode demand = store.transaction(context.tenantId(), repository ->
+                    require(store.demand(context.tenantId(), demandId.asText()), "计划任务关联需求"));
+            JsonNode bom = store.transaction(context.tenantId(), repository ->
+                    require(store.bom(context.tenantId(), text(demand, "productId")), "生效 BOM"));
+            if (inventoryPort == null) unavailableInventory();
+            for (JsonNode value : inventoryPort.check(context.tenantId(), materialRequirements(bom, text(demand, "qty")))) {
+                ObjectNode line = value.deepCopy();
+                String materialKey = text(line, "warehouseId") + ":" + text(line, "materialId");
+                BigDecimal available = new BigDecimal(text(line, "availableQty")).subtract(
+                        plannedConsumption.getOrDefault(materialKey, BigDecimal.ZERO)).max(BigDecimal.ZERO);
+                BigDecimal required = new BigDecimal(text(line, "grossRequiredQty"));
+                plannedConsumption.merge(materialKey, required, BigDecimal::add);
+                line.put("availableQty", decimal(available)).put("shortageQty", decimal(required.subtract(available).max(BigDecimal.ZERO)))
+                        .put("demandId", text(demand, "id")).put("demandCode", text(demand, "code"))
+                        .put("requiredDate", text(demand, "dueDate"));
+                if (line.path("factMissing").asBoolean() || new BigDecimal(text(line, "shortageQty")).signum() > 0) shortages.add(line);
+            }
+        }
+        if ("APS".equals(type) && !shortages.isEmpty()) {
+            throw new ApiException(409, "PRODUCTION_409_MATERIAL_SHORTAGE", "物料不齐套，不能运行 APS", "根据 MRP 缺料补足库存后重试",
+                    Map.of("materialShortages", shortages));
+        }
         return command(context, "Start" + type + "Task", input, repository -> {
             ArrayNode demandIds = input.withArray("demandIds");
             if (demandIds.isEmpty()) invalid(type + " 任务必须指定生产需求");
             List<JsonNode> demands = new ArrayList<>();
             for (JsonNode demandId : demandIds) {
                 JsonNode demand = require(store.demand(context.tenantId(), demandId.asText()), "计划任务关联需求");
-                requireStatus(demand, "计划任务关联需求", "MRP".equals(type) ? "APPROVED" : "PLANNED");
+                requireStatus(demand, "计划任务关联需求", "MRP".equals(type) ? new String[]{"APPROVED", "PLANNED"} : new String[]{"PLANNED"});
+                if (!text(demand, "workOrderId").isBlank()) invalid("需求已生成工单，不能重复展算或排程");
                 if ("MRP".equals(type) && text(demand, "acceptedAt").isBlank()) {
                     throw new ApiException(409, "PRODUCTION_409_ILLEGAL_STATE", "生产需求尚未由计划员接收", "具备接收权限的计划员先认领需求");
                 }
@@ -783,18 +1000,25 @@ public class ProductionService {
                         .put("uom", text(demand, "uom")).put("dueDate", text(demand, "dueDate")));
             }
             if ("MRP".equals(type)) {
-                result.put("canProceedToAps", true);
+                result.put("canProceedToAps", shortages.isEmpty());
                 result.set("mpsLines", mpsLines);
-                result.set("materialShortages", arrayNode());
+                result.set("materialShortages", mapper.valueToTree(shortages));
                 for (JsonNode demand : demands) {
                     ObjectNode planned = nextVersion(demand).put("status", "PLANNED").put("mrpTaskId", taskId);
+                    planned.remove("scheduleCandidateId");
+                    planned.remove("scheduleTaskId");
                     store.demands.put(ProductionStore.key(context.tenantId(), text(demand, "id")), planned);
                     transition(repository, context, "Demand", text(demand, "id"), text(demand, "status"), "PLANNED",
                             version(planned), Map.of("taskId", taskId));
                 }
             } else {
-                ObjectNode candidate = mapper.createObjectNode().put("id", uuid()).put("startAt", now()).put("published", true);
+                ObjectNode candidate = mapper.createObjectNode().put("id", uuid()).put("startAt", now()).put("published", true)
+                        .put("dueDate", demands.stream().map(value -> text(value, "dueDate")).min(String::compareTo).orElse(""));
                 candidate.set("demandIds", demandIds.deepCopy());
+                for (JsonNode demand : demands) {
+                    store.demands.put(ProductionStore.key(context.tenantId(), text(demand, "id")),
+                            nextVersion(demand).put("scheduleCandidateId", text(candidate, "id")).put("scheduleTaskId", taskId));
+                }
                 result.set("scheduleCandidates", arrayNode().add(candidate));
             }
             ObjectNode task = mapper.createObjectNode().put("id", taskId).put("tenantId", context.tenantId())
@@ -833,7 +1057,7 @@ public class ProductionService {
                         "completionRatePercent", rate,
                         "pendingDemands", demands.stream().filter(item -> Set.of("RECEIVED", "VALIDATING", "PENDING_REVIEW", "BLOCKED")
                                 .contains(text(item, "status"))).count(),
-                        "openFqc", inspections.stream().filter(item -> !Set.of("PASSED", "SCRAPPED").contains(text(item, "status"))).count()
+                        "openFqc", inspections.stream().filter(item -> !Set.of("PASSED", "SCRAPPED", "REWORKED").contains(text(item, "status"))).count()
                 ),
                 "risks", atRisk.stream().limit(20).map(item -> Map.of(
                         "type", "OVERDUE_WORK_ORDER", "workOrderId", text(item, "id"), "code", text(item, "code"),
@@ -849,6 +1073,7 @@ public class ProductionService {
                     "为本次业务动作生成稳定且唯一的幂等键后重试");
         }
         String hash = hash(input);
+        return store.transaction(context.tenantId(), repository -> {
         Optional<JsonNode> existing = store.idempotency(context.tenantId(), type, context.idempotencyKey());
         if (existing.isPresent()) {
             if (!existing.get().path("requestHash").asText().equals(hash)) {
@@ -856,7 +1081,6 @@ public class ProductionService {
             }
             return new Command(existing.get().path("statusCode").asInt(), existing.get().path("body"), null, null, true);
         }
-        return store.transaction(repository -> {
             Command result = work.apply(repository);
             ObjectNode record = mapper.createObjectNode().put("requestHash", hash)
                     .put("statusCode", result.statusCode());
@@ -865,6 +1089,17 @@ public class ProductionService {
                     record);
             return result;
         });
+    }
+
+    private Optional<Command> replay(RequestContext context, String type, JsonNode input) {
+        if (context.idempotencyKey() == null || context.idempotencyKey().isBlank()) invalid("写操作缺少 X-Idempotency-Key");
+        return store.transaction(context.tenantId(), repository -> store.idempotency(context.tenantId(), type, context.idempotencyKey())
+                .map(record -> {
+                    if (!record.path("requestHash").asText().equals(hash(input))) {
+                        throw new ApiException(409, "PRODUCTION_409_IDEMPOTENCY_CONFLICT", "同一幂等键对应不同请求", "使用原请求重试");
+                    }
+                    return new Command(record.path("statusCode").asInt(), record.path("body"), null, null, true);
+                }));
     }
 
     private void transition(ProductionStore repository, RequestContext context, String type, String id, String from,
@@ -933,15 +1168,16 @@ public class ProductionService {
                     "repairAction", "完成生产、检验及入库后再结案"));
         }
         if (store.inspections(contextTenant(order), text(order, "id")).stream()
-                .anyMatch(item -> !Set.of("PASSED", "SCRAPPED").contains(text(item, "status")))) {
+                .anyMatch(item -> !Set.of("PASSED", "SCRAPPED", "REWORKED").contains(text(item, "status")))) {
             blockers.add(Map.of("code", "FQC_OPEN", "message", "存在未关闭 FQC", "repairAction", "完成检验或质量处置"));
         }
         if (store.completions(contextTenant(order), text(order, "id")).stream()
                 .anyMatch(item -> Set.of("POSTING", "FAILED", "REVERSING").contains(text(item, "status")))) {
             blockers.add(Map.of("code", "COMPLETION_OPEN", "message", "存在未确定完工任务", "repairAction", "完成库存任务"));
         }
-        if (compare(text(order, "postedQty"), "0") <= 0) {
-            blockers.add(Map.of("code", "NO_POSTED_COMPLETION", "message", "没有已入库完工数量", "repairAction", "完成成品入库"));
+        if (compare(add(text(order, "postedQty"), text(order, "qualityScrapQty", "0"),
+                text(order, "reportedScrapQty", "0")), text(order, "plannedQty")) != 0) {
+            blockers.add(Map.of("code", "QUANTITY_NOT_SETTLED", "message", "入库与报废数量未覆盖计划量", "repairAction", "完成成品入库或质量处置"));
         }
         if (store.materialBlocked(contextTenant(order), text(order, "id"))) {
             blockers.add(Map.of("code", "MATERIAL_TRANSACTION_OPEN", "message", "投退料未关闭", "repairAction", "完成库存对账"));
@@ -957,7 +1193,7 @@ public class ProductionService {
                 "message", "缺少生效工艺快照", "repairAction", "选择有效工艺路线后重新生成快照"));
         if (!order.hasNonNull("scheduleCandidateId")) blockers.add(Map.of("code", "APS_NOT_PUBLISHED",
                 "message", "APS 排程尚未发布", "repairAction", "完成排程并发布候选方案"));
-        if (!"READY".equals(text(order, "kittingStatus"))) blockers.add(Map.of("code", "KITTING_NOT_READY",
+        if (!"READY".equals(text(order, "kittingStatus")) || !order.hasNonNull("materialReservation")) blockers.add(Map.of("code", "KITTING_NOT_READY",
                 "message", "物料齐套状态为 " + text(order, "kittingStatus", "未检查"),
                 "repairAction", "重新执行齐套检查并完成库存预占"));
         return blockers;
@@ -968,6 +1204,7 @@ public class ProductionService {
                 .filter(item -> text(item, "tenantId").equals(contextTenant(order))
                         && text(item, "workOrderId").equals(text(order, "id")))
                 .map(ProductionStore::copy).toList();
+        if (links.isEmpty()) return List.of();
         Map<String, BigDecimal> already = new LinkedHashMap<>();
         for (JsonNode completion : store.completions(contextTenant(order), text(order, "id"))) {
             if (!"POSTED".equals(text(completion, "status"))) continue;
@@ -1011,7 +1248,7 @@ public class ProductionService {
     private Command changeWorkOrder(RequestContext context, String id, String type, String permission,
                                     String nextStatus, JsonNode input) {
         require(context, permission);
-        String allowed = "PAUSED".equals(nextStatus) ? "IN_PROGRESS" : nextStatus;
+        String allowed = "PAUSED".equals(nextStatus) ? "IN_PROGRESS" : "StartWorkOrder".equals(type) ? "RELEASED" : "PAUSED";
         return command(context, type, payloadWithId(id, input), repository -> {
             JsonNode order = require(store.workOrder(context.tenantId(), id), "工单");
             requireStatus(order, "工单", allowed);
@@ -1043,6 +1280,64 @@ public class ProductionService {
     private ObjectNode nextVersion(JsonNode value) {
         return copy(value).put("version", version(value) + 1).put("updatedAt", now());
     }
+
+    public List<JsonNode> completions(RequestContext context, String workOrderId) {
+        return store.transaction(context.tenantId(), repository -> store.completions(context.tenantId(), workOrderId));
+    }
+
+    public List<JsonNode> closes(RequestContext context) {
+        return store.transaction(context.tenantId(), repository -> store.closeRequests.values().stream()
+                .filter(value -> context.tenantId().equals(text(value, "tenantId"))).map(ProductionStore::copy).toList());
+    }
+
+    public Command saveBom(RequestContext context, JsonNode input) {
+        require(context, "production.bom.manage");
+        if (text(input, "productId").isBlank() || text(input, "routingSnapshotId").isBlank()
+                || input.withArray("lines").isEmpty()) invalid("BOM 必须包含产品、工艺快照及物料行");
+        Set<String> keys = new java.util.HashSet<>();
+        for (JsonNode line : input.withArray("lines")) {
+            positive(line, "qtyPer");
+            if (text(line, "materialId").isBlank() || text(line, "warehouseId").isBlank()
+                    || text(line, "uom").isBlank() || !keys.add(text(line, "warehouseId") + ":" + text(line, "materialId"))) {
+                invalid("BOM 物料行必须唯一且包含仓库和单位");
+            }
+        }
+        return command(context, "SaveBom", input, repository -> {
+            JsonNode current = store.bom(context.tenantId(), text(input, "productId")).orElse(null);
+            if (current != null) requireVersion(context, version(current));
+            ObjectNode bom = copy(input).put("id", uuid()).put("tenantId", context.tenantId())
+                    .put("version", current == null ? 1 : version(current) + 1).put("updatedAt", now());
+            store.bomSnapshots.put(ProductionStore.key(context.tenantId(), text(input, "productId")), bom);
+            audit(repository, context, "BOM_PUBLISH", "BomSnapshot", text(bom, "id"), current, bom, null);
+            return created(bom, "BomSnapshot", text(bom, "id"));
+        });
+    }
+
+    private List<JsonNode> materialRequirements(JsonNode bom, String qty) {
+        List<JsonNode> result = new ArrayList<>();
+        for (JsonNode line : bom.withArray("lines")) {
+            ObjectNode requirement = copy(line);
+            requirement.put("grossRequiredQty", decimal(new BigDecimal(text(line, "qtyPer")).multiply(new BigDecimal(qty))));
+            result.add(requirement);
+        }
+        if (result.isEmpty()) invalid("BOM 未包含物料，不能齐套检查");
+        return result;
+    }
+
+    private void unavailableInventory() {
+        throw new ApiException(503, "PRODUCTION_503_INVENTORY_UNAVAILABLE", "库存服务不可用", "恢复库存服务后重试");
+    }
+
+    private void positive(JsonNode value, String field) {
+        nonnegative(value, field);
+        if (new BigDecimal(text(value, field, "0")).signum() <= 0) invalid(field + " 必须大于 0");
+    }
+
+    private void nonnegative(JsonNode value, String field) {
+        if (!text(value, field, "0").matches("^(0|[1-9]\\d*)(\\.\\d{1,6})?$")) invalid(field + " 必须为非负十进制字符串");
+    }
+
+    private static String decimal(BigDecimal value) { return value.stripTrailingZeros().toPlainString(); }
 
     private Command created(JsonNode body, String type, String id) { return new Command(201, body, type, id, false); }
     private Command updated(JsonNode body, String type, String id) { return new Command(200, body, type, id, false); }
