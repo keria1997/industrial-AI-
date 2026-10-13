@@ -2279,7 +2279,8 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                   </button>
               </div>
               
-              <fieldset disabled={isSubmitting} className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar min-h-0">
+              <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+              <fieldset disabled={isSubmitting} className="min-w-0 p-8 space-y-8">
                   <div>
                       <div className="flex items-center mb-5">
                           <div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div>
@@ -2414,6 +2415,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                       <textarea value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="请输入备注信息（可选）" className="w-full border border-slate-200 rounded-lg p-4 text-[13px] outline-none focus:border-blue-500 transition-colors h-24 resize-none"></textarea>
                   </div>
               </fieldset>
+              </div>
 
               <div className="p-5 border-t border-slate-100 flex flex-wrap justify-end gap-4 shrink-0 bg-white rounded-b-xl">
                   {error && <div role="alert" className="mr-auto flex items-center text-[12px] text-rose-600"><AlertCircle size={14} className="mr-1.5 shrink-0" />{error}</div>}
