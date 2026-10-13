@@ -2149,7 +2149,7 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
   );
 };
 
-const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], warehouses = [], products = [], onClose, onCreate, documentType = 'quote' }) => {
+const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], warehouses = [], products = [], onClose, onCreate, documentType = 'quote', apiContext = null }) => {
   const editing = mode === 'edit';
   const creatingOrder = documentType === 'order';
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2173,6 +2173,31 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
   });
   const [discountRate, setDiscountRate] = useState(record?.discountRate ?? 100);
   const [discountAmount, setDiscountAmount] = useState(record?.discountAmount || 0);
+  const [orderAvailability, setOrderAvailability] = useState({});
+  const availabilitySelection = JSON.stringify(lines.filter(line => line.warehouseId && line.productId)
+    .map(line => [line.warehouseId, line.productId]).sort());
+  useEffect(() => {
+    if (!creatingOrder || !apiContext) return;
+    let cancelled = false;
+    setOrderAvailability({});
+    const groups = new Map();
+    for (const [warehouseId, productId] of JSON.parse(availabilitySelection)) {
+      groups.set(warehouseId, [...new Set([...(groups.get(warehouseId) || []), productId])]);
+    }
+    for (const [warehouseId, productIds] of groups) {
+      void inventoryApi.getAvailability(apiContext, warehouseId, productIds).then(facts => {
+        if (cancelled) return;
+        setOrderAvailability(previous => ({ ...previous, ...Object.fromEntries(productIds.map(productId => {
+          const fact = facts.find(item => item.productId === productId);
+          return [`${warehouseId}:${productId}`, fact ? Number(fact.fulfillableQty) : null];
+        })) }));
+      }).catch(() => {
+        if (!cancelled) setOrderAvailability(previous => ({ ...previous,
+          ...Object.fromEntries(productIds.map(productId => [`${warehouseId}:${productId}`, null])) }));
+      });
+    }
+    return () => { cancelled = true; };
+  }, [creatingOrder, apiContext?.tenantId, apiContext?.accessToken, availabilitySelection]);
   const [remark, setRemark] = useState(record?.remark || '');
   const [error, setError] = useState('');
   const subtotal = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
@@ -2315,7 +2340,8 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                                   {lines.length > 0 ? lines.map((line) => {
                                       const warehouseProducts = line.warehouseId ? products.filter((p) => p.warehouseId === line.warehouseId) : [];
                                       const qtyNum = Number(line.quantity || 0);
-                                      const availNum = Number(line.available ?? -1);
+                                      const available = creatingOrder ? orderAvailability[`${line.warehouseId}:${line.productId}`] : line.available;
+                                      const availNum = Number(available ?? -1);
                                       const isShort = availNum >= 0 && qtyNum > availNum;
                                       return (
                                       <tr key={line.key} className="border-b border-slate-50">
@@ -2333,7 +2359,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                                           </td>
                                           <td className="px-3 py-3 text-center"><input value={line.spec} onChange={(e) => updateLine(line.key, 'spec', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
                                           <td className="px-3 py-3 text-center"><select value={line.unit} onChange={(e) => updateLine(line.key, 'unit', e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
-                                          <td className={`px-3 py-3 text-center font-mono font-bold ${isShort ? 'text-rose-600' : 'text-emerald-600'}`}>{line.available != null ? line.available : '-'}</td>
+                                          <td className={`px-3 py-3 text-center font-mono font-bold ${isShort ? 'text-rose-600' : 'text-emerald-600'}`}>{available != null ? available : creatingOrder && line.productId ? available === null ? '查询失败' : '读取中' : '-'}</td>
                                           <td className="px-3 py-3 text-center"><input type="number" min="1" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', Number(e.target.value))} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
                                           <td className="px-3 py-3 text-center"><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', Number(e.target.value))} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
                                           <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0))}</td>
@@ -3915,7 +3941,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                   {activeTab === 'basic-data' && <Sales_BaseDataView levels={levels} setLevels={setLevels} industries={industries} setIndustries={setIndustries} customers={customers} outreachSettings={outreachSettings} setOutreachSettings={setOutreachSettings} onToast={showToast} onAudit={addAudit} />}
               </div>
               
-              {isQuickOrderModalOpen && <Sales_QuoteCreateModal documentType="order" customers={customers} warehouses={quoteOptions.warehouses} products={quoteOptions.products} onClose={() => setIsQuickOrderModalOpen(false)} onCreate={handleQuickOrderCreate} />}
+              {isQuickOrderModalOpen && <Sales_QuoteCreateModal documentType="order" apiContext={formalContext} customers={customers} warehouses={quoteOptions.warehouses} products={quoteOptions.products} onClose={() => setIsQuickOrderModalOpen(false)} onCreate={handleQuickOrderCreate} />}
               <Sales_Toast toast={toast} onClose={() => setToast(null)} />
               {outboundRequestModal && <Sales_OutboundRequestModal request={outboundRequestModal} onClose={() => setOutboundRequestModal(null)} onNavigateOutbound={navigateToRequestedOutbound} canNavigateOutbound={canNavigateOutbound} />}
           </div>
