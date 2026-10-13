@@ -26,10 +26,10 @@ class PostgresDatabaseMigratorTests {
     void loadsTheCompleteClasspathMigrationChain() throws Exception {
         List<PostgresDatabaseMigrator.MigrationFile> files = DatabaseMigrationRunner.migrationFiles();
 
-        assertEquals(27, files.size());
+        assertEquals(28, files.size());
         assertEquals("001_production_p0.sql", files.get(0).filename());
-        assertEquals("027_backfill_inventory_master_prices.sql", files.get(files.size() - 1).filename());
-        assertEquals(27, files.stream().map(PostgresDatabaseMigrator.MigrationFile::filename).distinct().count());
+        assertEquals("028_inventory_fact_components.sql", files.get(files.size() - 1).filename());
+        assertEquals(28, files.stream().map(PostgresDatabaseMigrator.MigrationFile::filename).distinct().count());
         assertEquals(17, PostgresDatabaseMigrator.legacyFileSentinelEntries().size());
     }
 }
