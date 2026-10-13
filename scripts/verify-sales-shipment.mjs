@@ -157,6 +157,13 @@ try {
       tasks = await api(`/api/v1/inventory/shipment-tasks?salesOrderId=${order.id}`);
       assert.equal(tasks.items[0].workflowStatus, 'COMPLETED');
       assert.equal(tasks.total, 1);
+      await page.goto(`${base}/?module=inventory&inventory=outbound&sourceOrder=${order.id}`);
+      await warehouseRow().getByText('已完成', { exact: true }).waitFor();
+      assert.equal(await warehouseRow().count(), 1, 'Shipped sales order must have exactly one completed warehouse record');
+      await page.reload();
+      await warehouseRow().getByText('已完成', { exact: true }).waitFor();
+      assert.equal(await warehouseRow().count(), 1, 'Refresh must preserve the original completed outbound');
+      await page.screenshot({ path: `${artifacts}/warehouse-completed-${size}.png`, fullPage: true });
       assert.deepEqual(pageErrors, []);
       evidence.push({ viewport, orderId: order.id, orderNo: order.orderNo, taskId: tasks.items[0].id,
         outboundId: secondPost.outbound.id, status: secondPost.order.overallStatus,

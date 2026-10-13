@@ -71,6 +71,7 @@ import { classifyOutboundShipment } from './features/inventory/model/outboundShi
 import { mapFormalShipmentStatus } from './features/inventory/model/formalShipmentStatus';
 import { postFormalOutbound, prepareFormalOutbound } from './features/inventory/model/formalOutboundWorkflow';
 import { formalShipmentStock } from './features/inventory/model/formalShipmentStock';
+import { restoreShippedSalesOutbounds, syncShippedSalesOutbounds } from './features/inventory/model/shippedSalesOutboundSync';
 import { compareQuantity, subtractQuantity } from './shared/decimal';
 import {
   mapProductionDemandStatus,
@@ -3778,6 +3779,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   useEffect(() => {
       try {
           localStorage.setItem(salesWorkspaceStorageKey(currentTenant?.id), JSON.stringify({ schemaVersion: 8, quotes, orders, customers, levels, industries, outreachSettings, audits, reminderAt }));
+          syncShippedSalesOutbounds(window.localStorage, currentTenant?.id, orders);
       } catch {
           // The page remains usable when browser storage is unavailable.
       }
@@ -7710,9 +7712,10 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 
   const readLocalOutboundRows = () => {
     const localTasks = [
-      ...loadSalesOutboundTasks(window.localStorage, currentTenant?.id),
+      ...restoreShippedSalesOutbounds(window.localStorage, currentTenant?.id),
     ];
-    return [...localTasks, ...inv_outboundData.filter((seed) => !localTasks.some((task) => task.id === seed.id))];
+    return [...localTasks, ...inv_outboundData.filter((seed) => !localTasks.some((task) =>
+      task.id === seed.id || (seed.type === '销售发货' && task.source === seed.source)))];
   };
   const [outboundData, setOutboundData] = useState(() => readLocalOutboundRows());
   const filteredOutboundData = useMemo(() => {
@@ -7840,13 +7843,29 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       : undefined;
     const response = await listFulfillmentShipmentTasks(formalContext, formalSalesOrderId);
     const formal = response.items.map(mapFormalTask);
-    setOutboundData((previous) => [...formal, ...previous.filter((item) => !item.formalTask && !formal.some((serverTask) => serverTask.id === item.id))]);
+    setOutboundData((previous) => [...formal, ...previous.filter((item) => !item.formalTask && !formal.some((serverTask) =>
+      serverTask.id === item.id || (item.type === '销售发货' && serverTask.source === item.source)))]);
     return response.items;
   };
 
   useEffect(() => {
     refreshFormalTasks().catch((error) => showToast('正式发货任务加载失败：' + (error instanceof Error ? error.message : '请稍后重试'), 'error'));
   }, [formalContext?.tenantId, formalContext?.accessToken, requestedSalesOrderId]);
+
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      const tenantId = (event as CustomEvent<{ tenantId?: string }>).detail?.tenantId;
+      if (tenantId && tenantId !== currentTenant?.id) return;
+      setOutboundData(previous => [...readLocalOutboundRows(), ...previous.filter(item => item.formalTask)]);
+      refreshFormalTasks().catch(() => {});
+    };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('sales-fulfillment-changed', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('sales-fulfillment-changed', refresh);
+    };
+  }, [formalContext?.tenantId, formalContext?.accessToken, currentTenant?.id, requestedSalesOrderId]);
 
   const hasPendingFormalTask = outboundData.some(row => row.formalTask && row.formalTask.workflowStatus !== 'COMPLETED');
 
@@ -9240,7 +9259,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                             <div className="flex items-center justify-end gap-1.5">
                                               <button title="查看出库单" onClick={() => setRecordModal({ type: 'outbound', mode: 'view', record: row })} className="p-1.5 border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50 transition-colors"><Eye size={14}/></button>
                                               {row.type !== '销售发货' && <button title="编辑出库单" onClick={() => setRecordModal({ type: 'outbound', mode: 'edit', record: row })} className="p-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"><Edit2 size={14}/></button>}
-                                              {row.type === '销售发货' && !row.formalTask
+                                              {row.type === '销售发货' && !row.formalTask && !['已出库', '已取消'].includes(row.status)
                                                 ? <button disabled title="正式销售发货必须等待服务端发货任务同步" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 text-[12px] font-bold text-slate-400 cursor-not-allowed"><Truck size={14}/>去发货</button>
                                                 : row.status === '已取消' ? <span title="来源订单已取消" className="inline-flex h-8 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-bold text-rose-500">订单已取消</span>
                                                 : ['生产申请中', '生产补货中', '部分发货 · 生产补货中'].includes(row.status) ? <button title="查看生产申请" onClick={() => viewProductionRequest(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-[12px] font-bold text-amber-700 hover:bg-amber-100"><Factory size={14}/>查看生产申请</button>

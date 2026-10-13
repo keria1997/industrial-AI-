@@ -11,6 +11,7 @@ export type SalesOutboundLine = {
   qty: number;
   unit: string;
   unitPrice?: number;
+  shippedQty?: number;
 };
 
 export type SalesOutboundTask = {
@@ -37,6 +38,7 @@ export type SalesOutboundTask = {
   status: '待发货' | '库存不足' | '生产申请中' | '待出库' | '已出库' | '已取消';
   operator: string;
   shippedAt?: string;
+  shippedQty?: number;
 };
 
 export type SalesOutboundRequest = {
@@ -84,7 +86,7 @@ const readWorkspace = (storage: StoragePort, tenantId?: string): SalesOutboundWo
   }
 };
 
-const writeWorkspace = (storage: StoragePort, tenantId: string | undefined, tasks: SalesOutboundTask[]) => {
+export const saveSalesOutboundTasks = (storage: StoragePort, tenantId: string | undefined, tasks: SalesOutboundTask[]) => {
   storage.setItem(salesOutboundStorageKey(tenantId), JSON.stringify({ schemaVersion: 1, tasks }));
 };
 
@@ -178,7 +180,7 @@ export const requestSalesOutbound = (
     status: shortageQty > 0 ? '库存不足' : '待发货',
     operator: request.operator || '待分配',
   };
-  writeWorkspace(storage, tenantId, [task, ...workspace.tasks]);
+  saveSalesOutboundTasks(storage, tenantId, [task, ...workspace.tasks]);
   return task;
 };
 
@@ -196,7 +198,7 @@ export const recordWarehouseProductionResult = (
     ...result,
     status: result.shortageQty > 0 ? '生产申请中' : '待出库',
   };
-  writeWorkspace(storage, tenantId, workspace.tasks.map((task) => task.id === outboundId ? updated : task));
+  saveSalesOutboundTasks(storage, tenantId, workspace.tasks.map((task) => task.id === outboundId ? updated : task));
   return updated;
 };
 
@@ -215,7 +217,7 @@ export const cancelSalesOutbound = (
     ...current,
     status: '已取消',
   };
-  writeWorkspace(storage, tenantId, workspace.tasks.map((task) => (task.id === current.id ? updated : task)));
+  saveSalesOutboundTasks(storage, tenantId, workspace.tasks.map((task) => (task.id === current.id ? updated : task)));
   return updated;
 };
 
@@ -227,7 +229,7 @@ export const removeSalesOutboundBySource = (
   const workspace = readWorkspace(storage, tenantId);
   const tasks = workspace.tasks.filter((task) => task.source !== sourceOrderId);
   if (tasks.length === workspace.tasks.length) return false;
-  writeWorkspace(storage, tenantId, tasks);
+  saveSalesOutboundTasks(storage, tenantId, tasks);
   return true;
 };
 
@@ -247,6 +249,6 @@ export const completeSalesOutbound = (
     shippedAt: now.toISOString(),
     operator,
   };
-  writeWorkspace(storage, tenantId, workspace.tasks.map((task) => task.id === outboundId ? updated : task));
+  saveSalesOutboundTasks(storage, tenantId, workspace.tasks.map((task) => task.id === outboundId ? updated : task));
   return updated;
 };
