@@ -1,0 +1,28 @@
+[
+  {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "testTenant": "quick-order-verification-1791898839810",
+    "orderId": "ff5dcb65-a7a0-40ac-a765-be4a83e6d8d7",
+    "orderNo": "SO-20261013-FF5DCB65",
+    "amount": "420",
+    "lineCount": 2,
+    "persistedMetadata": true,
+    "salesCacheCleared": true
+  },
+  {
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "testTenant": "quick-order-verification-1791898839810",
+    "orderId": "f8d5c44f-169b-46b4-ae25-ffcec6d6f9f8",
+    "orderNo": "SO-20261013-F8D5C44F",
+    "amount": "420",
+    "lineCount": 2,
+    "persistedMetadata": true,
+    "salesCacheCleared": true
+  }
+]

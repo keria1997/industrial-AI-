@@ -171,6 +171,8 @@ try {
     await page.screenshot({ path: new URL(`pending-${viewport.width}.png`, outputDirectory).pathname });
     await row.getByTitle('查看', { exact: true }).click();
     await page.getByText(marker, { exact: true }).first().waitFor();
+    await page.getByText('QUICK-SPEC-1', { exact: true }).waitFor();
+    await page.getByText('QUICK-SPEC-2', { exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: new URL(`details-${viewport.width}.png`, outputDirectory).pathname });
     await page.getByRole('button', { name: '关闭', exact: true }).click();
     await page.evaluate(() => localStorage.removeItem('industrial-ai-sales:v8:TENANT-SHWS'));
@@ -179,6 +181,9 @@ try {
     assert.match(await row.innerText(), /待发货/);
     await row.getByTitle('查看', { exact: true }).click();
     await page.getByText(marker, { exact: true }).first().waitFor();
+    await page.getByText('QUICK-SPEC-1', { exact: true }).waitFor();
+    await page.getByText('QUICK-SPEC-2', { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: new URL(`reloaded-${viewport.width}.png`, outputDirectory).pathname });
     await page.getByRole('button', { name: '关闭', exact: true }).click();
     const currentQuotes = await page.evaluate(() =>
       JSON.parse(localStorage.getItem('industrial-ai-sales:v8:TENANT-SHWS') || '{}').quotes?.length);

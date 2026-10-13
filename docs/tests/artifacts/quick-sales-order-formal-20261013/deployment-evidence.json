@@ -1,0 +1,58 @@
+{
+  "verifiedAt": "2026-10-13T13:43:09.651Z",
+  "codeCommit": "591d7a5",
+  "frontend": "http://127.0.0.1:5175",
+  "backend": "http://127.0.0.1:8081",
+  "release": "/Users/liyi/Desktop/projects1/gongye_ai_plat/deploy/artifacts/industrial-ai-production-fix-final-20261013",
+  "javaPid": 70200,
+  "jarSha256": "152e42eae606a087931eac645065ffec219b39dd52b7af79bdc6e2d3199197ae",
+  "salesClassSha256": "97dff0fd21ca3cdcc6742a3fdd7b9f756c9ec5cd61a05cba82e6d2306cb692c6",
+  "frontendAsset": "/assets/index-BAKKqF2F.js",
+  "storage": "PostgreSQL",
+  "database": "industrial_ai",
+  "testTenant": "quick-order-verification-1791898839810",
+  "databaseFacts": {
+    "orders": 2,
+    "shipmentTasks": 0,
+    "shipmentRequests": 0,
+    "auditCount": 2,
+    "metadata": [
+      {
+        "id": "f8d5c44f-169b-46b4-ae25-ffcec6d6f9f8",
+        "orderDate": "2026-10-13",
+        "validUntil": "2026-11-12",
+        "remark": "QUICK-ORDER-1920-1791898848234",
+        "overallStatus": "PENDING_CONFIRMATION",
+        "shipmentStatus": "NOT_REQUESTED",
+        "totalAmount": "420",
+        "lineCount": 2,
+        "specifications": [
+          "QUICK-SPEC-1",
+          "QUICK-SPEC-2"
+        ]
+      },
+      {
+        "id": "ff5dcb65-a7a0-40ac-a765-be4a83e6d8d7",
+        "orderDate": "2026-10-13",
+        "validUntil": "2026-11-12",
+        "remark": "QUICK-ORDER-1280-1791898843550",
+        "overallStatus": "PENDING_CONFIRMATION",
+        "shipmentStatus": "NOT_REQUESTED",
+        "totalAmount": "420",
+        "lineCount": 2,
+        "specifications": [
+          "QUICK-SPEC-1",
+          "QUICK-SPEC-2"
+        ]
+      }
+    ]
+  },
+  "backupRetained": true,
+  "sourceTree": "unknown",
+  "frontendTestsOnSalesCommit": 139,
+  "relevantJavaTestsOnSalesCommit": 29,
+  "skippedJavaTests": 0,
+  "routesOnSalesCommit": 261,
+  "permissionVerification": "Both viewports: sales-only and missing inventory module hide outbound entry",
+  "emptySourceVerification": "Both viewports: empty orderId does not create a sales row; valid source remains"
+}

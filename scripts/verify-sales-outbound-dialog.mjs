@@ -92,7 +92,10 @@ try {
   // These cases verify UI behavior without modifying the existing order on the server.
   let submitted = false;
   await page.route(getOrderRoute, route => route.fulfill({
-    json: submitted ? order : { ...order, shipmentStatus: 'NOT_REQUESTED' },
+    json: submitted ? order : {
+      ...order, shipmentStatus: 'NOT_REQUESTED',
+      lines: order.lines.map(line => ({ ...line, activeRequestedQty: '0' })),
+    },
   }));
   await page.route(postShipmentRoute, route => {
     submitted = true;
