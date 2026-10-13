@@ -1,0 +1,3577 @@
+[
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/production/work-order-closes/21f95604-5286-4767-b956-eee4fe130730/approve",
+    "status": 200,
+    "body": {
+      "closeRequest": {
+        "id": "21f95604-5286-4767-b956-eee4fe130730",
+        "status": "APPROVED",
+        "version": 2,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:01:04.143738Z",
+        "updatedAt": "2026-10-13T23:05:52.915079Z",
+        "submittedAt": "2026-10-13T23:01:04.143729Z",
+        "submittedBy": "test01",
+        "workOrderId": "54fdb9df-73ac-4325-9ae8-996157d74e02",
+        "checkSnapshot": {
+          "blockers": [],
+          "canClose": true,
+          "checkedAt": "2026-10-13T23:01:04.142955Z"
+        },
+        "varianceSnapshot": {},
+        "approvedBy": "reviewer",
+        "approvedAt": "2026-10-13T23:05:52.915096Z"
+      },
+      "workOrder": {
+        "id": "54fdb9df-73ac-4325-9ae8-996157d74e02",
+        "uom": "PCS",
+        "code": "WO-MV79SM2X0052",
+        "status": "CLOSED",
+        "dueDate": "2026-10-21",
+        "version": 9,
+        "inputQty": "2",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T22:46:17.291544Z",
+        "createdBy": "test01",
+        "postedQty": "2",
+        "productId": "FG001",
+        "updatedAt": "2026-10-13T23:05:52.915104Z",
+        "plannedQty": "2",
+        "bomSnapshot": {
+          "id": "BOM-FG001-V1.2",
+          "lines": [
+            {
+              "uom": "PCS",
+              "qtyPer": "2.1",
+              "materialId": "RM201",
+              "warehouseId": "WH-RM-01",
+              "materialName": "AI算力芯片"
+            },
+            {
+              "uom": "PCS",
+              "qtyPer": "1.02",
+              "materialId": "RM202",
+              "warehouseId": "WH-RM-01",
+              "materialName": "12层空PCB板"
+            },
+            {
+              "uom": "PCS",
+              "qtyPer": "1",
+              "materialId": "RM305",
+              "warehouseId": "WH-RM-01",
+              "materialName": "铝合金防护外壳"
+            }
+          ],
+          "version": 1,
+          "tenantId": "TENANT-SHWS",
+          "productId": "FG001",
+          "sourceSystem": "REFERENCE_BOM",
+          "routingSnapshotId": "ROUTE-FG001-V1"
+        },
+        "productName": "FG001 - 工业控制器顶配版",
+        "bomSnapshotId": "BOM-FG001-V1.2",
+        "correlationId": "d2c90dd3-ee4e-4f49-a745-86e3ea5fbea9",
+        "kittingStatus": "READY",
+        "reportedGoodQty": "2",
+        "kittingCheckedAt": "2026-10-13T22:46:32.274746Z",
+        "reportedScrapQty": "0",
+        "factoryResourceId": "FAC-SH-01",
+        "parameterSnapshot": {
+          "demandIds": [
+            {
+              "demandId": "2f0938e7-ed8e-4231-88a4-89cb5afa333f",
+              "allocatedQty": "2",
+              "promisedDate": "2026-10-21"
+            }
+          ],
+          "inventoryWarehouseId": "WH-FG-01"
+        },
+        "reportedDefectQty": "0",
+        "routingSnapshotId": "ROUTE-FG001-V1",
+        "materialReservation": {
+          "status": "READY",
+          "reservations": [
+            {
+              "id": "14553ed3-602f-40b1-9c06-cff8a5521cd5",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T22:46:32.228057Z",
+              "productId": "RM201",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "4.2",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "54fdb9df-73ac-4325-9ae8-996157d74e02",
+              "shipmentTaskId": "production:54fdb9df-73ac-4325-9ae8-996157d74e02"
+            },
+            {
+              "id": "57ce9636-9bcc-4dc3-bd37-efd71321c6e0",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T22:46:32.230179Z",
+              "productId": "RM202",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "2.04",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "54fdb9df-73ac-4325-9ae8-996157d74e02",
+              "shipmentTaskId": "production:54fdb9df-73ac-4325-9ae8-996157d74e02"
+            },
+            {
+              "id": "f75d938c-20f3-4822-a0df-613bc26dacf1",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T22:46:32.231281Z",
+              "productId": "RM305",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "2",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "54fdb9df-73ac-4325-9ae8-996157d74e02",
+              "shipmentTaskId": "production:54fdb9df-73ac-4325-9ae8-996157d74e02"
+            }
+          ]
+        },
+        "qualityRecoveredQty": "0",
+        "scheduleCandidateId": "89cccc45-9067-48f5-a977-6260efceb89b",
+        "workCenterResourceId": "WC-SH-ASSY-01"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sales/sales-orders",
+    "status": 201,
+    "body": {
+      "id": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+      "tenantId": "TENANT-SHWS",
+      "orderNo": "SO-20261013-E0097FB6",
+      "customerId": "KH-20260612-001",
+      "customerName": "上海万申产业股份有限公司",
+      "ownerEmployeeId": "test01",
+      "fulfillmentWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+      "factoryResourceId": "FAC-SH-01",
+      "requestedDeliveryDate": "2026-10-14",
+      "orderDate": "2026-10-13",
+      "validUntil": "2026-11-12",
+      "remark": "销售缺货全流程验收-20261014",
+      "allowPartialShipment": true,
+      "currency": "CNY",
+      "recipient": {
+        "name": "李经理",
+        "country": "中国",
+        "province": "上海",
+        "city": "上海",
+        "address": "上海市浦东新区金桥开发区",
+        "phoneMasked": "138****0000"
+      },
+      "lines": [
+        {
+          "lineNo": 1,
+          "productId": "FG001",
+          "productName": "工业控制器顶配版",
+          "specification": "IC-X900 / 32G / 双网口",
+          "orderedQty": "9",
+          "uom": "PCS",
+          "unitPrice": "100",
+          "taxRate": "0",
+          "promisedDate": "2026-10-14",
+          "allowPartialShipment": true,
+          "id": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+          "shippedQty": "0",
+          "activeRequestedQty": "0",
+          "reservedQty": "0",
+          "remainingQty": "9",
+          "lineStatus": "OPEN",
+          "version": 1
+        }
+      ],
+      "originalAmount": "900",
+      "discountRate": "100",
+      "discountAmount": "0",
+      "totalAmount": "900",
+      "overallStatus": "PENDING_CONFIRMATION",
+      "reviewStatus": "PENDING",
+      "shipmentStatus": "NOT_REQUESTED",
+      "reviewRequired": true,
+      "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "createdBy": "test01",
+      "version": 1,
+      "createdAt": "2026-10-13T23:13:32.113596Z",
+      "updatedAt": "2026-10-13T23:13:32.113596Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sales/sales-orders/e0097fb6-c145-405d-8d46-fc4e38bf6124/review-decisions",
+    "status": 200,
+    "body": {
+      "id": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+      "lines": [
+        {
+          "id": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+          "uom": "PCS",
+          "lineNo": 1,
+          "taxRate": "0",
+          "version": 1,
+          "productId": "FG001",
+          "unitPrice": "100",
+          "lineStatus": "OPEN",
+          "orderedQty": "9",
+          "shippedQty": "0",
+          "productName": "工业控制器顶配版",
+          "reservedQty": "0",
+          "promisedDate": "2026-10-14",
+          "remainingQty": "9",
+          "specification": "IC-X900 / 32G / 双网口",
+          "activeRequestedQty": "0",
+          "allowPartialShipment": true
+        }
+      ],
+      "remark": "销售缺货全流程验收-20261014",
+      "orderNo": "SO-20261013-E0097FB6",
+      "version": 2,
+      "currency": "CNY",
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:13:32.113596Z",
+      "createdBy": "test01",
+      "orderDate": "2026-10-13",
+      "recipient": {
+        "city": "上海",
+        "name": "李经理",
+        "address": "上海市浦东新区金桥开发区",
+        "country": "中国",
+        "province": "上海",
+        "phoneMasked": "138****0000"
+      },
+      "updatedAt": "2026-10-13T23:18:17.042877Z",
+      "customerId": "KH-20260612-001",
+      "validUntil": "2026-11-12",
+      "totalAmount": "900",
+      "customerName": "上海万申产业股份有限公司",
+      "discountRate": "100",
+      "reviewStatus": "APPROVED",
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "overallStatus": "PENDING_CONFIRMATION",
+      "discountAmount": "0",
+      "originalAmount": "900",
+      "reviewRequired": true,
+      "shipmentStatus": "NOT_REQUESTED",
+      "ownerEmployeeId": "test01",
+      "factoryResourceId": "FAC-SH-01",
+      "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+      "allowPartialShipment": true,
+      "requestedDeliveryDate": "2026-10-14",
+      "fulfillmentWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sales/sales-orders/e0097fb6-c145-405d-8d46-fc4e38bf6124/confirm",
+    "status": 200,
+    "body": {
+      "id": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+      "lines": [
+        {
+          "id": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+          "uom": "PCS",
+          "lineNo": 1,
+          "taxRate": "0",
+          "version": 2,
+          "productId": "FG001",
+          "unitPrice": "100",
+          "lineStatus": "OPEN",
+          "orderedQty": "9",
+          "shippedQty": "0",
+          "productName": "工业控制器顶配版",
+          "reservedQty": "0",
+          "promisedDate": "2026-10-14",
+          "remainingQty": "9",
+          "specification": "IC-X900 / 32G / 双网口",
+          "activeRequestedQty": "0",
+          "allowPartialShipment": true
+        }
+      ],
+      "remark": "销售缺货全流程验收-20261014",
+      "orderNo": "SO-20261013-E0097FB6",
+      "version": 3,
+      "currency": "CNY",
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:13:32.113596Z",
+      "createdBy": "test01",
+      "orderDate": "2026-10-13",
+      "recipient": {
+        "city": "上海",
+        "name": "李经理",
+        "address": "上海市浦东新区金桥开发区",
+        "country": "中国",
+        "province": "上海",
+        "phoneMasked": "138****0000"
+      },
+      "updatedAt": "2026-10-13T23:22:31.147780Z",
+      "customerId": "KH-20260612-001",
+      "validUntil": "2026-11-12",
+      "totalAmount": "900",
+      "customerName": "上海万申产业股份有限公司",
+      "discountRate": "100",
+      "reviewStatus": "APPROVED",
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "overallStatus": "CONFIRMED",
+      "discountAmount": "0",
+      "originalAmount": "900",
+      "reviewRequired": true,
+      "shipmentStatus": "NOT_REQUESTED",
+      "ownerEmployeeId": "test01",
+      "factoryResourceId": "FAC-SH-01",
+      "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+      "allowPartialShipment": true,
+      "requestedDeliveryDate": "2026-10-14",
+      "fulfillmentWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sales/sales-orders/e0097fb6-c145-405d-8d46-fc4e38bf6124/shipment-requests",
+    "status": 202,
+    "body": {
+      "id": "0607628e-c459-4f7c-925e-881036145af9",
+      "tenantId": "TENANT-SHWS",
+      "requestNo": "SR-20261013-0607628E",
+      "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+      "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+      "orderRevision": 3,
+      "workflowStatus": "REQUESTED",
+      "availabilityStatus": "UNCHECKED",
+      "replenishmentStatus": "NOT_REQUIRED",
+      "postingStatus": "NOT_STARTED",
+      "version": 1,
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "createdBy": "test01",
+      "createdAt": "2026-10-13T23:22:31.387160Z",
+      "updatedAt": "2026-10-13T23:22:31.387160Z",
+      "lines": [
+        {
+          "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+          "sourceLineRevision": 2,
+          "requestedQty": "9",
+          "uom": "PCS",
+          "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+          "productId": "FG001",
+          "reservedQty": "0",
+          "postedQty": "0",
+          "shortageQty": "0"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory/shipment-tasks/fb2c7691-bc9e-4c80-94b1-ac84869b2a06/check-and-reserve",
+    "status": 200,
+    "body": {
+      "outcome": "PARTIALLY_SUCCEEDED",
+      "result": "PARTIALLY_RESERVED",
+      "adapterKind": "REFERENCE",
+      "traceId": "trace-61396009354834",
+      "missingProductIds": [],
+      "task": {
+        "id": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "lines": [
+          {
+            "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "uom": "PCS",
+            "postedQty": "0",
+            "productId": "FG001",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "6",
+            "shortageQty": "3",
+            "promisedDate": "2026-10-14",
+            "requestedQty": "9",
+            "sourceLineRevision": 2,
+            "allowPartialShipment": true,
+            "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8"
+          }
+        ],
+        "version": 2,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:22:31.401728Z",
+        "requestNo": "SR-20261013-0607628E",
+        "updatedAt": "2026-10-13T23:24:37.658955Z",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "salesOrderNo": "SO-20261013-E0097FB6",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "orderRevision": 3,
+        "postingStatus": "NOT_STARTED",
+        "workflowStatus": "ACTIVE",
+        "factoryResourceId": "FAC-SH-01",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "availabilityStatus": "PARTIALLY_RESERVED",
+        "replenishmentStatus": "REQUIRED",
+        "allowPartialShipment": true,
+        "inventoryFactVersion": 6,
+        "outboundId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        }
+      },
+      "shipmentTask": {
+        "id": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "lines": [
+          {
+            "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "uom": "PCS",
+            "postedQty": "0",
+            "productId": "FG001",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "6",
+            "shortageQty": "3",
+            "promisedDate": "2026-10-14",
+            "requestedQty": "9",
+            "sourceLineRevision": 2,
+            "allowPartialShipment": true,
+            "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8"
+          }
+        ],
+        "version": 2,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:22:31.401728Z",
+        "requestNo": "SR-20261013-0607628E",
+        "updatedAt": "2026-10-13T23:24:37.658955Z",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "salesOrderNo": "SO-20261013-E0097FB6",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "orderRevision": 3,
+        "postingStatus": "NOT_STARTED",
+        "workflowStatus": "ACTIVE",
+        "factoryResourceId": "FAC-SH-01",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "availabilityStatus": "PARTIALLY_RESERVED",
+        "replenishmentStatus": "REQUIRED",
+        "allowPartialShipment": true,
+        "inventoryFactVersion": 6,
+        "outboundId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        }
+      },
+      "reservations": [
+        {
+          "id": "b9ec7f69-5281-4fdc-84ef-dd7b5e2ead88",
+          "tenantId": "TENANT-SHWS",
+          "shipmentTaskId": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+          "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+          "externalReservationId": "REF-RES-04844b38-606d-49c2-acd9-4291c3536e37",
+          "status": "PARTIAL",
+          "factVersion": 6,
+          "formulaVersion": "FULFILLABLE-V1",
+          "reservedQty": "6",
+          "consumedQty": "0",
+          "releasedQty": "0",
+          "uom": "PCS",
+          "version": 1,
+          "createdAt": "2026-10-13T23:24:37.656551Z",
+          "updatedAt": "2026-10-13T23:24:37.656551Z",
+          "lines": [
+            {
+              "taskLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+              "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+              "productId": "FG001",
+              "requestedQty": "9",
+              "reservedQty": "6",
+              "consumedQty": "0",
+              "releasedQty": "0",
+              "uom": "PCS"
+            }
+          ]
+        }
+      ],
+      "reservation": {
+        "id": "b9ec7f69-5281-4fdc-84ef-dd7b5e2ead88",
+        "tenantId": "TENANT-SHWS",
+        "shipmentTaskId": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "externalReservationId": "REF-RES-04844b38-606d-49c2-acd9-4291c3536e37",
+        "status": "PARTIAL",
+        "factVersion": 6,
+        "formulaVersion": "FULFILLABLE-V1",
+        "reservedQty": "6",
+        "consumedQty": "0",
+        "releasedQty": "0",
+        "uom": "PCS",
+        "version": 1,
+        "createdAt": "2026-10-13T23:24:37.656551Z",
+        "updatedAt": "2026-10-13T23:24:37.656551Z",
+        "lines": [
+          {
+            "taskLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "productId": "FG001",
+            "requestedQty": "9",
+            "reservedQty": "6",
+            "consumedQty": "0",
+            "releasedQty": "0",
+            "uom": "PCS"
+          }
+        ]
+      },
+      "outbound": {
+        "id": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "tenantId": "TENANT-SHWS",
+        "shipmentTaskId": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "outboundNo": "OUT-20261013-0607628E",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "status": "RESERVED",
+        "version": 1,
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "createdAt": "2026-10-13T23:24:37.656551Z",
+        "updatedAt": "2026-10-13T23:24:37.656551Z",
+        "lines": [
+          {
+            "id": "8b3f527c-ddc9-4375-b25a-6413f2851d92",
+            "taskLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "productId": "FG001",
+            "requestedQty": "9",
+            "reservedQty": "6",
+            "postedQty": "0",
+            "uom": "PCS"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory/shipment-tasks/fb2c7691-bc9e-4c80-94b1-ac84869b2a06/production-requests",
+    "status": 201,
+    "body": {
+      "task": {
+        "id": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "lines": [
+          {
+            "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "uom": "PCS",
+            "postedQty": "0",
+            "productId": "FG001",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "6",
+            "shortageQty": "3",
+            "promisedDate": "2026-10-14",
+            "requestedQty": "9",
+            "sourceLineRevision": 2,
+            "allowPartialShipment": true,
+            "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "productionDemandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de"
+          }
+        ],
+        "version": 3,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:22:31.401728Z",
+        "requestNo": "SR-20261013-0607628E",
+        "updatedAt": "2026-10-13T23:24:37.724094Z",
+        "outboundId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "salesOrderNo": "SO-20261013-E0097FB6",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "orderRevision": 3,
+        "postingStatus": "NOT_STARTED",
+        "workflowStatus": "ACTIVE",
+        "factoryResourceId": "FAC-SH-01",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "availabilityStatus": "PARTIALLY_RESERVED",
+        "replenishmentStatus": "IN_PROGRESS",
+        "allowPartialShipment": true,
+        "inventoryFactVersion": 6,
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        }
+      },
+      "shipmentTask": {
+        "id": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "lines": [
+          {
+            "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "uom": "PCS",
+            "postedQty": "0",
+            "productId": "FG001",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "6",
+            "shortageQty": "3",
+            "promisedDate": "2026-10-14",
+            "requestedQty": "9",
+            "sourceLineRevision": 2,
+            "allowPartialShipment": true,
+            "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "productionDemandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de"
+          }
+        ],
+        "version": 3,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:22:31.401728Z",
+        "requestNo": "SR-20261013-0607628E",
+        "updatedAt": "2026-10-13T23:24:37.724094Z",
+        "outboundId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "salesOrderNo": "SO-20261013-E0097FB6",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "orderRevision": 3,
+        "postingStatus": "NOT_STARTED",
+        "workflowStatus": "ACTIVE",
+        "factoryResourceId": "FAC-SH-01",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "availabilityStatus": "PARTIALLY_RESERVED",
+        "replenishmentStatus": "IN_PROGRESS",
+        "allowPartialShipment": true,
+        "inventoryFactVersion": 6,
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        }
+      },
+      "demands": [
+        {
+          "id": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+          "tenantId": "TENANT-SHWS",
+          "code": "DM-MV7B5X3S1607",
+          "sourceType": "SALES_ORDER_SHORTAGE",
+          "productId": "FG001",
+          "qty": "3",
+          "uom": "PCS",
+          "dueDate": "2026-10-14",
+          "priority": 50,
+          "factoryResourceId": "FAC-SH-01",
+          "status": "RECEIVED",
+          "revision": 2,
+          "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+          "createdBy": "test01",
+          "version": 1,
+          "createdAt": "2026-10-13T23:24:37.721001Z",
+          "updatedAt": "2026-10-13T23:24:37.721147Z",
+          "blockReasons": []
+        }
+      ],
+      "links": [
+        {
+          "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+          "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+          "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+          "demandCode": "DM-MV7B5X3S1607",
+          "sourceRevision": 2,
+          "shortageQty": "3",
+          "uom": "PCS"
+        }
+      ],
+      "restored": false,
+      "recovered": false,
+      "traceId": "trace-61396066546500"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/demands/e1d4f6a1-e45c-4002-9898-879bfb1558de/validate",
+    "status": 200,
+    "body": {
+      "id": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+      "qty": "3",
+      "uom": "PCS",
+      "code": "DM-MV7B5X3S1607",
+      "status": "PENDING_REVIEW",
+      "dueDate": "2026-10-14",
+      "version": 2,
+      "priority": 50,
+      "revision": 2,
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:24:37.721001Z",
+      "createdBy": "test01",
+      "productId": "FG001",
+      "updatedAt": "2026-10-13T23:24:51.087777Z",
+      "sourceType": "SALES_ORDER_SHORTAGE",
+      "blockReasons": [],
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "factoryResourceId": "FAC-SH-01",
+      "reviewerId": "test01",
+      "handlerRole": "PRODUCTION_DIRECTOR",
+      "assignedAt": "2026-10-13T23:24:51.087915Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/demands/e1d4f6a1-e45c-4002-9898-879bfb1558de/approve",
+    "status": 200,
+    "body": {
+      "id": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+      "qty": "3",
+      "uom": "PCS",
+      "code": "DM-MV7B5X3S1607",
+      "status": "APPROVED",
+      "dueDate": "2026-10-14",
+      "version": 3,
+      "priority": 50,
+      "revision": 2,
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:24:37.721001Z",
+      "createdBy": "test01",
+      "productId": "FG001",
+      "updatedAt": "2026-10-13T23:24:51.339333Z",
+      "assignedAt": "2026-10-13T23:24:51.340287Z",
+      "reviewerId": "test01",
+      "sourceType": "SALES_ORDER_SHORTAGE",
+      "handlerRole": "PRODUCTION_PLANNER",
+      "blockReasons": [],
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "factoryResourceId": "FAC-SH-01",
+      "approvedBy": "test01",
+      "approvedAt": "2026-10-13T23:24:51.340285Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/demands/e1d4f6a1-e45c-4002-9898-879bfb1558de/claim",
+    "status": 200,
+    "body": {
+      "id": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+      "qty": "3",
+      "uom": "PCS",
+      "code": "DM-MV7B5X3S1607",
+      "status": "APPROVED",
+      "dueDate": "2026-10-14",
+      "version": 4,
+      "priority": 50,
+      "revision": 2,
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:24:37.721001Z",
+      "createdBy": "test01",
+      "productId": "FG001",
+      "updatedAt": "2026-10-13T23:24:51.472301Z",
+      "approvedAt": "2026-10-13T23:24:51.340285Z",
+      "approvedBy": "test01",
+      "assignedAt": "2026-10-13T23:24:51.340287Z",
+      "reviewerId": "test01",
+      "sourceType": "SALES_ORDER_SHORTAGE",
+      "handlerRole": "PRODUCTION_PLANNER",
+      "blockReasons": [],
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "factoryResourceId": "FAC-SH-01",
+      "handlerId": "test01",
+      "acceptedAt": "2026-10-13T23:24:51.472793Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/mrp-runs",
+    "status": 202,
+    "body": {
+      "taskId": "647ae626-e3ee-48cc-a9b3-629497386863",
+      "status": "SUCCEEDED",
+      "progress": 100,
+      "traceId": "trace-61421212738209",
+      "result": {
+        "solver": "REFERENCE_MPS_MRP_V2",
+        "completedAt": "2026-10-13T23:25:02.864635Z",
+        "canProceedToAps": false,
+        "mpsLines": [
+          {
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "demandCode": "DM-MV7B5X3S1607",
+            "productId": "FG001",
+            "plannedQty": "3",
+            "uom": "PCS",
+            "dueDate": "2026-10-14"
+          }
+        ],
+        "materialShortages": [
+          {
+            "uom": "PCS",
+            "qtyPer": "2.1",
+            "materialId": "RM201",
+            "warehouseId": "WH-RM-01",
+            "materialName": "AI算力芯片",
+            "grossRequiredQty": "6.3",
+            "availableQty": "0",
+            "shortageQty": "6.3",
+            "inventoryFactVersion": 6,
+            "factMissing": false,
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "demandCode": "DM-MV7B5X3S1607",
+            "requiredDate": "2026-10-14"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1.02",
+            "materialId": "RM202",
+            "warehouseId": "WH-RM-01",
+            "materialName": "12层空PCB板",
+            "grossRequiredQty": "3.06",
+            "availableQty": "0",
+            "shortageQty": "3.06",
+            "inventoryFactVersion": 6,
+            "factMissing": false,
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "demandCode": "DM-MV7B5X3S1607",
+            "requiredDate": "2026-10-14"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1",
+            "materialId": "RM305",
+            "warehouseId": "WH-RM-01",
+            "materialName": "铝合金防护外壳",
+            "grossRequiredQty": "3",
+            "availableQty": "0",
+            "shortageQty": "3",
+            "inventoryFactVersion": 6,
+            "factMissing": false,
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "demandCode": "DM-MV7B5X3S1607",
+            "requiredDate": "2026-10-14"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-requests",
+    "status": 201,
+    "body": {
+      "id": "6e8956d0-93c0-4bc5-bc64-7eaf8dc4abe0",
+      "tenantId": "TENANT-SHWS",
+      "requestNo": "PR-20261013-6E8956D0",
+      "mrpTaskId": "647ae626-e3ee-48cc-a9b3-629497386863",
+      "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+      "materialId": "RM201",
+      "materialName": "AI算力芯片",
+      "warehouseId": "WH-RM-01",
+      "requiredQty": "6.3",
+      "uom": "PCS",
+      "requiredDate": "2026-10-14",
+      "status": "PENDING_APPROVAL",
+      "correlationId": "77f352b1-9fef-4870-ae73-6672b081fa75",
+      "createdBy": "test01",
+      "version": 1,
+      "createdAt": "2026-10-13T23:25:03.151275Z",
+      "updatedAt": "2026-10-13T23:25:03.151275Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-requests",
+    "status": 201,
+    "body": {
+      "id": "f438186d-cc74-4a02-8f14-c4285bd4c960",
+      "tenantId": "TENANT-SHWS",
+      "requestNo": "PR-20261013-F438186D",
+      "mrpTaskId": "647ae626-e3ee-48cc-a9b3-629497386863",
+      "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+      "materialId": "RM202",
+      "materialName": "12层空PCB板",
+      "warehouseId": "WH-RM-01",
+      "requiredQty": "3.06",
+      "uom": "PCS",
+      "requiredDate": "2026-10-14",
+      "status": "PENDING_APPROVAL",
+      "correlationId": "3f05149f-b5b8-47b2-9cca-08e802b5b379",
+      "createdBy": "test01",
+      "version": 1,
+      "createdAt": "2026-10-13T23:25:03.267427Z",
+      "updatedAt": "2026-10-13T23:25:03.267427Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-requests",
+    "status": 201,
+    "body": {
+      "id": "429a9855-b2a1-40c9-b38c-d88303cfd8f5",
+      "tenantId": "TENANT-SHWS",
+      "requestNo": "PR-20261013-429A9855",
+      "mrpTaskId": "647ae626-e3ee-48cc-a9b3-629497386863",
+      "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+      "materialId": "RM305",
+      "materialName": "铝合金防护外壳",
+      "warehouseId": "WH-RM-01",
+      "requiredQty": "3",
+      "uom": "PCS",
+      "requiredDate": "2026-10-14",
+      "status": "PENDING_APPROVAL",
+      "correlationId": "11d499a4-276a-4059-8a87-481bdaa5b4ef",
+      "createdBy": "test01",
+      "version": 1,
+      "createdAt": "2026-10-13T23:25:03.401609Z",
+      "updatedAt": "2026-10-13T23:25:03.401609Z"
+    }
+  },
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-requests/6e8956d0-93c0-4bc5-bc64-7eaf8dc4abe0/approve",
+    "status": 201,
+    "body": {
+      "request": {
+        "id": "6e8956d0-93c0-4bc5-bc64-7eaf8dc4abe0",
+        "uom": "PCS",
+        "status": "CONVERTED",
+        "version": 2,
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:25:03.151275Z",
+        "createdBy": "test01",
+        "mrpTaskId": "647ae626-e3ee-48cc-a9b3-629497386863",
+        "requestNo": "PR-20261013-6E8956D0",
+        "updatedAt": "2026-10-13T23:25:15.772328Z",
+        "materialId": "RM201",
+        "requiredQty": "6.3",
+        "warehouseId": "WH-RM-01",
+        "materialName": "AI算力芯片",
+        "requiredDate": "2026-10-14",
+        "correlationId": "77f352b1-9fef-4870-ae73-6672b081fa75",
+        "approvedBy": "reviewer",
+        "approvedAt": "2026-10-13T23:25:15.771399Z",
+        "purchaseOrderId": "63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4"
+      },
+      "order": {
+        "id": "63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4",
+        "tenantId": "TENANT-SHWS",
+        "orderNo": "PO-20261013-63DCF6EF",
+        "purchaseRequestId": "6e8956d0-93c0-4bc5-bc64-7eaf8dc4abe0",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "materialId": "RM201",
+        "materialName": "AI算力芯片",
+        "warehouseId": "WH-RM-01",
+        "orderedQty": "6.3",
+        "receivedQty": "0",
+        "uom": "PCS",
+        "supplierId": "SUP-001",
+        "supplierName": "深圳华芯科技",
+        "promisedDate": "2026-10-14",
+        "unitPrice": "0",
+        "taxRate": "0",
+        "currency": "CNY",
+        "totalAmount": "0",
+        "status": "CONFIRMED",
+        "correlationId": "77f352b1-9fef-4870-ae73-6672b081fa75",
+        "createdBy": "reviewer",
+        "version": 1,
+        "createdAt": "2026-10-13T23:25:15.771399Z",
+        "updatedAt": "2026-10-13T23:25:15.771399Z"
+      }
+    }
+  },
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-requests/f438186d-cc74-4a02-8f14-c4285bd4c960/approve",
+    "status": 201,
+    "body": {
+      "request": {
+        "id": "f438186d-cc74-4a02-8f14-c4285bd4c960",
+        "uom": "PCS",
+        "status": "CONVERTED",
+        "version": 2,
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:25:03.267427Z",
+        "createdBy": "test01",
+        "mrpTaskId": "647ae626-e3ee-48cc-a9b3-629497386863",
+        "requestNo": "PR-20261013-F438186D",
+        "updatedAt": "2026-10-13T23:25:15.976335Z",
+        "materialId": "RM202",
+        "requiredQty": "3.06",
+        "warehouseId": "WH-RM-01",
+        "materialName": "12层空PCB板",
+        "requiredDate": "2026-10-14",
+        "correlationId": "3f05149f-b5b8-47b2-9cca-08e802b5b379",
+        "approvedBy": "reviewer",
+        "approvedAt": "2026-10-13T23:25:15.976188Z",
+        "purchaseOrderId": "4c1ed33f-1b48-4798-9706-855b030d5a5d"
+      },
+      "order": {
+        "id": "4c1ed33f-1b48-4798-9706-855b030d5a5d",
+        "tenantId": "TENANT-SHWS",
+        "orderNo": "PO-20261013-4C1ED33F",
+        "purchaseRequestId": "f438186d-cc74-4a02-8f14-c4285bd4c960",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "materialId": "RM202",
+        "materialName": "12层空PCB板",
+        "warehouseId": "WH-RM-01",
+        "orderedQty": "3.06",
+        "receivedQty": "0",
+        "uom": "PCS",
+        "supplierId": "SUP-001",
+        "supplierName": "深圳华芯科技",
+        "promisedDate": "2026-10-14",
+        "unitPrice": "0",
+        "taxRate": "0",
+        "currency": "CNY",
+        "totalAmount": "0",
+        "status": "CONFIRMED",
+        "correlationId": "3f05149f-b5b8-47b2-9cca-08e802b5b379",
+        "createdBy": "reviewer",
+        "version": 1,
+        "createdAt": "2026-10-13T23:25:15.976188Z",
+        "updatedAt": "2026-10-13T23:25:15.976188Z"
+      }
+    }
+  },
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-requests/429a9855-b2a1-40c9-b38c-d88303cfd8f5/approve",
+    "status": 201,
+    "body": {
+      "request": {
+        "id": "429a9855-b2a1-40c9-b38c-d88303cfd8f5",
+        "uom": "PCS",
+        "status": "CONVERTED",
+        "version": 2,
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:25:03.401609Z",
+        "createdBy": "test01",
+        "mrpTaskId": "647ae626-e3ee-48cc-a9b3-629497386863",
+        "requestNo": "PR-20261013-429A9855",
+        "updatedAt": "2026-10-13T23:25:16.179806Z",
+        "materialId": "RM305",
+        "requiredQty": "3",
+        "warehouseId": "WH-RM-01",
+        "materialName": "铝合金防护外壳",
+        "requiredDate": "2026-10-14",
+        "correlationId": "11d499a4-276a-4059-8a87-481bdaa5b4ef",
+        "approvedBy": "reviewer",
+        "approvedAt": "2026-10-13T23:25:16.179604Z",
+        "purchaseOrderId": "faa85d13-336f-4d14-ae2c-68b661b101e3"
+      },
+      "order": {
+        "id": "faa85d13-336f-4d14-ae2c-68b661b101e3",
+        "tenantId": "TENANT-SHWS",
+        "orderNo": "PO-20261013-FAA85D13",
+        "purchaseRequestId": "429a9855-b2a1-40c9-b38c-d88303cfd8f5",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "materialId": "RM305",
+        "materialName": "铝合金防护外壳",
+        "warehouseId": "WH-RM-01",
+        "orderedQty": "3",
+        "receivedQty": "0",
+        "uom": "PCS",
+        "supplierId": "SUP-001",
+        "supplierName": "深圳华芯科技",
+        "promisedDate": "2026-10-14",
+        "unitPrice": "0",
+        "taxRate": "0",
+        "currency": "CNY",
+        "totalAmount": "0",
+        "status": "CONFIRMED",
+        "correlationId": "11d499a4-276a-4059-8a87-481bdaa5b4ef",
+        "createdBy": "reviewer",
+        "version": 1,
+        "createdAt": "2026-10-13T23:25:16.179604Z",
+        "updatedAt": "2026-10-13T23:25:16.179604Z"
+      }
+    }
+  },
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-orders/63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4/receipts",
+    "status": 201,
+    "body": {
+      "order": {
+        "id": "63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4",
+        "uom": "PCS",
+        "status": "RECEIVED",
+        "orderNo": "PO-20261013-63DCF6EF",
+        "taxRate": "0",
+        "version": 2,
+        "currency": "CNY",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:25:15.771399Z",
+        "createdBy": "reviewer",
+        "unitPrice": "0",
+        "updatedAt": "2026-10-13T23:25:32.098Z",
+        "materialId": "RM201",
+        "orderedQty": "6.3",
+        "supplierId": "SUP-001",
+        "receivedQty": "6.3",
+        "totalAmount": "0",
+        "warehouseId": "WH-RM-01",
+        "materialName": "AI算力芯片",
+        "promisedDate": "2026-10-14",
+        "supplierName": "深圳华芯科技",
+        "correlationId": "77f352b1-9fef-4870-ae73-6672b081fa75",
+        "purchaseRequestId": "6e8956d0-93c0-4bc5-bc64-7eaf8dc4abe0"
+      },
+      "receipt": {
+        "id": "b0320878-78ad-4f99-80f2-c5b1c33c4793",
+        "tenantId": "TENANT-SHWS",
+        "receiptNo": "RCV-20261013-B0320878",
+        "purchaseOrderId": "63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "materialId": "RM201",
+        "warehouseId": "WH-RM-01",
+        "receivedQty": "6.3",
+        "uom": "PCS",
+        "externalTransactionId": "WEB-PRCV-63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4",
+        "inventoryFactVersion": 7,
+        "status": "POSTED",
+        "correlationId": "77f352b1-9fef-4870-ae73-6672b081fa75",
+        "receivedBy": "reviewer",
+        "receivedAt": "2026-10-13T23:25:32.098Z",
+        "version": 1
+      },
+      "availability": {
+        "uom": "PCS",
+        "asOf": "2026-10-13T23:25:32.098Z",
+        "tenantId": "TENANT-SHWS",
+        "frozenQty": "0",
+        "productId": "RM201",
+        "factVersion": 7,
+        "warehouseId": "WH-RM-01",
+        "inTransitQty": "0",
+        "sourceSystem": "REFERENCE_WMS",
+        "sourceEventId": "WEB-PRCV-63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4",
+        "formulaVersion": "FULFILLABLE-V1",
+        "fulfillableQty": "6.3",
+        "safetyStockQty": "0",
+        "qualifiedOnHandQty": "6.3",
+        "allocatedReservedQty": "0"
+      },
+      "transaction": {
+        "id": "79250a64-b836-40ce-8912-fee0a4dbafc2",
+        "tenantId": "TENANT-SHWS",
+        "transactionNo": "ITX-A464361BE7424574",
+        "externalTransactionId": "WEB-PRCV-63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4",
+        "type": "PURCHASE_RECEIPT_INBOUND",
+        "warehouseId": "WH-RM-01",
+        "productId": "RM201",
+        "qty": "6.3",
+        "uom": "PCS",
+        "sourceType": "PurchaseOrder",
+        "sourceId": "63dcf6ef-42fb-4f53-ace4-d2ee054bb4e4",
+        "factVersion": 7,
+        "correlationId": "77f352b1-9fef-4870-ae73-6672b081fa75",
+        "traceId": "trace-61450492568375",
+        "occurredAt": "2026-10-13T23:25:32.098Z"
+      }
+    }
+  },
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-orders/4c1ed33f-1b48-4798-9706-855b030d5a5d/receipts",
+    "status": 201,
+    "body": {
+      "order": {
+        "id": "4c1ed33f-1b48-4798-9706-855b030d5a5d",
+        "uom": "PCS",
+        "status": "RECEIVED",
+        "orderNo": "PO-20261013-4C1ED33F",
+        "taxRate": "0",
+        "version": 2,
+        "currency": "CNY",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:25:15.976188Z",
+        "createdBy": "reviewer",
+        "unitPrice": "0",
+        "updatedAt": "2026-10-13T23:25:32.332Z",
+        "materialId": "RM202",
+        "orderedQty": "3.06",
+        "supplierId": "SUP-001",
+        "receivedQty": "3.06",
+        "totalAmount": "0",
+        "warehouseId": "WH-RM-01",
+        "materialName": "12层空PCB板",
+        "promisedDate": "2026-10-14",
+        "supplierName": "深圳华芯科技",
+        "correlationId": "3f05149f-b5b8-47b2-9cca-08e802b5b379",
+        "purchaseRequestId": "f438186d-cc74-4a02-8f14-c4285bd4c960"
+      },
+      "receipt": {
+        "id": "04aa792a-4987-4fe5-8127-2a0938529ab3",
+        "tenantId": "TENANT-SHWS",
+        "receiptNo": "RCV-20261013-04AA792A",
+        "purchaseOrderId": "4c1ed33f-1b48-4798-9706-855b030d5a5d",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "materialId": "RM202",
+        "warehouseId": "WH-RM-01",
+        "receivedQty": "3.06",
+        "uom": "PCS",
+        "externalTransactionId": "WEB-PRCV-4c1ed33f-1b48-4798-9706-855b030d5a5d",
+        "inventoryFactVersion": 7,
+        "status": "POSTED",
+        "correlationId": "3f05149f-b5b8-47b2-9cca-08e802b5b379",
+        "receivedBy": "reviewer",
+        "receivedAt": "2026-10-13T23:25:32.332Z",
+        "version": 1
+      },
+      "availability": {
+        "uom": "PCS",
+        "asOf": "2026-10-13T23:25:32.332Z",
+        "tenantId": "TENANT-SHWS",
+        "frozenQty": "0",
+        "productId": "RM202",
+        "factVersion": 7,
+        "warehouseId": "WH-RM-01",
+        "inTransitQty": "0",
+        "sourceSystem": "REFERENCE_WMS",
+        "sourceEventId": "WEB-PRCV-4c1ed33f-1b48-4798-9706-855b030d5a5d",
+        "formulaVersion": "FULFILLABLE-V1",
+        "fulfillableQty": "3.06",
+        "safetyStockQty": "0",
+        "qualifiedOnHandQty": "3.06",
+        "allocatedReservedQty": "0"
+      },
+      "transaction": {
+        "id": "438face6-0b8d-482c-a0c1-965c90d7a786",
+        "tenantId": "TENANT-SHWS",
+        "transactionNo": "ITX-E8A9586EC9184D18",
+        "externalTransactionId": "WEB-PRCV-4c1ed33f-1b48-4798-9706-855b030d5a5d",
+        "type": "PURCHASE_RECEIPT_INBOUND",
+        "warehouseId": "WH-RM-01",
+        "productId": "RM202",
+        "qty": "3.06",
+        "uom": "PCS",
+        "sourceType": "PurchaseOrder",
+        "sourceId": "4c1ed33f-1b48-4798-9706-855b030d5a5d",
+        "factVersion": 7,
+        "correlationId": "3f05149f-b5b8-47b2-9cca-08e802b5b379",
+        "traceId": "trace-61450725789084",
+        "occurredAt": "2026-10-13T23:25:32.332Z"
+      }
+    }
+  },
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/procurement/purchase-orders/faa85d13-336f-4d14-ae2c-68b661b101e3/receipts",
+    "status": 201,
+    "body": {
+      "order": {
+        "id": "faa85d13-336f-4d14-ae2c-68b661b101e3",
+        "uom": "PCS",
+        "status": "RECEIVED",
+        "orderNo": "PO-20261013-FAA85D13",
+        "taxRate": "0",
+        "version": 2,
+        "currency": "CNY",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:25:16.179604Z",
+        "createdBy": "reviewer",
+        "unitPrice": "0",
+        "updatedAt": "2026-10-13T23:25:32.566Z",
+        "materialId": "RM305",
+        "orderedQty": "3",
+        "supplierId": "SUP-001",
+        "receivedQty": "3",
+        "totalAmount": "0",
+        "warehouseId": "WH-RM-01",
+        "materialName": "铝合金防护外壳",
+        "promisedDate": "2026-10-14",
+        "supplierName": "深圳华芯科技",
+        "correlationId": "11d499a4-276a-4059-8a87-481bdaa5b4ef",
+        "purchaseRequestId": "429a9855-b2a1-40c9-b38c-d88303cfd8f5"
+      },
+      "receipt": {
+        "id": "4e6bbeb1-4637-4f98-a386-294e73fc2c4c",
+        "tenantId": "TENANT-SHWS",
+        "receiptNo": "RCV-20261013-4E6BBEB1",
+        "purchaseOrderId": "faa85d13-336f-4d14-ae2c-68b661b101e3",
+        "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+        "materialId": "RM305",
+        "warehouseId": "WH-RM-01",
+        "receivedQty": "3",
+        "uom": "PCS",
+        "externalTransactionId": "WEB-PRCV-faa85d13-336f-4d14-ae2c-68b661b101e3",
+        "inventoryFactVersion": 7,
+        "status": "POSTED",
+        "correlationId": "11d499a4-276a-4059-8a87-481bdaa5b4ef",
+        "receivedBy": "reviewer",
+        "receivedAt": "2026-10-13T23:25:32.566Z",
+        "version": 1
+      },
+      "availability": {
+        "uom": "PCS",
+        "asOf": "2026-10-13T23:25:32.566Z",
+        "tenantId": "TENANT-SHWS",
+        "frozenQty": "0",
+        "productId": "RM305",
+        "factVersion": 7,
+        "warehouseId": "WH-RM-01",
+        "inTransitQty": "0",
+        "sourceSystem": "REFERENCE_WMS",
+        "sourceEventId": "WEB-PRCV-faa85d13-336f-4d14-ae2c-68b661b101e3",
+        "formulaVersion": "FULFILLABLE-V1",
+        "fulfillableQty": "3",
+        "safetyStockQty": "0",
+        "qualifiedOnHandQty": "3",
+        "allocatedReservedQty": "0"
+      },
+      "transaction": {
+        "id": "eb514966-296d-487e-9987-6bb95c373510",
+        "tenantId": "TENANT-SHWS",
+        "transactionNo": "ITX-3ACE84E515454445",
+        "externalTransactionId": "WEB-PRCV-faa85d13-336f-4d14-ae2c-68b661b101e3",
+        "type": "PURCHASE_RECEIPT_INBOUND",
+        "warehouseId": "WH-RM-01",
+        "productId": "RM305",
+        "qty": "3",
+        "uom": "PCS",
+        "sourceType": "PurchaseOrder",
+        "sourceId": "faa85d13-336f-4d14-ae2c-68b661b101e3",
+        "factVersion": 7,
+        "correlationId": "11d499a4-276a-4059-8a87-481bdaa5b4ef",
+        "traceId": "trace-61450959320500",
+        "occurredAt": "2026-10-13T23:25:32.566Z"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/schedule-runs",
+    "status": 202,
+    "body": {
+      "taskId": "10267a5f-7399-464b-bcb5-fd468b3542a0",
+      "status": "SUCCEEDED",
+      "progress": 100,
+      "traceId": "trace-61523883726292",
+      "result": {
+        "solver": "REFERENCE_APS_V1",
+        "completedAt": "2026-10-13T23:26:45.530583Z",
+        "scheduleCandidates": [
+          {
+            "id": "fe846f18-b9b0-4a2f-8a36-1a913223ba3d",
+            "startAt": "2026-10-13T23:26:45.530866Z",
+            "published": true,
+            "dueDate": "2026-10-14",
+            "demandIds": [
+              "e1d4f6a1-e45c-4002-9898-879bfb1558de"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders",
+    "status": 201,
+    "body": {
+      "id": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+      "tenantId": "TENANT-SHWS",
+      "code": "WO-MV7B8NT0A0CB",
+      "productId": "FG001",
+      "scheduleCandidateId": "fe846f18-b9b0-4a2f-8a36-1a913223ba3d",
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "bomSnapshotId": "BOM-FG001-V1.2",
+      "routingSnapshotId": "ROUTE-FG001-V1",
+      "kittingStatus": "UNCHECKED",
+      "bomSnapshot": {
+        "id": "BOM-FG001-V1.2",
+        "lines": [
+          {
+            "uom": "PCS",
+            "qtyPer": "2.1",
+            "materialId": "RM201",
+            "warehouseId": "WH-RM-01",
+            "materialName": "AI算力芯片"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1.02",
+            "materialId": "RM202",
+            "warehouseId": "WH-RM-01",
+            "materialName": "12层空PCB板"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1",
+            "materialId": "RM305",
+            "warehouseId": "WH-RM-01",
+            "materialName": "铝合金防护外壳"
+          }
+        ],
+        "version": 1,
+        "tenantId": "TENANT-SHWS",
+        "productId": "FG001",
+        "sourceSystem": "REFERENCE_BOM",
+        "routingSnapshotId": "ROUTE-FG001-V1"
+      },
+      "factoryResourceId": "FAC-SH-01",
+      "workCenterResourceId": "WC-SH-ASSY-01",
+      "plannedQty": "3",
+      "inputQty": "3",
+      "reportedGoodQty": "0",
+      "reportedDefectQty": "0",
+      "reportedScrapQty": "0",
+      "postedQty": "0",
+      "uom": "PCS",
+      "dueDate": "2026-10-14",
+      "status": "PLANNED",
+      "createdBy": "test01",
+      "version": 1,
+      "createdAt": "2026-10-13T23:26:45.636654Z",
+      "updatedAt": "2026-10-13T23:26:45.637972Z",
+      "parameterSnapshot": {
+        "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "demandIds": [
+          {
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "allocatedQty": "3",
+            "promisedDate": "2026-10-14"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders/eb17adaf-6d58-4b83-aa2d-61d690cdb4be/kitting-check",
+    "status": 200,
+    "body": {
+      "id": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+      "uom": "PCS",
+      "code": "WO-MV7B8NT0A0CB",
+      "status": "PLANNED",
+      "dueDate": "2026-10-14",
+      "version": 2,
+      "inputQty": "3",
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:26:45.636654Z",
+      "createdBy": "test01",
+      "postedQty": "0",
+      "productId": "FG001",
+      "updatedAt": "2026-10-13T23:26:45.810993Z",
+      "plannedQty": "3",
+      "bomSnapshot": {
+        "id": "BOM-FG001-V1.2",
+        "lines": [
+          {
+            "uom": "PCS",
+            "qtyPer": "2.1",
+            "materialId": "RM201",
+            "warehouseId": "WH-RM-01",
+            "materialName": "AI算力芯片"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1.02",
+            "materialId": "RM202",
+            "warehouseId": "WH-RM-01",
+            "materialName": "12层空PCB板"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1",
+            "materialId": "RM305",
+            "warehouseId": "WH-RM-01",
+            "materialName": "铝合金防护外壳"
+          }
+        ],
+        "version": 1,
+        "tenantId": "TENANT-SHWS",
+        "productId": "FG001",
+        "sourceSystem": "REFERENCE_BOM",
+        "routingSnapshotId": "ROUTE-FG001-V1"
+      },
+      "bomSnapshotId": "BOM-FG001-V1.2",
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "kittingStatus": "READY",
+      "reportedGoodQty": "0",
+      "reportedScrapQty": "0",
+      "factoryResourceId": "FAC-SH-01",
+      "parameterSnapshot": {
+        "demandIds": [
+          {
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "allocatedQty": "3",
+            "promisedDate": "2026-10-14"
+          }
+        ],
+        "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+      },
+      "reportedDefectQty": "0",
+      "routingSnapshotId": "ROUTE-FG001-V1",
+      "scheduleCandidateId": "fe846f18-b9b0-4a2f-8a36-1a913223ba3d",
+      "workCenterResourceId": "WC-SH-ASSY-01",
+      "kittingCheckedAt": "2026-10-13T23:26:45.810995Z",
+      "materialReservation": {
+        "status": "READY",
+        "reservations": [
+          {
+            "id": "ab3683be-86d3-4132-8dc0-5a4bf8624ad0",
+            "tenantId": "TENANT-SHWS",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "sourceType": "PRODUCTION",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "productId": "RM201",
+            "warehouseId": "WH-RM-01",
+            "reservedQty": "6.3",
+            "consumedQty": "0",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "createdAt": "2026-10-13T23:26:45.806212Z"
+          },
+          {
+            "id": "a3c77c18-1a5e-4411-8e15-7e8329718ed2",
+            "tenantId": "TENANT-SHWS",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "sourceType": "PRODUCTION",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "productId": "RM202",
+            "warehouseId": "WH-RM-01",
+            "reservedQty": "3.06",
+            "consumedQty": "0",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "createdAt": "2026-10-13T23:26:45.806490Z"
+          },
+          {
+            "id": "c9a1a5eb-193f-4caf-8f02-45767606ab68",
+            "tenantId": "TENANT-SHWS",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "sourceType": "PRODUCTION",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "productId": "RM305",
+            "warehouseId": "WH-RM-01",
+            "reservedQty": "3",
+            "consumedQty": "0",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "createdAt": "2026-10-13T23:26:45.806897Z"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders/eb17adaf-6d58-4b83-aa2d-61d690cdb4be/release-impact",
+    "status": 200,
+    "body": {
+      "canRelease": true,
+      "version": 2,
+      "blockers": []
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders/eb17adaf-6d58-4b83-aa2d-61d690cdb4be/release",
+    "status": 200,
+    "body": {
+      "id": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+      "uom": "PCS",
+      "code": "WO-MV7B8NT0A0CB",
+      "status": "RELEASED",
+      "dueDate": "2026-10-14",
+      "version": 3,
+      "inputQty": "3",
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:26:45.636654Z",
+      "createdBy": "test01",
+      "postedQty": "0",
+      "productId": "FG001",
+      "updatedAt": "2026-10-13T23:26:59.343588Z",
+      "plannedQty": "3",
+      "bomSnapshot": {
+        "id": "BOM-FG001-V1.2",
+        "lines": [
+          {
+            "uom": "PCS",
+            "qtyPer": "2.1",
+            "materialId": "RM201",
+            "warehouseId": "WH-RM-01",
+            "materialName": "AI算力芯片"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1.02",
+            "materialId": "RM202",
+            "warehouseId": "WH-RM-01",
+            "materialName": "12层空PCB板"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1",
+            "materialId": "RM305",
+            "warehouseId": "WH-RM-01",
+            "materialName": "铝合金防护外壳"
+          }
+        ],
+        "version": 1,
+        "tenantId": "TENANT-SHWS",
+        "productId": "FG001",
+        "sourceSystem": "REFERENCE_BOM",
+        "routingSnapshotId": "ROUTE-FG001-V1"
+      },
+      "bomSnapshotId": "BOM-FG001-V1.2",
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "kittingStatus": "READY",
+      "reportedGoodQty": "0",
+      "kittingCheckedAt": "2026-10-13T23:26:45.810995Z",
+      "reportedScrapQty": "0",
+      "factoryResourceId": "FAC-SH-01",
+      "parameterSnapshot": {
+        "demandIds": [
+          {
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "allocatedQty": "3",
+            "promisedDate": "2026-10-14"
+          }
+        ],
+        "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+      },
+      "reportedDefectQty": "0",
+      "routingSnapshotId": "ROUTE-FG001-V1",
+      "materialReservation": {
+        "status": "READY",
+        "reservations": [
+          {
+            "id": "ab3683be-86d3-4132-8dc0-5a4bf8624ad0",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "tenantId": "TENANT-SHWS",
+            "createdAt": "2026-10-13T23:26:45.806212Z",
+            "productId": "RM201",
+            "sourceType": "PRODUCTION",
+            "consumedQty": "0",
+            "reservedQty": "6.3",
+            "warehouseId": "WH-RM-01",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+          },
+          {
+            "id": "a3c77c18-1a5e-4411-8e15-7e8329718ed2",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "tenantId": "TENANT-SHWS",
+            "createdAt": "2026-10-13T23:26:45.806490Z",
+            "productId": "RM202",
+            "sourceType": "PRODUCTION",
+            "consumedQty": "0",
+            "reservedQty": "3.06",
+            "warehouseId": "WH-RM-01",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+          },
+          {
+            "id": "c9a1a5eb-193f-4caf-8f02-45767606ab68",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "tenantId": "TENANT-SHWS",
+            "createdAt": "2026-10-13T23:26:45.806897Z",
+            "productId": "RM305",
+            "sourceType": "PRODUCTION",
+            "consumedQty": "0",
+            "reservedQty": "3",
+            "warehouseId": "WH-RM-01",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+          }
+        ]
+      },
+      "scheduleCandidateId": "fe846f18-b9b0-4a2f-8a36-1a913223ba3d",
+      "workCenterResourceId": "WC-SH-ASSY-01"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders/eb17adaf-6d58-4b83-aa2d-61d690cdb4be/start",
+    "status": 200,
+    "body": {
+      "id": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+      "uom": "PCS",
+      "code": "WO-MV7B8NT0A0CB",
+      "status": "IN_PROGRESS",
+      "dueDate": "2026-10-14",
+      "version": 4,
+      "inputQty": "3",
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:26:45.636654Z",
+      "createdBy": "test01",
+      "postedQty": "0",
+      "productId": "FG001",
+      "updatedAt": "2026-10-13T23:26:59.521838Z",
+      "plannedQty": "3",
+      "bomSnapshot": {
+        "id": "BOM-FG001-V1.2",
+        "lines": [
+          {
+            "uom": "PCS",
+            "qtyPer": "2.1",
+            "materialId": "RM201",
+            "warehouseId": "WH-RM-01",
+            "materialName": "AI算力芯片"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1.02",
+            "materialId": "RM202",
+            "warehouseId": "WH-RM-01",
+            "materialName": "12层空PCB板"
+          },
+          {
+            "uom": "PCS",
+            "qtyPer": "1",
+            "materialId": "RM305",
+            "warehouseId": "WH-RM-01",
+            "materialName": "铝合金防护外壳"
+          }
+        ],
+        "version": 1,
+        "tenantId": "TENANT-SHWS",
+        "productId": "FG001",
+        "sourceSystem": "REFERENCE_BOM",
+        "routingSnapshotId": "ROUTE-FG001-V1"
+      },
+      "bomSnapshotId": "BOM-FG001-V1.2",
+      "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+      "kittingStatus": "READY",
+      "reportedGoodQty": "0",
+      "kittingCheckedAt": "2026-10-13T23:26:45.810995Z",
+      "reportedScrapQty": "0",
+      "factoryResourceId": "FAC-SH-01",
+      "parameterSnapshot": {
+        "demandIds": [
+          {
+            "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "allocatedQty": "3",
+            "promisedDate": "2026-10-14"
+          }
+        ],
+        "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+      },
+      "reportedDefectQty": "0",
+      "routingSnapshotId": "ROUTE-FG001-V1",
+      "materialReservation": {
+        "status": "READY",
+        "reservations": [
+          {
+            "id": "ab3683be-86d3-4132-8dc0-5a4bf8624ad0",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "tenantId": "TENANT-SHWS",
+            "createdAt": "2026-10-13T23:26:45.806212Z",
+            "productId": "RM201",
+            "sourceType": "PRODUCTION",
+            "consumedQty": "0",
+            "reservedQty": "6.3",
+            "warehouseId": "WH-RM-01",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+          },
+          {
+            "id": "a3c77c18-1a5e-4411-8e15-7e8329718ed2",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "tenantId": "TENANT-SHWS",
+            "createdAt": "2026-10-13T23:26:45.806490Z",
+            "productId": "RM202",
+            "sourceType": "PRODUCTION",
+            "consumedQty": "0",
+            "reservedQty": "3.06",
+            "warehouseId": "WH-RM-01",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+          },
+          {
+            "id": "c9a1a5eb-193f-4caf-8f02-45767606ab68",
+            "uom": "PCS",
+            "status": "ACTIVE",
+            "tenantId": "TENANT-SHWS",
+            "createdAt": "2026-10-13T23:26:45.806897Z",
+            "productId": "RM305",
+            "sourceType": "PRODUCTION",
+            "consumedQty": "0",
+            "reservedQty": "3",
+            "warehouseId": "WH-RM-01",
+            "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+            "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+          }
+        ]
+      },
+      "scheduleCandidateId": "fe846f18-b9b0-4a2f-8a36-1a913223ba3d",
+      "workCenterResourceId": "WC-SH-ASSY-01"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders/eb17adaf-6d58-4b83-aa2d-61d690cdb4be/reports",
+    "status": 201,
+    "body": {
+      "report": {
+        "id": "9a300a46-6ead-46d3-8351-504bd1d1f6ba",
+        "tenantId": "TENANT-SHWS",
+        "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+        "goodQty": "3",
+        "defectQty": "0",
+        "scrapQty": "0",
+        "inputQty": "0",
+        "uom": "PCS",
+        "status": "POSTED",
+        "reportedBy": "test01",
+        "reportedAt": "2026-10-13T23:26:59.693362Z",
+        "source": "WEB",
+        "version": 1,
+        "createdAt": "2026-10-13T23:26:59.693375Z",
+        "updatedAt": "2026-10-13T23:26:59.693376Z"
+      },
+      "workOrder": {
+        "id": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+        "uom": "PCS",
+        "code": "WO-MV7B8NT0A0CB",
+        "status": "IN_PROGRESS",
+        "dueDate": "2026-10-14",
+        "version": 5,
+        "inputQty": "3",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:26:45.636654Z",
+        "createdBy": "test01",
+        "postedQty": "0",
+        "productId": "FG001",
+        "updatedAt": "2026-10-13T23:26:59.693383Z",
+        "plannedQty": "3",
+        "bomSnapshot": {
+          "id": "BOM-FG001-V1.2",
+          "lines": [
+            {
+              "uom": "PCS",
+              "qtyPer": "2.1",
+              "materialId": "RM201",
+              "warehouseId": "WH-RM-01",
+              "materialName": "AI算力芯片"
+            },
+            {
+              "uom": "PCS",
+              "qtyPer": "1.02",
+              "materialId": "RM202",
+              "warehouseId": "WH-RM-01",
+              "materialName": "12层空PCB板"
+            },
+            {
+              "uom": "PCS",
+              "qtyPer": "1",
+              "materialId": "RM305",
+              "warehouseId": "WH-RM-01",
+              "materialName": "铝合金防护外壳"
+            }
+          ],
+          "version": 1,
+          "tenantId": "TENANT-SHWS",
+          "productId": "FG001",
+          "sourceSystem": "REFERENCE_BOM",
+          "routingSnapshotId": "ROUTE-FG001-V1"
+        },
+        "bomSnapshotId": "BOM-FG001-V1.2",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "kittingStatus": "READY",
+        "reportedGoodQty": "3",
+        "kittingCheckedAt": "2026-10-13T23:26:45.810995Z",
+        "reportedScrapQty": "0",
+        "factoryResourceId": "FAC-SH-01",
+        "parameterSnapshot": {
+          "demandIds": [
+            {
+              "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+              "allocatedQty": "3",
+              "promisedDate": "2026-10-14"
+            }
+          ],
+          "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+        },
+        "reportedDefectQty": "0",
+        "routingSnapshotId": "ROUTE-FG001-V1",
+        "materialReservation": {
+          "status": "READY",
+          "reservations": [
+            {
+              "id": "ab3683be-86d3-4132-8dc0-5a4bf8624ad0",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T23:26:45.806212Z",
+              "productId": "RM201",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "6.3",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+              "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+            },
+            {
+              "id": "a3c77c18-1a5e-4411-8e15-7e8329718ed2",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T23:26:45.806490Z",
+              "productId": "RM202",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "3.06",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+              "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+            },
+            {
+              "id": "c9a1a5eb-193f-4caf-8f02-45767606ab68",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T23:26:45.806897Z",
+              "productId": "RM305",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "3",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+              "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+            }
+          ]
+        },
+        "scheduleCandidateId": "fe846f18-b9b0-4a2f-8a36-1a913223ba3d",
+        "workCenterResourceId": "WC-SH-ASSY-01"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/inspections",
+    "status": 201,
+    "body": {
+      "id": "631db0c2-9085-44d5-97bb-79ea193696c4",
+      "tenantId": "TENANT-SHWS",
+      "code": "FQC-MV7B9BCK4465",
+      "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+      "inspectionType": "FQC",
+      "sampleQty": "3",
+      "passedQty": "0",
+      "failedQty": "0",
+      "status": "CREATED",
+      "createdBy": "test01",
+      "version": 1,
+      "createdAt": "2026-10-13T23:27:16.149030Z",
+      "updatedAt": "2026-10-13T23:27:16.149056Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/inspections/631db0c2-9085-44d5-97bb-79ea193696c4/result",
+    "status": 200,
+    "body": {
+      "id": "631db0c2-9085-44d5-97bb-79ea193696c4",
+      "code": "FQC-MV7B9BCK4465",
+      "status": "PASSED",
+      "version": 2,
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-13T23:27:16.149030Z",
+      "createdBy": "test01",
+      "failedQty": "0",
+      "passedQty": "3",
+      "sampleQty": "3",
+      "updatedAt": "2026-10-13T23:27:16.593082Z",
+      "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+      "inspectionType": "FQC",
+      "inspectorId": "test01",
+      "inspectedAt": "2026-10-13T23:27:16.593103Z"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders/eb17adaf-6d58-4b83-aa2d-61d690cdb4be/completions",
+    "status": 202,
+    "body": {
+      "completionId": "e605b43a-ca70-4a4c-9523-94bb47a64221",
+      "taskId": "ac590400-78aa-4611-91fb-9b4061e19f3a",
+      "status": "POSTING",
+      "idempotencyKey": "completion-create:TENANT-SHWS:eb17adaf-6d58-4b83-aa2d-61d690cdb4be:631db0c2-9085-44d5-97bb-79ea193696c4:2",
+      "traceId": "trace-61555112521375"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/production/work-orders/eb17adaf-6d58-4b83-aa2d-61d690cdb4be/close-submit",
+    "status": 201,
+    "body": {
+      "id": "21423961-f084-4c51-bb63-c5631b3913ed",
+      "tenantId": "TENANT-SHWS",
+      "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+      "status": "REVIEW_PENDING",
+      "submittedBy": "test01",
+      "submittedAt": "2026-10-13T23:27:49.273690Z",
+      "version": 1,
+      "createdAt": "2026-10-13T23:27:49.273709Z",
+      "updatedAt": "2026-10-13T23:27:49.273710Z",
+      "checkSnapshot": {
+        "checkedAt": "2026-10-13T23:27:49.273264Z",
+        "blockers": [],
+        "canClose": true
+      },
+      "varianceSnapshot": {}
+    }
+  },
+  {
+    "actor": "reviewer",
+    "method": "POST",
+    "path": "/api/v1/production/work-order-closes/21423961-f084-4c51-bb63-c5631b3913ed/approve",
+    "status": 200,
+    "body": {
+      "closeRequest": {
+        "id": "21423961-f084-4c51-bb63-c5631b3913ed",
+        "status": "APPROVED",
+        "version": 2,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:27:49.273709Z",
+        "updatedAt": "2026-10-13T23:27:49.699947Z",
+        "submittedAt": "2026-10-13T23:27:49.273690Z",
+        "submittedBy": "test01",
+        "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+        "checkSnapshot": {
+          "blockers": [],
+          "canClose": true,
+          "checkedAt": "2026-10-13T23:27:49.273264Z"
+        },
+        "varianceSnapshot": {},
+        "approvedBy": "reviewer",
+        "approvedAt": "2026-10-13T23:27:49.699954Z"
+      },
+      "workOrder": {
+        "id": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+        "uom": "PCS",
+        "code": "WO-MV7B8NT0A0CB",
+        "status": "CLOSED",
+        "dueDate": "2026-10-14",
+        "version": 9,
+        "inputQty": "3",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:26:45.636654Z",
+        "createdBy": "test01",
+        "postedQty": "3",
+        "productId": "FG001",
+        "updatedAt": "2026-10-13T23:27:49.699958Z",
+        "plannedQty": "3",
+        "bomSnapshot": {
+          "id": "BOM-FG001-V1.2",
+          "lines": [
+            {
+              "uom": "PCS",
+              "qtyPer": "2.1",
+              "materialId": "RM201",
+              "warehouseId": "WH-RM-01",
+              "materialName": "AI算力芯片"
+            },
+            {
+              "uom": "PCS",
+              "qtyPer": "1.02",
+              "materialId": "RM202",
+              "warehouseId": "WH-RM-01",
+              "materialName": "12层空PCB板"
+            },
+            {
+              "uom": "PCS",
+              "qtyPer": "1",
+              "materialId": "RM305",
+              "warehouseId": "WH-RM-01",
+              "materialName": "铝合金防护外壳"
+            }
+          ],
+          "version": 1,
+          "tenantId": "TENANT-SHWS",
+          "productId": "FG001",
+          "sourceSystem": "REFERENCE_BOM",
+          "routingSnapshotId": "ROUTE-FG001-V1"
+        },
+        "bomSnapshotId": "BOM-FG001-V1.2",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "kittingStatus": "READY",
+        "reportedGoodQty": "3",
+        "kittingCheckedAt": "2026-10-13T23:26:45.810995Z",
+        "reportedScrapQty": "0",
+        "factoryResourceId": "FAC-SH-01",
+        "parameterSnapshot": {
+          "demandIds": [
+            {
+              "demandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+              "allocatedQty": "3",
+              "promisedDate": "2026-10-14"
+            }
+          ],
+          "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+        },
+        "reportedDefectQty": "0",
+        "routingSnapshotId": "ROUTE-FG001-V1",
+        "materialReservation": {
+          "status": "READY",
+          "reservations": [
+            {
+              "id": "ab3683be-86d3-4132-8dc0-5a4bf8624ad0",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T23:26:45.806212Z",
+              "productId": "RM201",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "6.3",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+              "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+            },
+            {
+              "id": "a3c77c18-1a5e-4411-8e15-7e8329718ed2",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T23:26:45.806490Z",
+              "productId": "RM202",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "3.06",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+              "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+            },
+            {
+              "id": "c9a1a5eb-193f-4caf-8f02-45767606ab68",
+              "uom": "PCS",
+              "status": "ACTIVE",
+              "tenantId": "TENANT-SHWS",
+              "createdAt": "2026-10-13T23:26:45.806897Z",
+              "productId": "RM305",
+              "sourceType": "PRODUCTION",
+              "consumedQty": "0",
+              "reservedQty": "3",
+              "warehouseId": "WH-RM-01",
+              "workOrderId": "eb17adaf-6d58-4b83-aa2d-61d690cdb4be",
+              "shipmentTaskId": "production:eb17adaf-6d58-4b83-aa2d-61d690cdb4be"
+            }
+          ]
+        },
+        "qualityRecoveredQty": "0",
+        "scheduleCandidateId": "fe846f18-b9b0-4a2f-8a36-1a913223ba3d",
+        "workCenterResourceId": "WC-SH-ASSY-01"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory/shipment-tasks/fb2c7691-bc9e-4c80-94b1-ac84869b2a06/check-and-reserve",
+    "status": 200,
+    "body": {
+      "outcome": "SUCCEEDED",
+      "result": "RESERVED",
+      "adapterKind": "REFERENCE",
+      "traceId": "trace-61761813634417",
+      "missingProductIds": [],
+      "task": {
+        "id": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "lines": [
+          {
+            "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "uom": "PCS",
+            "postedQty": "0",
+            "productId": "FG001",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "9",
+            "shortageQty": "0",
+            "promisedDate": "2026-10-14",
+            "requestedQty": "9",
+            "productionDemandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "sourceLineRevision": 2,
+            "allowPartialShipment": true,
+            "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8"
+          }
+        ],
+        "version": 5,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:22:31.401728Z",
+        "requestNo": "SR-20261013-0607628E",
+        "updatedAt": "2026-10-13T23:30:43.305809Z",
+        "outboundId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "salesOrderNo": "SO-20261013-E0097FB6",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "orderRevision": 3,
+        "postingStatus": "NOT_STARTED",
+        "workflowStatus": "ACTIVE",
+        "factoryResourceId": "FAC-SH-01",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "availabilityStatus": "RESERVED",
+        "replenishmentStatus": "NOT_REQUIRED",
+        "allowPartialShipment": true,
+        "inventoryFactVersion": 8,
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        }
+      },
+      "shipmentTask": {
+        "id": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "lines": [
+          {
+            "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "uom": "PCS",
+            "postedQty": "0",
+            "productId": "FG001",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "9",
+            "shortageQty": "0",
+            "promisedDate": "2026-10-14",
+            "requestedQty": "9",
+            "productionDemandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "sourceLineRevision": 2,
+            "allowPartialShipment": true,
+            "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8"
+          }
+        ],
+        "version": 5,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:22:31.401728Z",
+        "requestNo": "SR-20261013-0607628E",
+        "updatedAt": "2026-10-13T23:30:43.305809Z",
+        "outboundId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "salesOrderNo": "SO-20261013-E0097FB6",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "orderRevision": 3,
+        "postingStatus": "NOT_STARTED",
+        "workflowStatus": "ACTIVE",
+        "factoryResourceId": "FAC-SH-01",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "availabilityStatus": "RESERVED",
+        "replenishmentStatus": "NOT_REQUIRED",
+        "allowPartialShipment": true,
+        "inventoryFactVersion": 8,
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        }
+      },
+      "reservations": [
+        {
+          "id": "351ac344-2ca7-4924-8bba-a6d3ef4a006c",
+          "tenantId": "TENANT-SHWS",
+          "shipmentTaskId": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+          "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+          "externalReservationId": "REF-RES-a7aabf1e-0376-48bd-8f02-4af47394a54c",
+          "status": "ACTIVE",
+          "factVersion": 8,
+          "formulaVersion": "FULFILLABLE-V1",
+          "reservedQty": "3",
+          "consumedQty": "0",
+          "releasedQty": "0",
+          "uom": "PCS",
+          "version": 1,
+          "createdAt": "2026-10-13T23:30:43.304514Z",
+          "updatedAt": "2026-10-13T23:30:43.304514Z",
+          "lines": [
+            {
+              "taskLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+              "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+              "productId": "FG001",
+              "requestedQty": "3",
+              "reservedQty": "3",
+              "consumedQty": "0",
+              "releasedQty": "0",
+              "uom": "PCS"
+            }
+          ]
+        }
+      ],
+      "reservation": {
+        "id": "351ac344-2ca7-4924-8bba-a6d3ef4a006c",
+        "tenantId": "TENANT-SHWS",
+        "shipmentTaskId": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "externalReservationId": "REF-RES-a7aabf1e-0376-48bd-8f02-4af47394a54c",
+        "status": "ACTIVE",
+        "factVersion": 8,
+        "formulaVersion": "FULFILLABLE-V1",
+        "reservedQty": "3",
+        "consumedQty": "0",
+        "releasedQty": "0",
+        "uom": "PCS",
+        "version": 1,
+        "createdAt": "2026-10-13T23:30:43.304514Z",
+        "updatedAt": "2026-10-13T23:30:43.304514Z",
+        "lines": [
+          {
+            "taskLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "productId": "FG001",
+            "requestedQty": "3",
+            "reservedQty": "3",
+            "consumedQty": "0",
+            "releasedQty": "0",
+            "uom": "PCS"
+          }
+        ]
+      },
+      "outbound": {
+        "id": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "tenantId": "TENANT-SHWS",
+        "shipmentTaskId": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "outboundNo": "OUT-20261013-0607628E",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "status": "RESERVED",
+        "version": 2,
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "createdAt": "2026-10-13T23:24:37.656551Z",
+        "updatedAt": "2026-10-13T23:30:43.304514Z",
+        "lines": [
+          {
+            "id": "8b3f527c-ddc9-4375-b25a-6413f2851d92",
+            "taskLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "productId": "FG001",
+            "requestedQty": "9",
+            "reservedQty": "9",
+            "postedQty": "0",
+            "uom": "PCS"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory/outbounds/7bb6a904-795f-4d3a-ab0e-82499786e78b/post",
+    "status": 200,
+    "body": {
+      "outcome": "SUCCEEDED",
+      "result": "POSTED",
+      "adapterKind": "REFERENCE",
+      "traceId": "trace-61761849635917",
+      "outbound": {
+        "id": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "lines": [
+          {
+            "id": "8b3f527c-ddc9-4375-b25a-6413f2851d92",
+            "uom": "PCS",
+            "postedQty": "9",
+            "productId": "FG001",
+            "taskLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "9",
+            "requestedQty": "9"
+          }
+        ],
+        "status": "POSTED",
+        "version": 3,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:24:37.656551Z",
+        "updatedAt": "2026-10-13T23:30:43.312Z",
+        "outboundNo": "OUT-20261013-0607628E",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "shipmentTaskId": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "postingKey": "outbound-command:7bb6a904-795f-4d3a-ab0e-82499786e78b:218bade6-8dac-4aa1-a014-cfa0e3905526",
+        "postedAt": "2026-10-13T23:30:43.312Z"
+      },
+      "transactions": [
+        {
+          "id": "e1ffc92f-fdb2-40c1-99bb-dee4dc0d1042",
+          "tenantId": "TENANT-SHWS",
+          "transactionNo": "ITX-ADFD0EEBDA96403A",
+          "externalTransactionId": "REF-OUT-727fdccd-e79c-44df-ba32-b451f3eb356d",
+          "type": "SALES_OUTBOUND",
+          "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+          "productId": "FG001",
+          "qty": "9",
+          "uom": "PCS",
+          "sourceType": "SalesOutbound",
+          "sourceId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+          "factVersion": 9,
+          "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+          "traceId": "trace-61761849635917",
+          "occurredAt": "2026-10-13T23:30:43.312Z",
+          "sourceLineId": "8b3f527c-ddc9-4375-b25a-6413f2851d92"
+        }
+      ],
+      "task": {
+        "id": "fb2c7691-bc9e-4c80-94b1-ac84869b2a06",
+        "lines": [
+          {
+            "id": "f5a821a6-5c9d-4210-b96f-843a7532f9f8",
+            "uom": "PCS",
+            "postedQty": "9",
+            "productId": "FG001",
+            "orderLineId": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "reservedQty": "9",
+            "shortageQty": "0",
+            "promisedDate": "2026-10-14",
+            "requestedQty": "9",
+            "productionDemandId": "e1d4f6a1-e45c-4002-9898-879bfb1558de",
+            "sourceLineRevision": 2,
+            "allowPartialShipment": true,
+            "shipmentRequestLineId": "f5a821a6-5c9d-4210-b96f-843a7532f9f8"
+          }
+        ],
+        "version": 6,
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:22:31.401728Z",
+        "requestNo": "SR-20261013-0607628E",
+        "updatedAt": "2026-10-13T23:30:43.389548Z",
+        "outboundId": "7bb6a904-795f-4d3a-ab0e-82499786e78b",
+        "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+        "salesOrderId": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "salesOrderNo": "SO-20261013-E0097FB6",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "orderRevision": 3,
+        "postingStatus": "POSTED",
+        "workflowStatus": "COMPLETED",
+        "factoryResourceId": "FAC-SH-01",
+        "shipmentRequestId": "0607628e-c459-4f7c-925e-881036145af9",
+        "availabilityStatus": "RESERVED",
+        "replenishmentStatus": "NOT_REQUIRED",
+        "allowPartialShipment": true,
+        "inventoryFactVersion": 9,
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        }
+      },
+      "order": {
+        "id": "e0097fb6-c145-405d-8d46-fc4e38bf6124",
+        "lines": [
+          {
+            "id": "08b6f66b-1181-4642-bd8f-281548ad31c3",
+            "uom": "PCS",
+            "lineNo": 1,
+            "taxRate": "0",
+            "version": 6,
+            "productId": "FG001",
+            "unitPrice": "100",
+            "lineStatus": "SHIPPED",
+            "orderedQty": "9",
+            "shippedQty": "9",
+            "productName": "工业控制器顶配版",
+            "reservedQty": "0",
+            "promisedDate": "2026-10-14",
+            "remainingQty": "0",
+            "specification": "IC-X900 / 32G / 双网口",
+            "activeRequestedQty": "0",
+            "allowPartialShipment": true
+          }
+        ],
+        "remark": "销售缺货全流程验收-20261014",
+        "orderNo": "SO-20261013-E0097FB6",
+        "version": 8,
+        "currency": "CNY",
+        "tenantId": "TENANT-SHWS",
+        "createdAt": "2026-10-13T23:13:32.113596Z",
+        "createdBy": "test01",
+        "orderDate": "2026-10-13",
+        "recipient": {
+          "city": "上海",
+          "name": "李经理",
+          "address": "上海市浦东新区金桥开发区",
+          "country": "中国",
+          "province": "上海",
+          "phoneMasked": "138****0000"
+        },
+        "updatedAt": "2026-10-13T23:30:43.392698Z",
+        "customerId": "KH-20260612-001",
+        "validUntil": "2026-11-12",
+        "totalAmount": "900",
+        "customerName": "上海万申产业股份有限公司",
+        "discountRate": "100",
+        "reviewStatus": "APPROVED",
+        "correlationId": "51e3fc26-70ee-4b3a-8686-bab0fac2d990",
+        "overallStatus": "SHIPPED",
+        "discountAmount": "0",
+        "originalAmount": "900",
+        "reviewRequired": true,
+        "shipmentStatus": "SHIPPED",
+        "ownerEmployeeId": "test01",
+        "factoryResourceId": "FAC-SH-01",
+        "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+        "allowPartialShipment": true,
+        "requestedDeliveryDate": "2026-10-14",
+        "fulfillmentWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+      },
+      "externalTransactionIds": [
+        "REF-OUT-727fdccd-e79c-44df-ba32-b451f3eb356d"
+      ]
+    }
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/platform/roles/ROLE-ADMIN/grants",
+    "status": 200,
+    "body": [
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PLATFORM",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ORG-VIEW",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ORG-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-RESOURCE-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-POSITION-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-EMPLOYEE-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ACCOUNT-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-READ",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ACCOUNT-DISABLE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ROLE-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ROLE-GRANT",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PREVIEW",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ACTOR-VIEW",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ADAPTER-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ADAPTER",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-APPROVAL-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-DICTIONARY-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PARAMETER-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SECURITY-VIEW",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-CAPABILITY-MANAGE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SESSION-REVOKE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AUDIT",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AUDIT-EXPORT",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-MPS",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-MRP",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-VIEW",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-MASTER",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND-REVIEW",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND-APPROVE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND-CLAIM",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-MRP-RUN",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-APS-RUN",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-PLAN",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-APS",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-KITTING",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-EXECUTION",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-QUALITY",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-COMPLETION",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-TASKS",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-STOCK-EXPORT",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-COST",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-RISK",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SALES-ORDER-SELF-APPROVE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SUP-ATT",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AI-RISK",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AI-IMPORT",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-INV-WH-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-INV-PROD-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-INV-MAT-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SC-CUST-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SC-SUP-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-WORKBENCH",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-READ",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-UPDATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-DELETE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-ATTENDANCE-READ",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-ATTENDANCE-CREATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-ATTENDANCE-UPDATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-UPDATE",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-RENEW",
+        "effect": "allow",
+        "version": 4,
+        "updatedAt": "2026-10-14 07:35:29"
+      }
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/platform/roles/ROLE-ADMIN/grants",
+    "status": 200,
+    "body": [
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PLATFORM",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ORG-VIEW",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ORG-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-RESOURCE-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-POSITION-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-EMPLOYEE-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ACCOUNT-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-READ",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ACCOUNT-DISABLE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ROLE-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ROLE-GRANT",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PREVIEW",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ACTOR-VIEW",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ADAPTER-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-ADAPTER",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-APPROVAL-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-DICTIONARY-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PARAMETER-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SECURITY-VIEW",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-CAPABILITY-MANAGE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SESSION-REVOKE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AUDIT",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AUDIT-EXPORT",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-MPS-MENU",
+        "effect": "allow",
+        "version": 1,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-MPS",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-MRP",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-VIEW",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-MASTER",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND-REVIEW",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND-APPROVE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-DEMAND-CLAIM",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-MRP-RUN",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-APS-RUN",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-PLAN",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-APS",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-KITTING",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-EXECUTION",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-QUALITY",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-COMPLETION",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-PROD-TASKS",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-STOCK-EXPORT",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-COST",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-RISK",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SALES-ORDER-SELF-APPROVE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SUP-ATT",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AI-RISK",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-AI-IMPORT",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-INV-WH-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-INV-PROD-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-INV-MAT-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SC-CUST-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-SC-SUP-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-WORKBENCH",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-READ",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-UPDATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-EMPLOYEE-DELETE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-ATTENDANCE-READ",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-ATTENDANCE-CREATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-ATTENDANCE-UPDATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-UPDATE",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      },
+      {
+        "roleId": "ROLE-ADMIN",
+        "tenantId": "TENANT-SHWS",
+        "permissionId": "PERM-HR-SKILL-RENEW",
+        "effect": "allow",
+        "version": 5,
+        "updatedAt": "2026-10-14 07:35:30"
+      }
+    ]
+  }
+]
