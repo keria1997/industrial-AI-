@@ -323,6 +323,7 @@ const permissions: PermissionResource[] = [
   { id: 'PERM-ADAPTER', code: 'platform.adapter.sync', name: '旧ERP权限同步', module: '平台管理', type: 'api', risk: 'critical' },
   { id: 'PERM-AUDIT', code: 'platform.audit.view', name: '审计日志查看', module: '平台管理', type: 'page', risk: 'sensitive' },
   { id: 'PERM-AUDIT-EXPORT', code: 'platform.audit.export', name: '审计日志导出', module: '平台管理', type: 'export', risk: 'critical' },
+  { id: 'PERM-MPS-MENU', code: 'production.mps.view', name: '主生产计划', module: '生产管理', type: 'menu', risk: 'sensitive' },
   { id: 'PERM-MPS', code: 'production.mps.release', name: '主生产计划下达', module: '生产管理', type: 'api', risk: 'critical' },
   { id: 'PERM-MRP', code: 'production.mps.calcMrp', name: 'MRP展算', module: '生产管理', type: 'button', risk: 'sensitive' },
   { id: 'PERM-PROD-VIEW', code: 'production.view', name: '生产管理查看', module: '生产管理', type: 'menu', risk: 'normal' },
@@ -429,6 +430,7 @@ export const createPlatformSeed = (tenant?: { id?: string; code?: string; name?:
   roleGrants: [
     ...permissions.map(permission => ({ roleId: 'ROLE-ADMIN', permissionId: permission.id, effect: 'allow' as const })),
     { roleId: 'ROLE-MFG', permissionId: 'PERM-MPS', effect: 'allow' },
+    { roleId: 'ROLE-MFG', permissionId: 'PERM-MPS-MENU', effect: 'allow' },
     { roleId: 'ROLE-MFG', permissionId: 'PERM-MRP', effect: 'allow' },
     { roleId: 'ROLE-MFG', permissionId: 'PERM-PROD-DEMAND-REVIEW', effect: 'allow' },
     { roleId: 'ROLE-MFG', permissionId: 'PERM-PROD-DEMAND-APPROVE', effect: 'allow' },

@@ -8,8 +8,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const release = resolve(process.argv[2] || '');
-if (!process.argv[2]) throw new Error('Usage: node deploy/run-local-release.mjs <extracted-release>');
-const runtime = resolve(repo, 'deploy/artifacts/local-runtime');
+if (!process.argv[2]) throw new Error('Usage: node deploy/run-local-release.mjs <extracted-release> [frontend-port]');
+const frontendPort = Number(process.argv[3] || '5175');
+if (!Number.isInteger(frontendPort) || frontendPort < 1024 || frontendPort > 65535 || frontendPort === 8081) {
+  throw new Error('Frontend port must be an integer from 1024 to 65535 other than 8081');
+}
+const frontendUrl = `http://127.0.0.1:${frontendPort}`;
+const runtime = resolve(repo, `deploy/artifacts/${frontendPort === 5175 ? 'local-runtime' : `local-runtime-${frontendPort}`}`);
 const jar = resolve(release, 'app/server-java/industrial-ai-api-0.1.0.jar');
 const manifest = resolve(release, 'MANIFEST.txt');
 if (!existsSync(jar) || !existsSync(resolve(release, 'app/dist/index.html')) || !existsSync(manifest)) {
@@ -36,7 +41,8 @@ const mime = ['/opt/homebrew/etc/nginx/mime.types', '/etc/nginx/mime.types', '/u
   .find(existsSync);
 if (!mime) throw new Error('nginx mime.types is not installed');
 copyFileSync(mime, resolve(runtime, 'mime.types'));
-copyFileSync(resolve(repo, 'deploy/nginx/local-5175.conf'), resolve(runtime, 'nginx.conf'));
+writeFileSync(resolve(runtime, 'nginx.conf'), readFileSync(resolve(repo, 'deploy/nginx/local-5175.conf'), 'utf8')
+  .replace('listen 127.0.0.1:5175;', `listen 127.0.0.1:${frontendPort};`));
 run('nginx', ['-t', '-p', `${runtime}/`, '-c', 'nginx.conf']);
 run('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT 1'], { env: pgEnv });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -72,7 +78,7 @@ function checkedListeners(port) {
   return pids;
 }
 const backendPids = checkedListeners(8081);
-const frontendPids = checkedListeners(5175);
+const frontendPids = checkedListeners(frontendPort);
 const previous = existsSync(resolve(runtime, 'current'))
   ? run('readlink', [resolve(runtime, 'current')]).trim() : null;
 for (const pid of backendPids) process.kill(pid, 'SIGTERM');
@@ -117,21 +123,21 @@ renameSync(pendingLink, resolve(runtime, 'current'));
 for (const pid of frontendPids) {
   try { process.kill(pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
 }
-for (let attempt = 0; listeners(5175).length && attempt < 30; attempt++) await delay(1000);
-if (listeners(5175).length) throw new Error('Frontend did not stop within 30 seconds');
+for (let attempt = 0; listeners(frontendPort).length && attempt < 30; attempt++) await delay(1000);
+if (listeners(frontendPort).length) throw new Error('Frontend did not stop within 30 seconds');
 run('nginx', ['-p', `${runtime}/`, '-c', 'nginx.conf']);
-const frontend = await fetch('http://127.0.0.1:5175/', { signal: AbortSignal.timeout(5000) });
+const frontend = await fetch(frontendUrl, { signal: AbortSignal.timeout(5000) });
 const html = await frontend.text();
 if (!frontend.ok || html.includes('/@vite/client') || !html.includes('/assets/')) {
   throw new Error('Built frontend health check failed');
 }
-const proxied = await fetch('http://127.0.0.1:5175/healthz', { signal: AbortSignal.timeout(5000) });
+const proxied = await fetch(`${frontendUrl}/healthz`, { signal: AbortSignal.timeout(5000) });
 if (!proxied.ok) throw new Error('Frontend-to-backend health check failed');
 const evidence = { at: new Date().toISOString(), release, previous, backup,
-  javaPid: backend.pid, frontend: 'http://127.0.0.1:5175', backend: 'http://127.0.0.1:8081',
+  javaPid: backend.pid, frontend: frontendUrl, backend: 'http://127.0.0.1:8081',
   database: db.pathname.slice(1), storage: 'PostgreSQL', demoAuthEnabled: env.DEMO_AUTH_ENABLED === 'true',
   manifest: readFileSync(manifest, 'utf8'),
   jarSha256: createHash('sha256').update(readFileSync(jar)).digest('hex') };
 writeFileSync(resolve(runtime, 'deployment.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
-console.log('Deployed built frontend on 5175 and Java/PostgreSQL backend on 8081');
+console.log(`Deployed built frontend on ${frontendPort} and Java/PostgreSQL backend on 8081`);
 if (evidence.demoAuthEnabled) console.log('Public production prerequisite: configure real accounts and disable demo authentication');

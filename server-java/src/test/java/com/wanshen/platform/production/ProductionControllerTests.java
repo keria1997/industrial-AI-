@@ -113,17 +113,9 @@ class ProductionControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}")
                 )
-                .andExpect(status().isForbidden());
-
-        mockMvc.perform(post("/api/v1/production/demands/" + id + "/approve")
-                        .header("Authorization", "Bearer " + reviewerToken)
-                        .header("X-Tenant-Id", "TENANT-SHWS")
-                        .header("X-Idempotency-Key", "demand-approve-1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}")
-                )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("APPROVED"));
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.approvedBy").value("admin"));
 
         mockMvc.perform(post("/api/v1/production/demands/" + id + "/claim")
                         .header("Authorization", "Bearer " + reviewerToken)

@@ -2,12 +2,14 @@ package com.wanshen.platform.web;
 
 import com.wanshen.platform.auth.TokenService;
 import com.wanshen.platform.platform.PlatformProvisioningStore;
+import com.wanshen.platform.platform.PlatformService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.ArrayList;
 
 @Service
 public class RequestContextService {
@@ -44,6 +46,27 @@ public class RequestContextService {
             throw new ApiException(401, "PRODUCTION_401_UNAUTHENTICATED", "会话已注销，请重新登录", "使用登录接口取得新的访问令牌");
         }
         List<String> permissions = claims.permissions() == null ? List.of() : claims.permissions();
+        if (!permissions.contains("*") && platformStore != null) {
+            // Resolve the signed account's roles, never the role selected in the browser.
+            boolean managedAccount = platformStore.list(tenantId, "account").stream()
+                    .anyMatch(account -> claims.sub().equals(account.get("loginName")));
+            if (managedAccount) {
+                var lookup = new RequestContext(tenantId, claims.sub(), List.of("*"), "permission-lookup", null, null);
+                var access = new PlatformService(platformStore).actorPermissions(lookup, claims.sub(), null);
+                @SuppressWarnings("unchecked")
+                List<String> allowed = (List<String>) access.get("permissionCodes");
+                @SuppressWarnings("unchecked")
+                List<String> denied = (List<String>) access.get("deniedPermissionCodes");
+                var resolved = new ArrayList<>(permissions);
+                resolved.removeIf(ProductionPlanningPermissions.ACTIONS::contains);
+                allowed.stream().filter(ProductionPlanningPermissions.ACTIONS::contains).forEach(resolved::add);
+                permissions = ProductionPlanningPermissions.expand(resolved, denied);
+            } else {
+                permissions = ProductionPlanningPermissions.expand(permissions, List.of());
+            }
+        } else {
+            permissions = ProductionPlanningPermissions.expand(permissions, List.of());
+        }
         return new RequestContext(
                 tenantId,
                 claims.sub(),

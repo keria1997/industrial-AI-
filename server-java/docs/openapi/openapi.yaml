@@ -106,6 +106,7 @@ paths:
     get:
       tags: [Readiness]
       summary: 生产服务与租户能力就绪检查
+      description: 返回签名账号在所选租户的即时 permissions。主生产计划菜单 production.mps.view 展开规划操作授权；已管理账号按员工岗位和角色已发布授权重算，明确拒绝优先，* 为最高权限。
       responses: { '200': { description: 就绪结果 } }
   /api/v1/inventory/products:
     servers:
@@ -323,7 +324,8 @@ paths:
   /demands/{id}/approve:
     post:
       tags: [Demand]
-      summary: 审批需求；制单人与审批人分离
+      summary: 审批需求；有授权的制单人可审批本人需求
+      description: 需要 production.demand.approve（主生产计划菜单 production.mps.view 自动授予）或 *。不再按 createdBy 阻断本人审批；仍检查需求状态、If-Match、租户及幂等键，并记录 approvedBy/approvedAt、审计和 Outbox。
       parameters: [ { $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/RemarkInput' } } } }
       responses: { '200': { description: 已审批并路由到生产计划接收池 }, default: { $ref: '#/components/responses/Error' } }
@@ -945,6 +947,7 @@ components:
         code: { type: string, maxLength: 50 }
         sourceType: { type: string }
         sourceSystem: { type: string, maxLength: 30 }
+        sourceDescription: { type: string, description: 普通生产需求来源说明，随需求持久化 }
         sourceId: { type: string }
         sourceLineId: { type: string, maxLength: 100 }
         sourceRevision: { type: integer, minimum: 1 }
@@ -955,6 +958,7 @@ components:
         dueDate: { type: string, format: date }
         priority: { type: integer, minimum: 1, maximum: 100 }
         factoryResourceId: { type: string }
+        inventoryWarehouseId: { type: string, description: 普通需求的成品入库仓库；创建工单时固化 }
         correlationId: { type: string, maxLength: 100 }
         payloadSnapshot: { type: object, additionalProperties: true }
     DemandValidationInput:

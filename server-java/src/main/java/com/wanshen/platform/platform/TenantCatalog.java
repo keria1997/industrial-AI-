@@ -36,6 +36,7 @@ public final class TenantCatalog {
             perm("PERM-SESSION-REVOKE", "platform.session.revoke", "会话撤销", "平台管理", "api", "critical"),
             perm("PERM-AUDIT", "platform.audit.view", "审计日志查看", "平台管理", "page", "sensitive"),
             perm("PERM-AUDIT-EXPORT", "platform.audit.export", "审计日志导出", "平台管理", "export", "critical"),
+            perm("PERM-MPS-MENU", "production.mps.view", "主生产计划", "生产管理", "menu", "sensitive"),
             perm("PERM-MPS", "production.mps.release", "主生产计划下达", "生产管理", "api", "critical"),
             perm("PERM-MRP", "production.mps.calcMrp", "MRP展算", "生产管理", "button", "sensitive"),
             perm("PERM-PROD-VIEW", "production.view", "生产管理查看", "生产管理", "menu", "normal"),
@@ -127,6 +128,7 @@ public final class TenantCatalog {
                 .map(permission -> grant(tenantId, ADMIN_ROLE_ID, (String) permission.get("id"), "allow", null, timestamp))
                 .toList()));
         groups.add(Map.entry("ROLE-MFG", List.of(
+                grant(tenantId, "ROLE-MFG", "PERM-MPS-MENU", "allow", null, timestamp),
                 grant(tenantId, "ROLE-MFG", "PERM-MPS", "allow", null, timestamp),
                 grant(tenantId, "ROLE-MFG", "PERM-MRP", "allow", null, timestamp),
                 grant(tenantId, "ROLE-MFG", "PERM-PROD-DEMAND-REVIEW", "allow", null, timestamp),

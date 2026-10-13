@@ -17,7 +17,7 @@ export type DemandTraceability = {
 export type DemandDto = {
   id: string; code: string; sourceType: string; productId: string; productName?: string; qty: string; uom: string;
   dueDate: string; factoryResourceId: string; status: string; blockReasons: string[]; createdBy: string; version: number;
-  correlationId: string; updatedAt: string;
+  correlationId: string; updatedAt: string; sourceDescription?: string;
   reviewerId?: string; approvedBy?: string; approvedAt?: string;
   handlerRole?: string; handlerId?: string; assignedAt?: string; acceptedAt?: string; mrpTaskId?: string;
   source?: DemandTraceability;
@@ -72,6 +72,7 @@ export type PlanningTaskAcceptedDto = {
 };
 
 export const productionOperationsApi = {
+  readiness: (context: ApiContext) => apiRequest<{ permissions: string[] }>("/api/v1/production/readiness", context),
   dashboard: (context: ApiContext) => apiRequest<DashboardDto>("/api/v1/production/dashboard/kpis", context),
   listDemands: (context: ApiContext) => apiRequest<{ items: DemandDto[]; total: number }>("/api/v1/production/demands?page=1&pageSize=200", context),
   validateDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/validate`, context, {

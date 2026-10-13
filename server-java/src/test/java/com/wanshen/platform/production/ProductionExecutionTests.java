@@ -35,21 +35,24 @@ class ProductionExecutionTests {
     }
 
     static String runChain(ProductionStore store, FulfillmentStore inventory, String tenant) {
+        return runChain(store, inventory, tenant, null);
+    }
+
+    static String runChain(ProductionStore store, FulfillmentStore inventory, String tenant, JsonNode sourceDemand) {
         var service = service(store, inventory);
         var writer = context(tenant, "writer", "bom", null);
         service.saveBom(writer, json("""
                 {"productId":"FG1","routingSnapshotId":"route-1",
                   "lines":[{"materialId":"RM1","qtyPer":"2","warehouseId":"RM-WH","uom":"PCS"}]}
                 """));
-        JsonNode demand = service.createDemand(context(tenant, "writer", "demand", null), json("""
+        JsonNode demand = sourceDemand != null ? sourceDemand : service.createDemand(context(tenant, "writer", "demand", null), json("""
                 {"productId":"FG1","sourceType":"MANUAL","qty":"10","uom":"PCS","dueDate":"2026-11-30",
                   "factoryResourceId":"FAC1","inventoryWarehouseId":"FG-WH"}
                 """)).body();
         String demandId = demand.path("id").asText();
         service.validateDemand(context(tenant, "writer", "validate", 1), demandId, json("{}"));
-        assertThatThrownBy(() -> service.approveDemand(context(tenant, "writer", "self", 2), demandId, json("{}")))
-                .isInstanceOf(ApiException.class);
-        service.approveDemand(context(tenant, "reviewer", "approve", 2), demandId, json("{}"));
+        service.approveDemand(context(tenant, "writer", "self", 2), demandId, json("{}"));
+        assertThat(store.demand(tenant, demandId).orElseThrow().path("approvedBy").asText()).isEqualTo("writer");
         service.claimDemand(context(tenant, "reviewer", "claim", 3), demandId);
         ObjectNode planning = json("{}"); planning.putArray("demandIds").add(demandId);
         JsonNode mrp = service.startPlanningTask(context(tenant, "reviewer", "mrp", null), "MRP", planning).body();

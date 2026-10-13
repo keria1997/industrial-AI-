@@ -45,6 +45,7 @@ import {
   savePlatformState,
 } from './platformSeed';
 import EmployeeAccountManagement from './EmployeeAccountManagement';
+import { platformApi } from '../api/platform/client';
 
 type Props = {
   currentTenant?: { id?: string; code?: string; name?: string };
@@ -483,6 +484,10 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('EMP-001');
   const [selectedRoleId, setSelectedRoleId] = useState('ROLE-ADMIN');
   const [permissionDraft, setPermissionDraft] = useState<Record<string, 'allow' | 'deny' | 'unset'>>({});
+  const [permissionLoaded, setPermissionLoaded] = useState(false);
+  const [permissionSaving, setPermissionSaving] = useState(false);
+  const [permissionError, setPermissionError] = useState('');
+  const [roleVersions, setRoleVersions] = useState<Record<string, number>>({});
   const [configMode, setConfigMode] = useState('dictionary');
   const [auditResult, setAuditResult] = useState('all');
   const [auditDetail, setAuditDetail] = useState<AuditRecord | null>(null);
@@ -497,6 +502,26 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     setState(migratePlatformState(loadPlatformState(tenantIdentity)));
     setSelectedOrgId('ORG-ROOT');
   }, [storageKey]);
+  useEffect(() => {
+    let active = true;
+    setPermissionLoaded(false);
+    setPermissionError('');
+    if (!currentUser?.accessToken) {
+      setPermissionError('请登录后管理角色权限');
+      return;
+    }
+    platformApi.getSnapshot({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken })
+      .then(snapshot => {
+        if (!active) return;
+        setState(prev => ({ ...prev, roles: snapshot.roles, permissions: snapshot.permissions, roleGrants: snapshot.roleGrants }));
+        setRoleVersions(Object.fromEntries(snapshot.roles.map(role => [role.id, role.version])));
+        setPermissionLoaded(true);
+      })
+      .catch(error => {
+        if (active) setPermissionError(error instanceof Error ? error.message : '角色权限加载失败');
+      });
+    return () => { active = false; };
+  }, [storageKey, currentUser?.accessToken]);
   useEffect(() => { savePlatformState(state); }, [state, storageKey]);
   useEffect(() => {
     const closeOnOutsideClick = (event: MouseEvent) => {
@@ -911,10 +936,34 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   const renderAccess = () => {
     const grouped = Object.entries(state.permissions.reduce((acc: Record<string, typeof state.permissions>, permission) => { (acc[permission.module] ||= []).push(permission); return acc; }, {})) as Array<[string, typeof state.permissions]>;
     const setEffect = (permissionId: string, effect: 'allow' | 'deny' | 'unset') => setPermissionDraft((prev) => ({ ...prev, [permissionId]: effect }));
-    const savePermissions = () => setImpact({ eyebrow: '发布确认', title: `发布“${selectedRole.name}”权限变更？`, description: '发布后，已分配该角色的账号会在短时间内按新权限重新计算。', impacts: ['拒绝权限优先于允许权限', '受影响账号的旧权限缓存会失效', '本次修改会写入审计日志'], confirmLabel: '发布权限变更', onConfirm: () => commit((prev) => ({ ...prev, roleGrants: [...prev.roleGrants.filter((item) => item.roleId !== selectedRoleId), ...Object.entries(permissionDraft).filter(([, effect]) => effect !== 'unset').map(([permissionId, effect]) => ({ roleId: selectedRoleId, permissionId, effect: effect as 'allow' | 'deny' }))] }), '角色权限已发布', '发布角色权限', selectedRole.name) });
+    const publishPermissions = async () => {
+      if (!permissionLoaded || permissionSaving || !currentUser?.accessToken) return;
+      const roleId = selectedRoleId;
+      const version = roleVersions[roleId];
+      if (!version) { toast('请先保存角色再发布权限', 'error'); return; }
+      setPermissionSaving(true);
+      try {
+        const grants = Object.entries(permissionDraft).filter(([, effect]) => effect !== 'unset')
+          .map(([permissionId, effect]) => ({ permissionId, effect: effect as 'allow' | 'deny' }));
+        const saved = await platformApi.replaceRoleGrants({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, roleId, grants, version);
+        setState(prev => ({ ...prev, roleGrants: [...prev.roleGrants.filter(item => item.roleId !== roleId), ...saved] }));
+        setRoleVersions(prev => ({ ...prev, [roleId]: version + 1 }));
+        setPermissionError('');
+        toast('角色权限已发布');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '权限发布失败';
+        setPermissionError(message);
+        toast(message, 'error');
+      } finally { setPermissionSaving(false); }
+    };
+    const savePermissions = () => setImpact({ eyebrow: '发布确认', title: `发布“${selectedRole.name}”权限变更？`, description: '发布后，已分配该角色的账号将按新授权执行主生产计划操作。', impacts: ['主生产计划菜单允许制单人审批本人生产需求', '拒绝权限优先于允许权限', '本次修改会写入审计日志'], confirmLabel: '发布权限变更', onConfirm: () => { void publishPermissions(); } });
     return (
       <div data-testid="platform-view-access">
-        <PageHeader eyebrow="人员与权限" title="角色与权限" description="分别设置允许与拒绝；拒绝始终优先。修改发布前只保存在当前草稿中。" actions={<><Button icon={BadgeCheck} onClick={() => setImpact({ eyebrow: '权限草稿预览', title: `“${selectedRole.name}”权限摘要`, description: '以下是当前草稿结果，发布后才会应用到账号。', impacts: [`允许 ${Object.values(permissionDraft).filter((item) => item === 'allow').length} 项`, `拒绝 ${Object.values(permissionDraft).filter((item) => item === 'deny').length} 项`, `未设置 ${Object.values(permissionDraft).filter((item) => item === 'unset').length} 项`], confirmLabel: '关闭预览', hideSecondary: true, onConfirm: () => {} })}>预览草稿</Button><Button disabled={!permissionDirty} title={!permissionDirty ? '当前没有待发布修改' : undefined} variant="primary" icon={Save} onClick={savePermissions}>发布变更</Button></>} />
+        <PageHeader eyebrow="人员与权限" title="角色与权限" description="分别设置允许与拒绝；拒绝始终优先。修改发布前只保存在当前草稿中。" actions={<>
+          <Button icon={BadgeCheck} onClick={() => setImpact({ eyebrow: '权限草稿预览', title: `“${selectedRole.name}”权限摘要`, description: '以下是当前草稿结果，发布后才会应用到账号。', impacts: [`允许 ${Object.values(permissionDraft).filter(item => item === 'allow').length} 项`, `拒绝 ${Object.values(permissionDraft).filter(item => item === 'deny').length} 项`, `未设置 ${Object.values(permissionDraft).filter(item => item === 'unset').length} 项`], confirmLabel: '关闭预览', hideSecondary: true, onConfirm: () => {} })}>预览草稿</Button>
+          <Button disabled={!permissionDirty || !permissionLoaded || permissionSaving} title={!permissionLoaded ? '请等待角色权限加载完成' : !permissionDirty ? '当前没有待发布修改' : undefined} variant="primary" icon={Save} onClick={savePermissions}>{permissionSaving ? '发布中' : '发布变更'}</Button>
+        </>} />
+        {permissionError && <p role="alert" className="mb-4 text-[12px] text-rose-700">{permissionError}</p>}
         <div className="platform-access-layout grid min-h-[670px] gap-5">
           <Panel title="角色" actions={<Button variant="quiet" icon={Plus} onClick={openRoleEditor}>新建</Button>}>
             <div className="custom-scrollbar max-h-[590px] overflow-y-auto p-2">{state.roles.map((role) => <button key={role.id} aria-pressed={selectedRoleId === role.id} onClick={() => selectRoleSafely(role.id)} className={`mb-1 min-h-12 w-full rounded-lg px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${selectedRoleId === role.id ? 'bg-[#eaf2ff]' : 'hover:bg-slate-50'}`}><div className={`text-[12px] font-black ${selectedRoleId === role.id ? 'text-[#174f9f]' : 'text-slate-800'}`}>{role.name}</div><div className="mt-1 truncate text-[10px] text-slate-400">{role.description || role.code}</div></button>)}</div>

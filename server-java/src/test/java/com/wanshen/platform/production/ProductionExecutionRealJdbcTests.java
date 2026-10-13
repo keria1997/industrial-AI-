@@ -79,4 +79,21 @@ class ProductionExecutionRealJdbcTests {
             }
         }
     }
+
+    @Test void salesShortageFullChainSurvivesReload() {
+        String tenant = "production-sales-jdbc-" + UUID.randomUUID();
+        String orderId;
+        try (var data = dataSource(); var production = new JdbcProductionStore(data, MAPPER);
+             var inventory = new JdbcFulfillmentStore(data, MAPPER)) {
+            orderId = ProductionSalesChainTests.salesChain(production, inventory, tenant);
+        }
+        try (var data = dataSource(); var inventory = new JdbcFulfillmentStore(data, MAPPER)) {
+            inventory.transaction(tenant, repository -> {
+                assertThat(repository.order(tenant, orderId).orElseThrow().path("overallStatus").asText()).isEqualTo("SHIPPED");
+                assertThat(repository.transactions(tenant)).hasSize(4);
+                assertThat(repository.orders("OTHER")).isEmpty();
+                return null;
+            });
+        }
+    }
 }

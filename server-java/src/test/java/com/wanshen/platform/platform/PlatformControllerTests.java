@@ -42,7 +42,7 @@ class PlatformControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenant.id").value("TENANT-SHWS"))
                 .andExpect(jsonPath("$.orgUnits", hasSize(2)))
-                .andExpect(jsonPath("$.permissions", hasSize(63)));
+                .andExpect(jsonPath("$.permissions", hasSize(64)));
 
         mockMvc.perform(get("/api/v1/platform/org-units").header("Authorization", "Bearer " + token()))
                 .andExpect(status().isOk())

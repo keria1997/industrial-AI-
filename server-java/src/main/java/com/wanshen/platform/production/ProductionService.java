@@ -45,6 +45,7 @@ public class ProductionService {
         return Map.of(
                 "status", "READY", "module", "production", "apiVersion", "v1",
                 "tenantId", context.tenantId(),
+                "permissions", context.permissions(),
                 "checks", Map.of("repository", "UP", "eventOutbox", "UP", "platformCapability", "ASSUMED_BY_GATEWAY"),
                 "timestamp", now()
         );
@@ -127,7 +128,7 @@ public class ProductionService {
                     .put("id", uuid()).put("tenantId", context.tenantId())
                     .put("code", text(input, "code", "DM-" + codeSuffix()))
                     .put("sourceType", text(input, "sourceType")).put("productId", text(input, "productId"));
-            copyIfPresent(demand, input, "productName", "inventoryWarehouseId");
+            copyIfPresent(demand, input, "productName", "inventoryWarehouseId", "sourceDescription");
             demand.put("qty", text(input, "qty")).put("uom", text(input, "uom"))
                     .put("dueDate", text(input, "dueDate"))
                     .put("priority", input.path("priority").asInt(50))
@@ -257,9 +258,6 @@ public class ProductionService {
             JsonNode demand = require(store.demand(context.tenantId(), id), "需求");
             requireStatus(demand, "需求", "PENDING_REVIEW");
             requireVersion(context, version(demand));
-            if (text(demand, "createdBy").equals(context.actorId())) {
-                throw new ApiException(403, "PRODUCTION_403_PERMISSION_DENIED", "需求制单人不能审批本人创建的需求", "请由另一名具备审批权限的人员操作");
-            }
             ObjectNode result = nextVersion(demand).put("status", "APPROVED").put("approvedBy", context.actorId())
                     .put("approvedAt", now()).put("handlerRole", "PRODUCTION_PLANNER").put("assignedAt", now());
             result.remove("handlerId");

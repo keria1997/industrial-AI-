@@ -4115,9 +4115,11 @@ const RoutingTimeline = ({ operations, isEditable, onEdit, onDelete }) => {
 
 // --- Modals ---
 const Prod_MpsModal = ({ defaultPriority, defaultDemandSource = '普通生产', bomData, onClose, onSave }) => {
-    const [id, setId] = useState(`MPS-${Date.now().toString().slice(-5)}`);
+    const [id] = useState(() => `MPS-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`);
     const [demandSource, setDemandSource] = useState(defaultDemandSource);
-    const [source, setSource] = useState(defaultDemandSource === '订单加急' ? 'VIP客户加急补货' : `销售订单 (SO-${Math.floor(Math.random() * 1000)})`);
+    const [source, setSource] = useState(defaultDemandSource === '订单加急' ? '紧急生产计划' : '常规生产计划');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
     const [product, setProduct] = useState(bomData.find(b => b.type === '成品')?.name || '');
     const [priority, setPriority] = useState(defaultPriority);
     const [qty, setQty] = useState(200);
@@ -4135,7 +4137,7 @@ const Prod_MpsModal = ({ defaultPriority, defaultDemandSource = '普通生产', 
                 <div className="p-6 space-y-5">
                     <div className="grid grid-cols-2 gap-4">
                         <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">MPS 计划编号 *</label><input type="text" value={id} disabled className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-mono bg-slate-50 text-slate-400" /></div>
-                        <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">需求来源类型 *</label><select value={demandSource} onChange={e=>{setDemandSource(e.target.value); if(e.target.value==='订单加急'){setSource('VIP客户加急补货');setPriority('特急VIP');} else if(e.target.value==='销售缺货'){setSource(`销售订单 (SO-${Math.floor(Math.random()*1000)})`);setPriority('紧急');} else {setSource('常规生产计划');setPriority('普通');}}} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 bg-white font-bold"><option value="普通生产">普通生产</option><option value="销售缺货">销售缺货</option><option value="订单加急">订单加急</option></select></div>
+                        <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">需求来源类型 *</label><select value={demandSource} onChange={e=>{setDemandSource(e.target.value); setSource(e.target.value === '订单加急' ? '紧急生产计划' : '常规生产计划'); setPriority(e.target.value === '订单加急' ? '特急VIP' : '普通');}} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 bg-white font-bold"><option value="普通生产">普通生产</option><option value="订单加急">订单加急</option></select></div>
                     </div>
                     <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">来源描述</label><input type="text" value={source} onChange={e=>setSource(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" /></div>
                     <div>
@@ -4151,13 +4153,22 @@ const Prod_MpsModal = ({ defaultPriority, defaultDemandSource = '普通生产', 
                                 <option value="普通">普通</option><option value="紧急" className="text-orange-600">紧急</option><option value="特急VIP" className="text-rose-600">特急VIP</option>
                             </select>
                         </div>
-                        <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">计划数量 *</label><input type="number" min="1" value={qty} onChange={e=>setQty(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 font-mono" /></div>
+                        <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">计划数量 *</label><input type="number" min="0.000001" step="any" value={qty} onChange={e=>setQty(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 font-mono" /></div>
                         <div><label className="block text-[12px] font-bold text-slate-500 mb-1.5">交期日期 *</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 font-mono cursor-pointer" /></div>
                     </div>
+                    {error && <p role="alert" className="text-[12px] text-rose-700">{error}</p>}
                 </div>
                 <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
                     <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl">取消</button>
-                    <button onClick={() => onSave({id, demandSource, source, product, priority, quantity: parseInt(qty), date, status: '待展算'})} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5"><Check size={16}/> 确认保存</button>
+                    <button disabled={saving} onClick={async () => {
+                        if (!product || !date || !/^\d+(\.\d{1,6})?$/.test(String(qty)) || Number(qty) <= 0) { setError('请选择产品、交期并填写大于零的数量（最多六位小数）'); return; }
+                        setSaving(true); setError('');
+                        try {
+                            const saved = await onSave({id, demandSource, source, product, priority, quantity: String(qty), date, status: '待展算'});
+                            if (saved) onClose();
+                            else setError('保存未完成，请核对业务提示后重试');
+                        } finally { setSaving(false); }
+                    }} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5 disabled:opacity-50"><Check size={16}/> {saving ? '保存中' : '确认保存'}</button>
                 </div>
             </div>
         </div>
@@ -4619,7 +4630,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                                                     <button onClick={() => onViewDemandSource?.(r.rawDemand)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看来源"><Eye size={16}/></button>
                                                     {r.status === '草稿' && <button onClick={() => onConfirmDemandToMps?.(r.id)} className="text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 p-1.5 rounded-lg transition-colors shadow-sm" title="确认需求，进入待展算"><CheckCircle2 size={16}/></button>}
                                                     {canValidate && <button onClick={() => onValidateDemand?.(r.id)} disabled={!canValidateDemand} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canValidateDemand ? '需求校验' : '无需求校验权限'}><CheckCircle2 size={16}/></button>}
-                                                    {canReview && <button onClick={() => onApproveDemand?.(r.id)} disabled={!canApproveDemandAction} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canApproveDemandAction ? '异人审批' : '无需求审批权限'}><ShieldCheck size={16}/></button>}
+                                                    {canReview && <button onClick={() => onApproveDemand?.(r.id)} disabled={!canApproveDemandAction} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canApproveDemandAction ? '审批需求' : '无需求审批权限'}><ShieldCheck size={16}/></button>}
                                                     {canClaim && <button onClick={() => onClaimDemand?.(r.id)} disabled={!canClaimDemand} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canClaimDemand ? '计划员接收需求' : '无需求接收权限'}><Inbox size={16}/></button>}
                                                     {canRunMrp && <button onClick={() => onCreateMpsFromDemand?.(r.id)} disabled={!canCalcMrp} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canCalcMrp ? '接收后推送 MRP 展算' : '无 MRP 展算权限'}><PlayCircle size={16}/></button>}
                                                     <button onClick={() => onHoldDemand?.(r.id)} disabled={!r.demandId} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="暂缓"><Clock size={16}/></button>
@@ -4640,7 +4651,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                     </table>
                 </div>
             </div>
-            {isModalOpen && <Prod_MpsModal defaultPriority={defaultPriority} defaultDemandSource={defaultDemandSource} bomData={bomData} onClose={() => setIsModalOpen(false)} onSave={(data) => { onAddMps(data); setIsModalOpen(false); }} />}
+            {isModalOpen && <Prod_MpsModal defaultPriority={defaultPriority} defaultDemandSource={defaultDemandSource} bomData={bomData} onClose={() => setIsModalOpen(false)} onSave={onAddMps} />}
             {recordModal && <Prod_RecordModal type="mps" mode={recordModal.mode} record={recordModal.record} onClose={() => setRecordModal(null)} onSubmit={(draft) => { onUpdateMps(draft); setRecordModal(null); }} />}
             {deleteTarget && <Sales_ConfirmModal title="删除主生产计划" desc={`确定删除 ${deleteTarget.id} 吗？删除后该演示数据将从当前列表移除。`} confirmText="删除" tone="danger" onCancel={() => setDeleteTarget(null)} onConfirm={() => { onDeleteMps(deleteTarget.id); setDeleteTarget(null); }} />}
         </div>
@@ -5745,7 +5756,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       const sourceTraceId = trace?.traceId || '';
       const sourceLabel = demand.sourceType === 'SALES_ORDER_SHORTAGE'
         ? (sourceSalesOrder ? `销售订单 ${sourceSalesOrder.slice(0, 8)}` : '销售订单 / 生产服务')
-        : `${demand.sourceType} / 生产服务`;
+        : (demand.sourceDescription || '常规生产计划');
       return {
       id: demand.code,
       apiId: demand.id,
@@ -6142,7 +6153,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       if (action === 'runMrp') {
           const target = productionDemands.find(item => item.apiId === businessFlow?.productionDemandId) || productionDemands.find(item => item.apiStatus === 'APPROVED');
           if (!target || target.apiStatus !== 'APPROVED') {
-              showToast('请先在 MPS 页面完成正式校验与异人审批，再执行 MPS/MRP', 'warning');
+              showToast('请先在 MPS 页面完成需求校验与审批，再执行 MPS/MRP', 'warning');
               setActiveTab('mps');
               return;
           }
@@ -6251,19 +6262,20 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       showToast(`需求 [${demandId}] 已确认，生成 MPS [${newMpsId}] 进入待展算`, "success");
   };
   const handleAddMps = async (data) => {
-      if (!formalCtx) { showToast('请先登录', 'error'); return; }
+      if (!formalCtx) { showToast('请先登录', 'error'); return false; }
       try {
           const productId = data.product.split(' - ')[0].trim();
           const inventory = loadInventoryMasterData(window.localStorage, currentTenant?.id);
           const warehouse = inventory.warehouses.find(item => item.code === 'WH-FG-01' || item.id === 'WH-FG-01');
           const demand = await productionOperationsApi.createDemand(formalCtx, {
-              code: data.id.replace(/^MPS-/, 'DM-'), sourceType: 'MANUAL', productId, productName: data.product,
+              code: data.id.replace(/^MPS-/, 'DM-'), sourceType: 'MANUAL', sourceDescription: data.source, productId, productName: data.product,
               qty: String(data.quantity), uom: 'PCS', dueDate: data.date, factoryResourceId: 'FAC-SH-01',
               inventoryWarehouseId: warehouse?.id || 'WH-FG-01', priority: data.priority === '普通' ? 50 : 80,
           }, `manual-production:${currentTenant.id}:${data.id}`);
           setProductionDemands(prev => [mapFormalDemandRow(demand), ...prev.filter(item => item.apiId !== demand.id)]);
           showToast(`需求 ${demand.code} 已保存，请先校验和审批`, 'success');
-      } catch (error) { showToast(error instanceof Error ? `计划保存失败：${error.message}` : '计划保存失败', 'error'); }
+          return true;
+      } catch (error) { showToast(error instanceof Error ? `计划保存失败：${error.message}` : '计划保存失败', 'error'); return false; }
   };
   const handleUpdateMps = (data) => {
       if (mps.find(item => item.id === data.id)?.formalMps) { showToast('已展算计划不能直接修改，请通过来源需求调整', 'warning'); return; }
@@ -6674,9 +6686,8 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	      if (kind === 'transfer') handleTransferLine();
 	  };
 
-	  const permissionCodes = currentUser?.permissions || [];
-	  const isPermissionAdmin = ['超级管理员', '系统管理员', '管理员'].includes(currentUser?.role);
-	  const hasPermission = (code) => isPermissionAdmin || permissionCodes.includes(code);
+	  const permissionCodes = formalSnapshot?.permissions || currentUser?.permissions || [];
+	  const hasPermission = (code) => permissionCodes.includes('*') || permissionCodes.includes(code);
 
 	  return (
       <div className="w-full h-full font-sans flex flex-col relative bg-[#F5F7FA] selection:bg-blue-100">

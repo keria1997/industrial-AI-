@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { productionOperationsApi, type WorkOrderDto, type InspectionDto, type CompletionDto, type CloseRequestDto } from "../../../api/production/operations";
 import type { ApiContext } from "../../../api/client";
 
-type Snapshot = { orders: WorkOrderDto[]; inspections: InspectionDto[]; completions: CompletionDto[]; closes: CloseRequestDto[] };
+type Snapshot = { orders: WorkOrderDto[]; inspections: InspectionDto[]; completions: CompletionDto[]; closes: CloseRequestDto[]; permissions: string[] };
 export function useFormalProduction(context: ApiContext | null) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -10,12 +10,13 @@ export function useFormalProduction(context: ApiContext | null) {
   const refresh = useCallback(async () => {
     if (!context) return;
     const revision = generation.current;
-    const [orders, inspections, completions, closes] = await Promise.all([
+    const [orders, inspections, completions, closes, access] = await Promise.all([
       productionOperationsApi.listWorkOrders(context), productionOperationsApi.listInspections(context),
       productionOperationsApi.listCompletions(context), productionOperationsApi.listCloses(context),
+      productionOperationsApi.readiness(context),
     ]);
     if (revision !== generation.current) return;
-    setSnapshot({ orders: orders.items, inspections, completions, closes });
+    setSnapshot({ orders: orders.items, inspections, completions, closes, permissions: access.permissions });
     setError("");
   }, [context?.tenantId, context?.accessToken]);
   useEffect(() => {

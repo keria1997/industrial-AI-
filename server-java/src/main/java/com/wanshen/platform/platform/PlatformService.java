@@ -51,12 +51,12 @@ public class PlatformService {
                     .filter(item -> account.equals(item.get("loginName"))).findFirst();
             if (accountDoc.isPresent() && "enabled".equals(accountDoc.get().get("status"))) {
                 String employeeId = text(accountDoc.get(), "employeeId");
-                boolean employeeActive = store.list(tenantId, "employee").stream().anyMatch(item ->
-                        employeeId.equals(item.get("id")) && "active".equals(item.get("status")));
-                if (employeeActive) {
+                Optional<Map<String, Object>> employee = store.list(tenantId, "employee").stream().filter(item ->
+                        employeeId.equals(item.get("id")) && "active".equals(item.get("status"))).findFirst();
+                if (employee.isPresent()) {
                     roleIds.addAll(strings(accountDoc.get(), "directRoleIds"));
                     store.list(tenantId, "position").stream()
-                            .filter(position -> employeeId.equals(position.get("id")) && enabled(position))
+                            .filter(position -> text(employee.get(), "primaryPositionId").equals(position.get("id")) && enabled(position))
                             .findFirst().ifPresent(position -> roleIds.addAll(strings(position, "defaultRoleIds")));
                 }
             }
@@ -162,6 +162,7 @@ public class PlatformService {
         return store.transaction(() -> {
             Map<String, Object> role = store.list(context.tenantId(), "role").stream()
                     .filter(item -> roleId.equals(item.get("id"))).findFirst().orElseThrow(() -> notFound("角色"));
+            requireVersion(context, ((Number) role.get("version")).intValue());
             List<Map<String, Object>> existing = roleGrants(context.tenantId(), roleId);
             String timestamp = LocalDateTime.now().format(AUDIT_TIME);
             List<Map<String, Object>> grants = input.stream().map(item -> {
@@ -177,6 +178,10 @@ public class PlatformService {
             Map<String, Object> document = new LinkedHashMap<>();
             document.put("id", roleId); document.put("tenantId", context.tenantId()); document.put("grants", grants);
             store.save("roleGrant", roleId, document);
+            var nextRole = new LinkedHashMap<>(role);
+            nextRole.put("version", ((Number) role.get("version")).intValue() + 1);
+            nextRole.put("updatedAt", timestamp);
+            store.save("role", roleId, nextRole);
             audit(context, "修改角色授权", target(role), timestamp);
             return grants;
         });
