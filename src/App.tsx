@@ -2658,7 +2658,7 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   const orderMenuRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const savedLinkedOrder = businessFlow ? orders.find(row => row.id === businessFlow.orderId || row.localOrderId === businessFlow.orderId) : null;
-  const linkedOrder = businessFlow && !savedLinkedOrder?.aggregateId ? {
+  const linkedOrder = businessFlow?.orderId?.trim() && !savedLinkedOrder?.aggregateId ? {
       ...savedLinkedOrder,
       id: businessFlow.orderId,
       client: savedLinkedOrder?.client ?? businessFlow.customer,
