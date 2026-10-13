@@ -12,6 +12,8 @@
 
 本机发布沿用现有登录配置。公网正式上线必须先开通真实租户账号并设置 `DEMO_AUTH_ENABLED=false`，再完成目标服务器、HTTPS、服务托管及客户库存来源联调；不能将本机端口可访问认定为整个平台已具备全部上线条件。
 
+发布后的只读验收使用 `deploy/verify-local-inventory.mjs`。通过 `PLAYWRIGHT_MODULE` 和 `PLAYWRIGHT_CHROME_PATH` 指定已有 Playwright/Chrome，通过 `RELEASE_VERIFY_ACCOUNT`、`RELEASE_VERIFY_PASSWORD`、`RELEASE_VERIFY_TENANT` 指定已有账号和租户。脚本校验 5175/8081 响应、数据库数量、仓库编码/ID、仓库详情、现存量及已有任务/出库来源；只发起登录和查询，不创建订单、仓库或库存事件。截图和证据保存在 `deploy/artifacts/local-runtime/verification/`，不将账号密钥纳入记录。
+
 ## 1. 目录结构
 
 ```

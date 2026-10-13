@@ -94,7 +94,7 @@ async function waitBackend(child) {
     if (child.exitCode !== null) throw new Error(`Backend exited with code ${child.exitCode}`);
     try {
       const response = await fetch('http://127.0.0.1:8081/healthz', { signal: AbortSignal.timeout(2000) });
-      if (response.ok() && (await response.json()).status === 'ok') return;
+      if (response.ok && (await response.json()).status === 'ok') return;
     } catch {}
     await delay(1000);
   }
@@ -122,11 +122,11 @@ if (listeners(5175).length) throw new Error('Frontend did not stop within 30 sec
 run('nginx', ['-p', `${runtime}/`, '-c', 'nginx.conf']);
 const frontend = await fetch('http://127.0.0.1:5175/', { signal: AbortSignal.timeout(5000) });
 const html = await frontend.text();
-if (!frontend.ok() || html.includes('/@vite/client') || !html.includes('/assets/')) {
+if (!frontend.ok || html.includes('/@vite/client') || !html.includes('/assets/')) {
   throw new Error('Built frontend health check failed');
 }
 const proxied = await fetch('http://127.0.0.1:5175/healthz', { signal: AbortSignal.timeout(5000) });
-if (!proxied.ok()) throw new Error('Frontend-to-backend health check failed');
+if (!proxied.ok) throw new Error('Frontend-to-backend health check failed');
 const evidence = { at: new Date().toISOString(), release, previous, backup,
   javaPid: backend.pid, frontend: 'http://127.0.0.1:5175', backend: 'http://127.0.0.1:8081',
   database: db.pathname.slice(1), storage: 'PostgreSQL', demoAuthEnabled: env.DEMO_AUTH_ENABLED === 'true',

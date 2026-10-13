@@ -44,6 +44,8 @@ fi
 if [[ "${SKIP_TEST:-0}" != "1" ]]; then
   echo "==> 执行类型检查与 Java 测试"
   npm run typecheck
+  npm run test:frontend
+  npm run test:routes:java
   mvn -f server-java/pom.xml -o test
 fi
 
@@ -81,6 +83,8 @@ cp "$JAVA_JAR" "$STAGING_PKG_DIR/app/server-java/industrial-ai-api-0.1.0.jar"
 # 部署脚本
 cp "$REPO_ROOT/deploy/install-ubuntu.sh" "$STAGING_PKG_DIR/deploy/install-ubuntu.sh"
 cp "$REPO_ROOT/deploy/deploy.sh" "$STAGING_PKG_DIR/deploy/deploy.sh"
+cp "$REPO_ROOT/deploy/run-local-release.mjs" "$STAGING_PKG_DIR/deploy/run-local-release.mjs"
+cp "$REPO_ROOT/deploy/verify-local-inventory.mjs" "$STAGING_PKG_DIR/deploy/verify-local-inventory.mjs"
 cp "$REPO_ROOT/deploy/.env.production.example" "$STAGING_PKG_DIR/deploy/.env.production.example"
 cp -R "$REPO_ROOT/deploy/nginx" "$STAGING_PKG_DIR/deploy/nginx"
 cp -R "$REPO_ROOT/deploy/systemd" "$STAGING_PKG_DIR/deploy/systemd"
