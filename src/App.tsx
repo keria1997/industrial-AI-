@@ -49,6 +49,7 @@ import {
 import { SalesShipmentOrderEditModal } from './features/sales/components/SalesShipmentOrderEditModal';
 import { confirmSalesOrderContents, mergeFormalSalesOrders, mergePersistedSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
 import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
+import { createQuickSalesOrder } from './features/sales/model/quickSalesOrder';
 import {
   completeSalesOutbound,
   createInventoryTabUrl,
@@ -1685,211 +1686,6 @@ const Sales_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
 };
 
 // --- 子组件区 ---
-const Sales_QuickOrderModal = ({ onClose, onCreate }) => {
-  const [hasProduct, setHasProduct] = useState(false);
-  const [client, setClient] = useState('');
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
-  const [deliveryDate, setDeliveryDate] = useState('');
-  const [productName, setProductName] = useState('');
-  const [spec, setSpec] = useState('');
-  const [unit, setUnit] = useState('');
-  const [quantity, setQuantity] = useState(0);
-  const [unitPrice, setUnitPrice] = useState(0);
-  const [discountRate, setDiscountRate] = useState(100);
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [remark, setRemark] = useState('');
-  const [error, setError] = useState('');
-  const availableStock = resolveOrderAvailQty({ productName, productId: '' });
-  const subtotal = Math.max(0, Number(quantity) * Number(unitPrice));
-  const total = Math.max(0, subtotal * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
-  const shortage = Math.max(0, Number(quantity) - availableStock);
-
-  const handleCreate = () => {
-      if (!client.trim() || !hasProduct || !productName.trim() || Number(quantity) <= 0 || Number(unitPrice) <= 0) {
-          setError('请完整填写客户、产品、数量和单价后再创建订单');
-          return;
-      }
-      const deliveryDateError = validateShipmentDeliveryDate(orderDate, deliveryDate);
-      if (deliveryDateError) {
-          setError(deliveryDateError);
-          return;
-      }
-      onCreate({
-          id: `SO-${Date.now().toString().slice(-8)}`,
-          client: client.trim(),
-          salesman: '上海万申',
-          product: `${productName.trim()} / ${spec.trim()} × ${quantity} ${unit}`,
-          productName: productName.trim(),
-          spec: spec.trim(),
-          unit,
-          qty: Number(quantity),
-          unitPrice: Number(unitPrice),
-          discountRate: Number(discountRate),
-          discountAmount: Number(discountAmount),
-          availableStock,
-          shortage,
-          remark,
-          amount: sales_formatMoney(total),
-          receivable: '待生成',
-          date: orderDate,
-          deliveryDate,
-          outStatus: '未发货',
-          status: '待发货',
-          createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
-          updatedAt: new Date().toLocaleString('zh-CN', { hour12: false })
-      });
-  };
-
-  return (
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
-      <div className="bg-white rounded-xl w-[1100px] max-w-full max-h-[95vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
-                  <div className="flex items-center text-[16px] font-bold text-slate-800">
-                      <ShoppingCart size={18} className="text-blue-600 mr-2" /> 快速创建订单
-                  </div>
-                  <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-                      <X size={20} />
-                  </button>
-              </div>
-              
-              <div className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar">
-                  <div>
-                      <div className="flex items-center mb-5">
-                          <div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div>
-                          <span className="text-[15px] font-bold text-slate-800">基本信息</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-                          <div>
-                              <label className="block text-[13px] text-slate-600 mb-2">客户 <span className="text-rose-500">*</span></label>
-                              <div className="relative">
-                                  <input type="text" value={client} onChange={(e) => setClient(e.target.value)} placeholder="搜索选择客户" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors" />
-                                  <Search size={14} className="absolute right-3 top-3 text-slate-400" />
-                              </div>
-                          </div>
-                          <div>
-                              <label className="block text-[13px] text-slate-600 mb-2">销售人员</label>
-                              <div className="relative">
-                                  <select className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors appearance-none bg-white">
-                                      <option>上海万申</option>
-                                  </select>
-                                  <ChevronDown size={14} className="absolute right-3 top-3 text-slate-400 pointer-events-none" />
-                              </div>
-                          </div>
-                          <div>
-                              <label className="block text-[13px] text-slate-600 mb-2">订单日期 <span className="text-rose-500">*</span></label>
-                              <div className="relative">
-                                  <input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors text-slate-700" />
-                              </div>
-                          </div>
-                          <div>
-                              <label className="block text-[13px] text-slate-600 mb-2">交期 <span className="text-rose-500">*</span></label>
-                              <div className="relative">
-                                  <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors text-slate-700" />
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-
-                  <div>
-                      <div className="flex items-center justify-between mb-5">
-                          <div className="flex items-center">
-                              <div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div>
-                              <span className="text-[15px] font-bold text-slate-800">产品明细</span>
-                          </div>
-                          <button onClick={() => setHasProduct(true)} className="flex items-center text-[13px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg transition-colors">
-                              <Plus size={14} className="mr-1.5" /> {hasProduct ? '已添加产品' : '添加产品'}
-                          </button>
-                      </div>
-                      <div className="border border-slate-200 rounded-lg overflow-hidden">
-                          <table className="w-full text-left text-[13px]">
-                              <thead className="bg-[#fafafa] text-slate-600 border-b border-slate-200 font-bold">
-                                  <tr>
-                                      <th className="px-5 py-3.5 font-medium">产品</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">单位</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">库存</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">数量</th>
-                                      <th className="px-5 py-3.5 font-medium text-right">单价</th>
-                                      <th className="px-5 py-3.5 font-medium text-center">操作</th>
-                                  </tr>
-                              </thead>
-                              <tbody>
-                                  {hasProduct ? (
-                                      <tr className="border-b border-slate-50">
-                                          <td className="px-3 py-3"><input value={productName} onChange={(e) => setProductName(e.target.value)} className="w-48 border border-slate-200 rounded-md px-2 py-1.5 text-[12px] font-bold outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-center"><select value={unit} onChange={(e) => setUnit(e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
-                                          <td className={`px-3 py-3 text-center font-bold ${shortage > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{availableStock}</td>
-                                          <td className="px-3 py-3 text-center"><input type="number" min="1" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-right"><input type="number" min="0.01" step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(Number(e.target.value))} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
-                                          <td className="px-5 py-4 text-center"><button onClick={() => setHasProduct(false)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50"><Trash2 size={14}/></button></td>
-                                      </tr>
-                                  ) : (
-                                      <tr>
-                                          <td colSpan="6" className="px-5 py-12 text-center text-slate-400">
-                                              请点击'添加产品'按钮添加订单产品明细
-                                          </td>
-                                      </tr>
-                                  )}
-                              </tbody>
-                          </table>
-                      </div>
-                      {hasProduct && (
-                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <label className="text-[12px] text-slate-500">规格型号<input value={spec} onChange={(e) => setSpec(e.target.value)} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] text-slate-700 outline-none focus:border-blue-500" /></label>
-                              <div className={`rounded-lg border px-3 py-2 text-[12px] ${shortage > 0 ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
-                                  {shortage > 0 ? `库存不足 ${shortage} ${unit}，审批后将进入库存校验并流转生产需求池` : `库存可满足本单需求，可直接进入出库准备`}
-                              </div>
-                          </div>
-                      )}
-                  </div>
-
-                  <div>
-                      <div className="flex items-center mb-5">
-                          <div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div>
-                          <span className="text-[15px] font-bold text-slate-800 mr-3">优惠设置</span>
-                          <span className="text-[13px] text-slate-400">(折扣与优惠金额可同时使用)</span>
-                      </div>
-                      <div className="bg-[#fafafa] border border-slate-200 rounded-lg p-5 flex items-center space-x-10 text-[13px] text-slate-600">
-                          <div className="flex items-center space-x-3">
-                              <span>折扣率：</span>
-                              <input type="number" min="0" max="100" value={discountRate} onChange={(e) => setDiscountRate(Number(e.target.value))} className="w-24 border border-slate-200 bg-white rounded-md p-2 text-center outline-none focus:border-blue-500 transition-colors" />
-                              <span>%</span>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                              <span>优惠金额：</span>
-                              <span>¥</span>
-                              <input type="number" min="0" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} className="w-28 border border-slate-200 bg-white rounded-md p-2 text-center outline-none focus:border-blue-500 transition-colors" />
-                              <span>元</span>
-                          </div>
-                          <div className="ml-auto text-right"><span className="text-slate-400 mr-2">订单金额</span><span className="font-mono font-bold text-blue-700 text-[16px]">{sales_formatMoney(total)}</span></div>
-                      </div>
-                  </div>
-
-                  <div>
-                      <div className="flex items-center mb-3">
-                          <span className="text-[14px] font-medium text-slate-700">备注</span>
-                      </div>
-                      <textarea
-                          value={remark}
-                          onChange={(e) => setRemark(e.target.value)}
-                          placeholder="请输入备注信息（可选）" 
-                          className="w-full border border-slate-200 rounded-lg p-4 text-[13px] outline-none focus:border-blue-500 transition-colors h-24 resize-none"
-                      ></textarea>
-                  </div>
-              </div>
-
-              <div className="p-5 border-t border-slate-100 flex justify-end space-x-4 shrink-0 bg-white rounded-b-xl">
-                  {error && <div className="mr-auto flex items-center text-[12px] text-rose-600"><AlertCircle size={14} className="mr-1.5" />{error}</div>}
-                  <button onClick={onClose} className="px-6 py-2.5 text-[14px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
-                      取消
-                  </button>
-                  <button onClick={handleCreate} className="px-6 py-2.5 text-[14px] font-medium text-white bg-[#2563EB] hover:bg-blue-700 rounded-lg transition-colors shadow-sm">
-                      创建订单
-                  </button>
-              </div>
-          </div>
-      </div>
-  );
-};
 
 const Sales_QuoteEditModal = ({ onClose, onConfirm }) => {
   return (
@@ -2349,8 +2145,12 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
   );
 };
 
-const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], warehouses = [], products = [], onClose, onCreate }) => {
+const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], warehouses = [], products = [], onClose, onCreate, documentType = 'quote' }) => {
   const editing = mode === 'edit';
+  const creatingOrder = documentType === 'order';
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const documentIdRef = useRef(record?.id || sales_makeDocumentId(creatingOrder ? 'SO' : 'QT'));
   const [client, setClient] = useState(record?.client || '');
   const [quoteDate, setQuoteDate] = useState(record?.date || new Date().toISOString().slice(0, 10));
   const [validUntil, setValidUntil] = useState(record?.validUntil || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
@@ -2372,15 +2172,21 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
   const [remark, setRemark] = useState(record?.remark || '');
   const [error, setError] = useState('');
   const subtotal = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
+  useEffect(() => setError(''), [client, quoteDate, validUntil, lines, discountRate, discountAmount, remark]);
   const total = Math.max(0, subtotal * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
   const updateLine = (key, field, value) => setLines(prev => prev.map(line => line.key === key ? { ...line, [field]: value } : line));
   const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), warehouseId: '', productName: '', productId: '', spec: '', unit: '件', available: null, quantity: 1, unitPrice: 0 }]);
   const removeLine = (key) => setLines(prev => prev.filter(line => line.key !== key));
   const warehouseOptions = warehouses;
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+      if (submittingRef.current) return;
       if (!client.trim() || !quoteDate || !validUntil) {
           setError('请完整填写客户和有效期');
+          return;
+      }
+      if (validUntil < quoteDate) {
+          setError('有效期不能早于报价日期');
           return;
       }
       if (lines.length === 0) {
@@ -2396,9 +2202,9 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           ? `${lines[0].productName.trim()} / ${lines[0].spec.trim()} × ${lines[0].quantity} ${lines[0].unit}`
           : `${lines[0].productName.trim()} 等 ${lines.length} 项产品`;
       const savedAt = new Date().toISOString();
-      onCreate({
+      const draft = {
           ...record,
-          id: record?.id || sales_makeDocumentId('QT'),
+          id: documentIdRef.current,
           version: editing ? Number(record?.version || 1) + 1 : 1,
           client: client.trim(),
           date: quoteDate,
@@ -2418,33 +2224,44 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           amount: sales_formatMoney(total),
           createdAt: record?.createdAt || savedAt,
           updatedAt: savedAt,
-      });
+      };
+      submittingRef.current = true;
+      setIsSubmitting(true);
+      setError('');
+      try {
+          await onCreate(draft);
+      } catch (failure) {
+          setError(failure instanceof Error ? failure.message : '创建失败，请稍后重试');
+      } finally {
+          submittingRef.current = false;
+          setIsSubmitting(false);
+      }
   };
 
   return (
       <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
-          <div className="bg-white rounded-xl w-[1200px] max-w-full max-h-[95vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div role="dialog" aria-modal="true" aria-labelledby="sales-document-create-title" className="bg-white rounded-xl w-[1200px] max-w-full max-h-[95vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
-                  <div className="flex items-center text-[16px] font-bold text-slate-800">
-                      <FileText size={18} className="text-blue-600 mr-2" /> {editing ? '编辑报价单' : '新增报价单'}
+                  <div id="sales-document-create-title" className="flex items-center text-[16px] font-bold text-slate-800">
+                      <FileText size={18} className="text-blue-600 mr-2" /> {creatingOrder ? '快速创建订单' : editing ? '编辑报价单' : '新增报价单'}
                   </div>
-                  <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+                  <button aria-label="关闭开单弹窗" disabled={isSubmitting} onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50">
                       <X size={20} />
                   </button>
               </div>
               
-              <div className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar">
+              <fieldset disabled={isSubmitting} className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar min-h-0">
                   <div>
                       <div className="flex items-center mb-5">
                           <div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div>
                           <span className="text-[15px] font-bold text-slate-800">基本信息</span>
                       </div>
                       <div className="border border-slate-200 rounded-xl p-5 bg-white">
-                          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
                               <div>
                                   <label className="block text-[13px] text-slate-600 mb-2">客户 <span className="text-rose-500">*</span></label>
                                   <div className="relative">
-                                      <input type="text" list="sales-quote-customers" value={client} onChange={(e) => setClient(e.target.value)} placeholder="搜索选择客户" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors" />
+                                      <input aria-label="客户" type="text" list="sales-quote-customers" value={client} onChange={(e) => setClient(e.target.value)} placeholder="搜索选择客户" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors" />
                                       <datalist id="sales-quote-customers">{customers.map((customer) => <option key={customer.id} value={customer.name} />)}</datalist>
                                       <Search size={14} className="absolute right-3 top-3 text-slate-400" />
                                   </div>
@@ -2452,13 +2269,13 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                               <div>
                                   <label className="block text-[13px] text-slate-600 mb-2">报价日期 <span className="text-rose-500">*</span></label>
                                   <div className="relative">
-                                      <input type="date" value={quoteDate} onChange={(e) => setQuoteDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors text-slate-700" />
+                                      <input aria-label="报价日期" type="date" value={quoteDate} onChange={(e) => setQuoteDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors text-slate-700" />
                                   </div>
                               </div>
                               <div>
                                   <label className="block text-[13px] text-slate-600 mb-2">有效至 <span className="text-rose-500">*</span></label>
                                   <div className="relative">
-                                      <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors text-slate-700" />
+                                      <input aria-label="有效至" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors text-slate-700" />
                                   </div>
                               </div>
                           </div>
@@ -2544,7 +2361,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                           <span className="text-[15px] font-bold text-slate-800 mr-3">优惠设置</span>
                           <span className="text-[13px] text-slate-400">(折扣与优惠金额可同时使用)</span>
                       </div>
-                      <div className="bg-[#fafafa] border border-slate-200 rounded-lg p-5 flex items-center space-x-10 text-[13px] text-slate-600">
+                      <div className="bg-[#fafafa] border border-slate-200 rounded-lg p-5 flex flex-wrap items-center gap-x-10 gap-y-4 text-[13px] text-slate-600">
                           <div className="flex items-center space-x-3">
                               <span>折扣率：</span>
                               <input type="number" min="0" max="100" value={discountRate} onChange={(e) => setDiscountRate(Number(e.target.value))} className="w-24 border border-slate-200 bg-white rounded-md p-2 text-center outline-none focus:border-blue-500 transition-colors" />
@@ -2566,12 +2383,12 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                       </div>
                       <textarea value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="请输入备注信息（可选）" className="w-full border border-slate-200 rounded-lg p-4 text-[13px] outline-none focus:border-blue-500 transition-colors h-24 resize-none"></textarea>
                   </div>
-              </div>
+              </fieldset>
 
-              <div className="p-5 border-t border-slate-100 flex justify-end space-x-4 shrink-0 bg-white rounded-b-xl">
-                  {error && <div className="mr-auto flex items-center text-[12px] text-rose-600"><AlertCircle size={14} className="mr-1.5" />{error}</div>}
-                  <button onClick={onClose} className="px-6 py-2.5 text-[14px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">取消</button>
-                  <button onClick={handleCreate} className="px-6 py-2.5 text-[14px] font-medium text-white bg-[#2563EB] hover:bg-blue-700 rounded-lg transition-colors shadow-sm">{editing ? '保存修改' : '创建报价单'}</button>
+              <div className="p-5 border-t border-slate-100 flex flex-wrap justify-end gap-4 shrink-0 bg-white rounded-b-xl">
+                  {error && <div role="alert" className="mr-auto flex items-center text-[12px] text-rose-600"><AlertCircle size={14} className="mr-1.5 shrink-0" />{error}</div>}
+                  <button disabled={isSubmitting} onClick={onClose} className="px-6 py-2.5 text-[14px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50">取消</button>
+                  <button disabled={isSubmitting} onClick={handleCreate} className="px-6 py-2.5 text-[14px] font-medium text-white bg-[#2563EB] hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:opacity-50">{isSubmitting ? '保存中...' : creatingOrder ? '创建订单' : editing ? '保存修改' : '创建报价单'}</button>
               </div>
           </div>
       </div>
@@ -2828,7 +2645,7 @@ const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel
   );
 };
 
-const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit, onRequestOutbound, onReviewFormalOrder, onConfirmFormalOrder, onCancelFormalOrder, onCancelOrderOutbound, onNavigateProduction, customers = [], products = [] }) => {
+const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit, onRequestOutbound, onReviewFormalOrder, onConfirmFormalOrder, onCancelFormalOrder, onCancelOrderOutbound, onNavigateProduction, customers = [], products = [], orderCreationRevision = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [customerFilter, setCustomerFilter] = useState('全部客户');
@@ -2880,6 +2697,14 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
       : [];
 
   useEffect(() => setPage(1), [searchTerm, statusFilter, customerFilter, limit]);
+
+  useEffect(() => {
+      if (!orderCreationRevision) return;
+      setStatusFilter('待发货');
+      setSearchTerm('');
+      setCustomerFilter('全部客户');
+      setPage(1);
+  }, [orderCreationRevision]);
 
   useEffect(() => {
       const focusedOrder = new URLSearchParams(window.location.search).get('focusOrder');
@@ -3630,6 +3455,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const persistedWorkspace = useMemo(() => sales_loadWorkspace(currentTenant?.id), [currentTenant?.id, resetSignal]);
   const [activeTab, setActiveTab] = useState(() => resolveSalesTab(window.location.search));
   const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(false);
+  const [orderCreationRevision, setOrderCreationRevision] = useState(0);
   const [quotes, setQuotes] = useState(() => persistedWorkspace?.quotes || sales_quotesData);
   const [orders, setOrders] = useState(() => persistedWorkspace?.orders || sales_ordersData);
   const [customers, setCustomers] = useState(() => persistedWorkspace?.customers || sales_customersListData);
@@ -3675,6 +3501,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   );
 
   const mapFormalOrder = (order) => {
+      const quickOrderSnapshot = orders.find(item => item.aggregateId === order.id)?.quickOrderSnapshot;
       const orderLines = (order.lines || []).filter(line => line.lineStatus !== 'CANCELED');
       return {
       id: order.orderNo,
@@ -3686,16 +3513,20 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       productName: orderLines[0]?.productId || '-',
       productId: orderLines[0]?.productId,
       unit: orderLines[0]?.uom || 'PCS',
-      qty: Number(orderLines[0]?.orderedQty || 0),
+      qty: orderLines.reduce((sum, line) => sum + Number(line.orderedQty || 0), 0),
       unitPrice: Number(orderLines[0]?.unitPrice || 0),
       discountRate: order.discountRate ?? '100',
       discountAmount: order.discountAmount ?? '0',
       originalAmount: order.originalAmount,
-      lines: orderLines.map(line => ({
+      lines: orderLines.map((line, index) => ({
           productId: line.productId, productName: line.productId,
           warehouseId: order.fulfillmentWarehouseId, unit: line.uom,
           quantity: Number(line.orderedQty), unitPrice: Number(line.unitPrice),
           shippedQty: Number(line.shippedQty), remainingQty: Number(line.remainingQty),
+          ...(quickOrderSnapshot?.lines?.[index]?.productId === line.productId ? {
+              productName: quickOrderSnapshot.lines[index].productName,
+              spec: quickOrderSnapshot.lines[index].spec,
+          } : {}),
       })),
       amount: sales_formatMoney(Number(order.totalAmount || 0)),
       receivable: order.shipmentStatus === 'SHIPPED' ? sales_formatMoney(Number(order.totalAmount || 0)) : '待生成',
@@ -3712,6 +3543,10 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       version: order.version,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      ...(quickOrderSnapshot ? {
+          quickOrderSnapshot, date: quickOrderSnapshot.date,
+          validUntil: quickOrderSnapshot.validUntil, remark: quickOrderSnapshot.remark,
+      } : {}),
       };
   };
 
@@ -3764,9 +3599,11 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const navigateSalesTab = (tab, replace = false) => {
+  const navigateSalesTab = (tab, replace = false, clearOrderFocus = false) => {
       setActiveTab(tab);
-      const nextUrl = createSalesTabUrl(window.location, tab);
+      const url = new URL(createSalesTabUrl(window.location, tab), window.location.origin);
+      if (clearOrderFocus) url.searchParams.delete('focusOrder');
+      const nextUrl = `${url.pathname}${url.search}${url.hash}`;
       const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       if (nextUrl !== currentUrl) window.history[replace ? 'replaceState' : 'pushState']({}, '', nextUrl);
   };
@@ -3942,40 +3779,38 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
 
   const handleQuickOrderCreate = async (order) => {
       if (!formalContext) {
-          showToast('订单创建失败', '请先登录正式会话后重试', 'danger');
-          return;
+          throw new Error('请先登录正式会话后重试');
       }
       try {
-        const fulfillmentWarehouse = salesWarehouseList.find((warehouse) => warehouse.id === order.warehouseId)
-          || salesWarehouseList[0];
-        if (!fulfillmentWarehouse) throw new Error('请先在库存管理创建并启用发货仓库');
-          const customer = customers.find((item) => item.name === order.client) || customers[0];
-          const productId = order.productId || String(order.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || 'FG001';
-          const created = await createFulfillmentOrder(formalContext, {
-              ...salesOrderPricingInput(order),
-              customerId: customer?.id || order.client,
-              customerName: order.client,
+          const created = await createQuickSalesOrder(formalContext, order, {
+              warehouses: salesWarehouseList,
+              customers,
               ownerEmployeeId: currentUser?.account || 'sales-owner',
-              fulfillmentWarehouseId: fulfillmentWarehouse.id,
               factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
-              requestedDeliveryDate: order.deliveryDate,
-              allowPartialShipment: true,
-              currency: 'CNY',
-              recipient: {
-                  name: customer?.contact || '待补充收货人',
-                  phone: customer?.phone && customer.phone !== '-' ? customer.phone : '13800000000',
-                  country: '中国', province: '上海', city: '上海', address: customer?.address || '待补充收货地址',
-              },
-              lines: [{ lineNo: 1, productId, orderedQty: String(order.qty), uom: 'PCS', unitPrice: String(order.unitPrice), taxRate: '0', promisedDate: order.deliveryDate, allowPartialShipment: true }],
+              idempotencyKey: `quick-sales-order:${currentTenant.id}:${order.id}`,
           });
-          const mapped = mapFormalOrder(created);
+          const mapped = {
+              ...mapFormalOrder(created),
+              date: order.date,
+              validUntil: order.validUntil,
+              remark: order.remark,
+              quickOrderSnapshot: order,
+              lines: created.lines.map((line, index) => ({
+                  ...order.lines[index],
+                  quantity: Number(line.orderedQty),
+                  shippedQty: Number(line.shippedQty),
+                  remainingQty: Number(line.remainingQty),
+              })),
+          };
           setOrders(prev => [mapped, ...prev.filter((item) => item.id !== mapped.id)]);
           setIsQuickOrderModalOpen(false);
+          setOrderCreationRevision(revision => revision + 1);
           addAudit('创建销售订单', mapped.id);
-          showToast('订单创建成功', `${mapped.id} 已进入审批/复核`);
-          navigateSalesTab('orders');
+          showToast('订单创建成功', `${mapped.id} 已进入待发货`);
+          navigateSalesTab('orders', false, true);
       } catch (error) {
           showToast('订单创建失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
+          throw error;
       }
   };
 
@@ -4067,12 +3902,12 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
               <div className="w-full">
                   {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} onCreateQuote={(quote) => setQuotes(prev => [quote, ...prev])} onOpenOrders={() => navigateSalesTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
                   {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
-                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} />}
+                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} orderCreationRevision={orderCreationRevision} />}
                   {activeTab === 'customers' && <Sales_CustomersView customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
                   {activeTab === 'basic-data' && <Sales_BaseDataView levels={levels} setLevels={setLevels} industries={industries} setIndustries={setIndustries} customers={customers} outreachSettings={outreachSettings} setOutreachSettings={setOutreachSettings} onToast={showToast} onAudit={addAudit} />}
               </div>
               
-              {isQuickOrderModalOpen && <Sales_QuickOrderModal onClose={() => setIsQuickOrderModalOpen(false)} onCreate={handleQuickOrderCreate} />}
+              {isQuickOrderModalOpen && <Sales_QuoteCreateModal documentType="order" customers={customers} warehouses={quoteOptions.warehouses} products={quoteOptions.products} onClose={() => setIsQuickOrderModalOpen(false)} onCreate={handleQuickOrderCreate} />}
               <Sales_Toast toast={toast} onClose={() => setToast(null)} />
               {outboundRequestModal && <Sales_OutboundRequestModal request={outboundRequestModal} onClose={() => setOutboundRequestModal(null)} onNavigateOutbound={navigateToRequestedOutbound} canNavigateOutbound={canNavigateOutbound} />}
           </div>
