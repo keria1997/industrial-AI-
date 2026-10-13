@@ -126,7 +126,7 @@ try {
       const quantity = modal.getByRole('spinbutton', { name: `${task.lines[0].productId} 本次发货数量` });
       await quantity.waitFor();
       assert.equal(await quantity.inputValue(), task.lines[0].requestedQty);
-      assert.equal(await modal.getByRole('button', { name: '确认发货', exact: true }).isEnabled(), true);
+      assert.equal(await modal.getByRole('button', { name: '去发货', exact: true }).isEnabled(), true);
       assert.equal(await modal.getByText('订单行与库存单位不一致', { exact: false }).count(), 0);
       await page.screenshot({ path: resolve(output, `shipment-unit-${viewport.width}.png`), fullPage: true });
       assert.deepEqual(await api(orderPath), beforeOrder, 'Order remains unchanged');
