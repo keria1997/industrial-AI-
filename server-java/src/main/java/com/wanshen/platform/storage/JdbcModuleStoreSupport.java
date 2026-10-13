@@ -174,7 +174,6 @@ public abstract class JdbcModuleStoreSupport implements AutoCloseable {
 
     private void bindBootstrapMode(Connection connection) {
         execute(connection, "SELECT set_config('app.bootstrap_mode', 'true', true)", statement -> {
-            statement.execute();
             return null;
         });
     }
@@ -301,7 +300,9 @@ public abstract class JdbcModuleStoreSupport implements AutoCloseable {
 
     private <T> T execute(Connection connection, String sql, SqlFunction<PreparedStatement, T> binder) {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            return binder.apply(statement);
+            T result = binder.apply(statement);
+            statement.execute();
+            return result;
         } catch (Exception exception) {
             throw new IllegalStateException(exception);
         }
