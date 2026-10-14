@@ -42,7 +42,7 @@ class VolcengineSmsSenderTests {
             auth.set(exchange.getRequestHeaders().getFirst("Authorization"));
             query.set(exchange.getRequestURI().getRawQuery());
             byte[] response = """
-                    {"ResponseMetadata":{"RequestId":"test-request"},"Code":"0","Result":{"MessageID":["message-1"]}}
+                    {"ResponseMetadata":{"RequestId":"test-request"},"Result":{"MessageID":["message-1"]}}
                     """.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, response.length);
             exchange.getResponseBody().write(response);
@@ -78,6 +78,13 @@ class VolcengineSmsSenderTests {
         return new VolcengineSmsSender(settings, mapper, http, URI.create("https://sms.volcengineapi.com/"), clock);
     }
 
+    @Test void acceptsOptionalLegacySuccessCode() throws Exception {
+        var sender = sender(200, """
+                {"ResponseMetadata":{"RequestId":"legacy-request"},"Code":"0","Result":{"MessageID":["message-1"]}}
+                """);
+        assertThat(sender.send("13800138000", "123456")).isEqualTo(new SmsSender.Delivery("legacy-request", false));
+    }
+
     @Test void surfacesSanitizedProviderCodesAndRequestIdWithoutRawMessages() throws Exception {
         var sender = sender(200, """
                 {"ResponseMetadata":{"RequestId":"req-1","Error":{"Code":"InvalidSignature","Message":"test-secret 123456"}}}
@@ -91,7 +98,10 @@ class VolcengineSmsSenderTests {
 
     @Test void rejectsBusinessFailureMalformedOrMissingAcceptance() throws Exception {
         for (String body : new String[] { "{\"Code\":\"1001\"}", "<html>failure</html>", "{}", "null",
-                "{\"Code\":\"0\",\"Result\":{\"MessageID\":[]}}" }) {
+                "{\"Code\":\"0\",\"Result\":{\"MessageID\":[]}}",
+                "{\"ResponseMetadata\":{\"RequestId\":\"req-1\"},\"Result\":{\"MessageID\":[]}}",
+                "{\"ResponseMetadata\":{\"RequestId\":\"req-1\"},\"Result\":{\"MessageID\":[null]}}",
+                "{\"ResponseMetadata\":{\"RequestId\":\"req-1\"},\"Code\":\"1001\",\"Result\":{\"MessageID\":[\"id\"]}}" }) {
             var sender = sender(200, body);
             assertThatThrownBy(() -> sender.send("13800138000", "123456")).isInstanceOf(ApiException.class);
         }

@@ -89,8 +89,9 @@ public class VolcengineSmsSender implements SmsSender {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw failure("HTTP_" + response.statusCode(), requestId);
             }
-            String status = result.path("Code").asText();
-            if (!"0".equals(status)) throw failure(safeIdentifier(status), requestId);
+            if (result.has("Code") && !"0".equals(result.path("Code").asText())) {
+                throw failure(safeIdentifier(result.path("Code").asText()), requestId);
+            }
             JsonNode ids = result.path("Result").path("MessageID");
             if (requestId.isBlank() || !ids.isArray() || ids.isEmpty()) throw failure("INVALID_RESPONSE", requestId);
             for (JsonNode id : ids) {
