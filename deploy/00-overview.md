@@ -1,51 +1,51 @@
-# 00 - Deployment Overview
+# 00 - 部署总览
 
-## Scope
+## 方案范围
 
-This directory is the complete Ubuntu deployment kit for the Industrial AI Platform. It contains the frontend build, Java API runtime, PostgreSQL software packages, database initialization and verification scripts, runtime configuration templates, and step-by-step execution documents.
+本目录是工业 AI 平台的完整 Ubuntu 部署套件，包含前端构建产物、Java API 运行包、PostgreSQL 离线软件包、数据库初始化与校验脚本、运行配置模板和分步执行文档。
 
-Target baseline:
+目标基线：
 
-- Ubuntu Server 24.04 LTS, `amd64`.
-- PostgreSQL 16.2 (offline `.deb` bundle included).
-- Java 17 JRE.
-- Nginx.
-- Frontend: React 18 / Vite 7.
-- Backend: Spring Boot 3.3 / Java 17.
+- Ubuntu Server 24.04 LTS，`amd64` 架构。
+- PostgreSQL 16.2，离线 `.deb` 软件包已随部署套件提供。
+- Java 17 JRE。
+- Nginx。
+- 前端：React 18 / Vite 7。
+- 后端：Spring Boot 3.3 / Java 17。
 
-No Docker, Podman, Kubernetes, or other container runtime is required.
+本方案不使用 Docker、Podman、Kubernetes 或其他容器运行时。
 
-## Directory Map
+## 目录结构
 
 ```text
 deploy/
-  00-overview.md                     Entry document and package map
-  01-build-and-package.md           Compile, test, package, checksum
-  02-ubuntu-install-and-release.md  Host installation and release flow
-  03-database.md                    PostgreSQL, initialization, verification
-  04-configuration.md               Runtime configuration archive
-  05-operations.md                  Health checks, backup, rollback
-  .env.production.example           Editable production environment template
-  scripts/build-release.sh          Build a complete release archive
-  scripts/install-ubuntu.sh         Install one release on Ubuntu
-  scripts/verify-release.sh         API, frontend, service, and database checks
-  config/application.properties     Backend configuration archived from source
-  config/nginx/industrial-ai.conf   Nginx frontend and API reverse proxy
-  config/systemd/industrial-ai-api.service Java API service
-  database/packages/ubuntu-24.04-amd64 PostgreSQL 16 .deb dependency closure
-  database/init/001...030.sql       Ordered database initialization scripts
-  database/scripts/                 Database install, init, migration, verify
+  00-overview.md                     部署总览和目录索引
+  01-build-and-package.md           编译、测试、打包和校验
+  02-ubuntu-install-and-release.md  Ubuntu 主机安装与发布流程
+  03-database.md                    PostgreSQL 安装、初始化和校验
+  04-configuration.md               运行配置说明
+  05-operations.md                  健康检查、备份和回滚
+  .env.production.example           生产环境配置模板
+  scripts/build-release.sh          构建完整发布包
+  scripts/install-ubuntu.sh         在 Ubuntu 上安装一个发布版本
+  scripts/verify-release.sh         API、前端、服务和数据库检查
+  config/application.properties     从源码归档的后端配置
+  config/nginx/industrial-ai.conf   Nginx 前端服务和 API 反向代理
+  config/systemd/industrial-ai-api.service Java API 服务单元
+  database/packages/ubuntu-24.04-amd64 PostgreSQL 16 .deb 依赖闭包
+  database/init/001...030.sql       按顺序执行的数据库初始化脚本
+  database/scripts/                 数据库安装、初始化、迁移和校验脚本
 ```
 
-Build archives and generated release packages are written to `deploy/artifacts/`. That directory is intentionally ignored by Git; it is transport output, not source of truth.
+构建归档和生成的发布包写入 `deploy/artifacts/`。该目录被 Git 忽略，只作为传输产物，不作为配置和源码的最终保存位置。
 
-## Recommended Flow
+## 推荐执行流程
 
-1. Run `deploy/scripts/build-release.sh` on a macOS/Linux build host with Node.js 20+, npm, Java 17, and Maven.
-2. Copy the generated `.tar.gz` and `.tar.gz.sha256` to the Ubuntu host.
-3. Verify the archive checksum and extract it.
-4. Copy `.env.production.example` to `.env` in the extracted release and change every `change-me` value.
-5. Run `sudo ./scripts/install-ubuntu.sh <extracted-release-directory>`.
-6. Run `/opt/industrial-ai/current/scripts/verify-release.sh`.
+1. 在 macOS 或 Linux 构建机上执行 `deploy/scripts/build-release.sh`。构建机需要 Node.js 20 及以上、npm、Java 17 和 Maven。
+2. 将生成的 `.tar.gz` 和 `.tar.gz.sha256` 复制到 Ubuntu 主机。
+3. 在 Ubuntu 主机上校验归档 SHA256，然后解压。
+4. 将解压目录中的 `.env.production.example` 复制为 `.env`，并替换所有 `change-me` 值。
+5. 执行 `sudo ./scripts/install-ubuntu.sh <解压后的发布目录>`。
+6. 执行 `/opt/industrial-ai/current/scripts/verify-release.sh` 完成发布验证。
 
-For database-only operations, read `03-database.md`; do not execute SQL by hand except during a controlled recovery.
+数据库单独操作时阅读 `03-database.md`。除受控恢复场景外，不要绕过脚本手工执行 SQL。

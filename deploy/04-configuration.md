@@ -1,52 +1,52 @@
-# 04 - Configuration Reference
+# 04 - 配置说明
 
-## Archived Files
+## 归档配置
 
-| File | Destination | Purpose |
+| 文件 | 安装目标 | 用途 |
 | --- | --- | --- |
-| `.env.production.example` | `/opt/industrial-ai/releases/<id>/.env` | Secrets, database URL, ports, and runtime switches |
-| `config/application.properties` | inside executable JAR | Backend defaults; environment variables override defaults |
-| `config/nginx/industrial-ai.conf` | `/etc/nginx/sites-available/industrial-ai.conf` | Static frontend, SPA fallback, and API proxy |
-| `config/systemd/industrial-ai-api.service` | `/etc/systemd/system/industrial-ai-api.service` | Java process lifecycle and hardening |
+| `.env.production.example` | `/opt/industrial-ai/releases/<id>/.env` | 密钥、数据库地址、端口和运行开关 |
+| `config/application.properties` | 可执行 JAR 内 | 后端默认值；环境变量可覆盖默认值 |
+| `config/nginx/industrial-ai.conf` | `/etc/nginx/sites-available/industrial-ai.conf` | 前端静态服务、SPA 回退和 API 反向代理 |
+| `config/systemd/industrial-ai-api.service` | `/etc/systemd/system/industrial-ai-api.service` | Java 进程生命周期和安全限制 |
 
-The effective backend configuration is the archived properties file plus the protected environment file loaded by systemd.
+后端生效配置由两部分组成：JAR 内归档的 `application.properties`，以及 systemd 加载的受保护 `.env`。
 
-## Runtime Values
+## 关键运行参数
 
-| Variable | Required | Production guidance |
+| 变量 | 是否必填 | 生产要求 |
 | --- | --- | --- |
-| `PRODUCTION_API_HOST` | yes | `127.0.0.1` when Nginx is on the same host |
-| `PRODUCTION_API_PORT` | yes | `5185`; keep it firewalled from clients |
-| `DATABASE_URL` | yes | JDBC URL with a least-privilege application role |
-| `AUTH_SECRET` | yes | 48-byte random Base64 value |
-| `FULFILLMENT_DATA_KEY_ID` | yes | Stable key identifier such as `prod-v1` |
-| `FULFILLMENT_DATA_KEY` | yes | Base64-encoded 32-byte key |
-| `JAVA_NATIVE_ONLY` | yes | `true`; prevents accidental legacy proxy behavior |
-| `LEGACY_PROXY_ENABLED` | yes | `false` |
-| `DEMO_AUTH_ENABLED` | yes | `false`; never expose demo credentials |
+| `PRODUCTION_API_HOST` | 是 | Nginx 同机部署时使用 `127.0.0.1` |
+| `PRODUCTION_API_PORT` | 是 | 使用 `5185`，并阻止客户端直接访问 |
+| `DATABASE_URL` | 是 | 使用最小权限应用角色的 JDBC URL |
+| `AUTH_SECRET` | 是 | 48 字节随机数据的 Base64 值 |
+| `FULFILLMENT_DATA_KEY_ID` | 是 | 稳定密钥标识，例如 `prod-v1` |
+| `FULFILLMENT_DATA_KEY` | 是 | Base64 编码的 32 字节密钥 |
+| `JAVA_NATIVE_ONLY` | 是 | 固定为 `true`，防止误用旧代理行为 |
+| `LEGACY_PROXY_ENABLED` | 是 | 固定为 `false` |
+| `DEMO_AUTH_ENABLED` | 是 | 生产固定为 `false`，不得暴露演示账号 |
 
-Additional pool and worker variables are documented inline in `.env.production.example`. Keep worker discovery enabled for the normal single-process deployment.
+连接池和后台 Worker 参数见 `.env.production.example`。标准单进程部署保持 Worker 发现开启。
 
-## Service Paths
+## 服务路径
 
 ```text
-/opt/industrial-ai/releases/<release-id>/     Immutable release content
-/opt/industrial-ai/current                    Symbolic link to active release
-/opt/industrial-ai/logs/api.log               Standard output
-/opt/industrial-ai/logs/api.err.log          Standard error
-/etc/nginx/sites-available/industrial-ai.conf Nginx site
-/etc/systemd/system/industrial-ai-api.service Java unit
+/opt/industrial-ai/releases/<release-id>/     不可变发布内容
+/opt/industrial-ai/current                    指向当前版本的符号链接
+/opt/industrial-ai/logs/api.log               标准输出日志
+/opt/industrial-ai/logs/api.err.log          标准错误日志
+/etc/nginx/sites-available/industrial-ai.conf Nginx 站点配置
+/etc/systemd/system/industrial-ai-api.service Java 服务单元
 ```
 
-`.env` is mode `600` and owned by `industrial-ai:industrial-ai`. Release code is readable by the service account but not writable by it.
+`.env` 权限为 `600`，属主为 `industrial-ai:industrial-ai`。发布代码由服务账号只读使用，不允许服务账号改写。
 
-## Nginx Behavior
+## Nginx 行为
 
-- `/` serves `/opt/industrial-ai/current/app/dist`.
-- `/assets/` uses immutable one-year caching because Vite emits hashed filenames.
-- `/api/v1/` proxies to `127.0.0.1:5185`.
-- `/healthz` proxies to the Java health endpoint.
-- Unknown SPA paths return `index.html`.
-- Request body limit is 25 MiB; API timeout is 300 seconds.
+- `/` 服务 `/opt/industrial-ai/current/app/dist`。
+- `/assets/` 使用一年 immutable 缓存，因为 Vite 文件名带内容哈希。
+- `/api/v1/` 反向代理到 `127.0.0.1:5185`。
+- `/healthz` 反向代理到 Java 健康接口。
+- 未命中的 SPA 路径回退到 `index.html`。
+- 请求体限制为 25 MiB，API 超时为 300 秒。
 
-For TLS, terminate at Nginx on port 443 and redirect port 80. Keep API and PostgreSQL listeners on loopback or a private network.
+启用 HTTPS 时在 Nginx 443 端口终止 TLS，并把 80 端口重定向到 HTTPS。API 和 PostgreSQL 只监听回环地址或私网地址。

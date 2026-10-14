@@ -1,6 +1,6 @@
-# 05 - Operations, Backup, and Rollback
+# 05 - 运维、备份与回滚
 
-## Daily Health Check
+## 日常健康检查
 
 ```bash
 systemctl is-active industrial-ai-api postgresql nginx
@@ -9,9 +9,9 @@ curl -fsS http://127.0.0.1/healthz
 sudo -u industrial-ai /opt/industrial-ai/current/scripts/verify-release.sh
 ```
 
-The Java health response contains `"status":"ok","runtime":"java"`.
+Java 健康响应应包含 `"status":"ok","runtime":"java"`。
 
-## Logs
+## 日志检查
 
 ```bash
 sudo journalctl -u industrial-ai-api -n 200 --no-pager
@@ -21,9 +21,11 @@ sudo tail -n 200 /var/log/nginx/access.log
 sudo tail -n 200 /var/log/nginx/error.log
 ```
 
-Ship logs to the central log platform; do not use local files as the only retention layer.
+应将日志发送到集中日志平台；本地文件不能作为唯一留存方式。
 
-## Backup
+## 备份
+
+每次发布或迁移前执行一致性备份：
 
 ```bash
 sudo systemctl stop industrial-ai-api
@@ -32,11 +34,11 @@ sudo -u postgres pg_dump --format=custom \
 sudo systemctl start industrial-ai-api
 ```
 
-Take a backup before every release or migration. Copy dumps to separate storage and periodically test restore on a non-production Ubuntu host.
+备份文件必须复制到独立存储，并定期在非生产 Ubuntu 主机上演练恢复。至少保留一次早于最新迁移的备份。
 
-Application rollback does not automatically roll back the database. Restore the matching backup only through the reviewed recovery procedure.
+应用回滚不会自动回滚数据库。只有按照评审过的恢复流程执行时，才恢复与旧版本匹配的数据库备份。
 
-## Release Rollback
+## 发布回滚
 
 ```bash
 readlink -f /opt/industrial-ai/current
@@ -46,4 +48,12 @@ sudo nginx -t && sudo systemctl reload nginx
 curl -fsS http://127.0.0.1:5185/healthz
 ```
 
-If the previous release expects a different database state, stop first, restore its matching backup, then start the service. Never activate a partial or unverified release.
+如果旧版本需要不同数据库状态，先停止服务，恢复匹配备份，再启动服务。不要把 `current` 指向不完整或未验证的发布目录。
+
+## 变更记录
+
+- 发布前校验压缩包 SHA256。
+- 记录发布 ID、Git commit、SHA256、执行人、备份文件名和结果。
+- API 启动前先完成数据库校验。
+- 每次生产发布后执行浏览器和 API 验收。
+- 至少保留上一个发布版本用于回滚。
