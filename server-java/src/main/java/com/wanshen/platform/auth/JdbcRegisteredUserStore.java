@@ -98,13 +98,33 @@ public class JdbcRegisteredUserStore implements RegisteredUserStore {
         });
     }
     @Override
-    public String generateSmsCode(String phone) {
-        String code = String.valueOf((int) Math.floor(100000 + Math.random() * 900000));
-        update("INSERT INTO sms_codes (phone, code, expires_at) VALUES (?, ?, ?)", statement -> {
-            statement.setString(1, phone); statement.setString(2, code);
-            statement.setTimestamp(3, Timestamp.from(Instant.now().plusSeconds(300))); return null;
-        });
-        return code;
+    public void saveSmsCode(String phone, String code) {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(hashtext(?))")) {
+                    lock.setString(1, phone);
+                    lock.execute();
+                }
+                try (PreparedStatement invalidate = connection.prepareStatement(
+                        "UPDATE sms_codes SET used = TRUE WHERE phone = ? AND used = FALSE")) {
+                    invalidate.setString(1, phone);
+                    invalidate.executeUpdate();
+                }
+                try (PreparedStatement insert = connection.prepareStatement(
+                        "INSERT INTO sms_codes (phone, code, expires_at) VALUES (?, ?, ?)")) {
+                    insert.setString(1, phone); insert.setString(2, code);
+                    insert.setTimestamp(3, Timestamp.from(Instant.now().plusSeconds(300)));
+                    insert.executeUpdate();
+                }
+                connection.commit();
+            } catch (SQLException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not persist SMS challenge", exception);
+        }
     }
     @Override
     public boolean verifySmsCode(String phone, String code) {

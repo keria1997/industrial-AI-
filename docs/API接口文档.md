@@ -74,6 +74,8 @@ npm run dev:java-api
 - `POST /api/v1/session/login`：非生产环境使用开发账号取得 8 小时签名访问令牌。
 - `POST /api/v1/session/captcha`：获取服务端生成的一次性账号登录图形验证码，有效期 5 分钟。
 - `GET /api/v1/session/me`：校验访问令牌和当前租户。
+- `POST /api/v1/session/sms/send-code`：向已绑定且启用的账号手机号发送验证码。输入 `{phone}`，火山引擎受理后返回 `message/expiresIn=300/requestId`；仅开发console模式返回 `devCode`。每手机号60秒一次、每来源每分钟5次。正式短信配置为 `SMS_PROVIDER=volcengine`、`SMS_ACCOUNT`、`SMS_ACCESS_KEY_ID`、`SMS_ACCESS_KEY_SECRET`、`SMS_SIGN_NAME`、`SMS_TEMPLATE_CODE`、`SMS_TEMPLATE_VARIABLE`；区域固定cn-north-1，SendSms版本2020-01-01。发送失败/结果未知返回424，details包含安全的providerCode和requestId，不返回密钥、验证码或原始服务响应；不自动重发。
+- `POST /api/v1/session/sms/login`：输入 `{phone,code}`，登录手机号对应的已有账号；验证码5分钟过期、一次性使用、新码替换旧码。未知手机号返回401，禁用账号返回403，每手机号每分钟5次验证、每来源每分钟10次；超限429。不存在未知手机号回退test01的管理员路径。
 - 开发账号：`test01`、`reviewer`、`operator`、`inspector`；默认密码 `123456`。
 - 生产环境禁用开发登录并强制配置 `AUTH_SECRET`。
 

@@ -13,7 +13,7 @@ public interface RegisteredUserStore {
     void updatePassword(String account, String encodedPassword);
     void updateUserStatus(String id, String status);
     void updateFirstLogin(String account, boolean value);
-    String generateSmsCode(String phone);
+    void saveSmsCode(String phone, String code);
     boolean verifySmsCode(String phone, String code);
     String generateResetToken(String email);
     ResetToken verifyResetToken(String token);

@@ -179,6 +179,8 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [smsSent, setSmsSent] = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsNotice, setSmsNotice] = useState('');
   const [smsCountdown, setSmsCountdown] = useState(0);
 
   const refreshCaptcha = async (reportError = true) => {
@@ -205,18 +207,23 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
   }, [smsCountdown]);
 
   const handleSendSmsCode = async () => {
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
+    if (smsSending || smsCountdown > 0) return;
+    if (!/^1[3-9]\d{9}$/.test(phone.trim())) {
       setError('请输入有效手机号');
       return;
     }
     setError('');
+    setSmsNotice('');
+    setSmsSending(true);
     try {
-      const result = await sendSmsCode(phone);
+      const result = await sendSmsCode(phone.trim());
       setSmsSent(true);
       setSmsCountdown(60);
-      setError(result.devCode ? `开发模式验证码: ${result.devCode}` : '');
+      setSmsNotice(result.devCode ? `开发验证码：${result.devCode}` : result.message);
     } catch (err) {
       setError(err instanceof Error ? err.message : '验证码发送失败，请稍后重试');
+    } finally {
+      setSmsSending(false);
     }
   };
 
@@ -320,15 +327,15 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
                 <span className="block text-[12px] text-slate-300 font-bold mb-2">手机号 (Phone)</span>
                 <div className="flex h-10 rounded-md bg-[#273353] border border-slate-500/40 focus-within:border-blue-400 overflow-hidden">
                   <span className="w-16 flex items-center justify-center border-r border-slate-500/30 text-[13px] text-slate-400">+86</span>
-                  <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入手机号" className="flex-1 bg-transparent px-3 text-[13px] outline-none text-white placeholder:text-slate-500" />
+                  <input value={phone} disabled={smsSending} onChange={(e) => { setPhone(e.target.value); setSmsCode(''); setSmsNotice(''); }} placeholder="请输入手机号" className="flex-1 bg-transparent px-3 text-[13px] outline-none text-white placeholder:text-slate-500" />
                 </div>
               </label>
               <label className="block">
                 <span className="block text-[12px] text-slate-300 font-bold mb-2">短信验证码 (SMS Code)</span>
                 <div className="flex gap-2">
                   <input value={smsCode} onChange={(e) => setSmsCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submitLogin()} placeholder="请输入短信验证码" className="flex-1 h-10 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[13px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
-                  <button type="button" disabled={smsCountdown > 0 || loading} onClick={handleSendSmsCode} className="w-24 h-10 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[12px] font-bold transition-colors">
-                    {smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
+                  <button type="button" disabled={smsSending || smsCountdown > 0 || loading} onClick={handleSendSmsCode} className="w-24 h-10 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[12px] font-bold transition-colors">
+                    {smsSending ? '发送中...' : smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
                   </button>
                 </div>
               </label>
@@ -336,6 +343,7 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
           )}
 
           {error && <div className={`mt-4 rounded-lg border px-3 py-2 text-[12px] font-bold ${error.includes('已发送') ? 'bg-emerald-400/10 border-emerald-400/30 text-emerald-200' : 'bg-rose-400/10 border-rose-400/30 text-rose-200'}`}>{error}</div>}
+          {mode === 'phone' && smsNotice && !error && <div role="status" className="mt-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-emerald-400/10 border-emerald-400/30 text-emerald-200">{smsNotice}</div>}
 
           <button onClick={submitLogin} disabled={loading} className="mt-6 w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[13px] font-bold shadow-lg shadow-blue-950/40 transition-colors">
             {loading ? '登录中...' : '立即登录'}

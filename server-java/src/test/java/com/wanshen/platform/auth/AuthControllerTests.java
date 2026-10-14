@@ -53,7 +53,7 @@ class AuthControllerTests {
                 true,
                 "test01,reviewer,operator,inspector",
                 "123456",
-                "console", "", "http://127.0.0.1:5173", "console"
+                "console", "", "http://127.0.0.1:5173", (phone, code) -> new SmsSender.Delivery("", true)
         )).setControllerAdvice(new com.wanshen.platform.web.ApiExceptionHandler()).build();
     }
 

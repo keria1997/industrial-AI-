@@ -102,6 +102,46 @@ paths:
       responses:
         '200': { description: 验证码图片和一次性校验标识, content: { application/json: { schema: { $ref: '#/components/schemas/SessionCaptcha' } } } }
         default: { $ref: '#/components/responses/Error' }
+  /session/sms/send-code:
+    servers:
+      - { url: /api/v1, description: 当前来源的同源代理地址 }
+    post:
+      tags: [Session]
+      summary: 向已绑定且启用的账号手机号发送登录验证码
+      description: 火山引擎受理发送后才保存5分钟有效的验证码；每手机号每60秒最多一次、每来源每分钟最多5次。正式模式不返回验证码，console仅在演示登录启用时可用。发送受理不等于运营商送达。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SmsSendCodeInput' }
+      responses:
+        '200': { description: 短信发送已受理, content: { application/json: { schema: { $ref: '#/components/schemas/SmsSendCodeResponse' } } } }
+        '400': { description: 手机号格式错误或未绑定账号 }
+        '403': { description: 账号已禁用 }
+        '424': { description: 配置缺失、短信发送失败或发送结果未知；错误details提供providerCode和requestId，不返回原始响应或密钥 }
+        '429': { description: 获取验证码过于频繁 }
+        default: { $ref: '#/components/responses/Error' }
+  /session/sms/login:
+    servers:
+      - { url: /api/v1, description: 当前来源的同源代理地址 }
+    post:
+      tags: [Session]
+      summary: 用手机号和一次性短信验证码登录已有账号
+      description: 只登录手机号绑定的启用账号，未知手机号不映射演示管理员。验证码成功使用后失效，新的验证码使旧验证码失效。每手机号每分钟最多5次验证、每来源每分钟最多10次。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SmsLoginInput' }
+      responses:
+        '200': { description: 签发绑定账号的会话, content: { application/json: { schema: { $ref: '#/components/schemas/SessionLoginResponse' } } } }
+        '400': { description: 手机号或验证码格式错误 }
+        '401': { description: 手机号未绑定或验证码错误、过期、已使用 }
+        '403': { description: 账号已禁用 }
+        '429': { description: 验证尝试过于频繁 }
+        default: { $ref: '#/components/responses/Error' }
   /readiness:
     get:
       tags: [Readiness]
@@ -771,6 +811,26 @@ components:
         captchaId: { type: string, format: uuid }
         image: { type: string, description: SVG data URI 图片 }
         expiresIn: { type: integer, minimum: 0, maximum: 300 }
+    SmsSendCodeInput:
+      type: object
+      required: [phone]
+      properties:
+        phone: { type: string, pattern: '^1[3-9]\d{9}$' }
+    SmsSendCodeResponse:
+      type: object
+      required: [message, expiresIn, requestId]
+      properties:
+        message: { type: string }
+        expiresIn: { type: integer, const: 300 }
+        requestId: { type: string, description: 短信服务请求标识；console模式为空 }
+        devCode: { type: string, pattern: '^\d{6}$', description: 仅console且DEMO_AUTH_ENABLED=true时返回，火山引擎模式禁止返回 }
+    SmsLoginInput:
+      allOf:
+        - { $ref: '#/components/schemas/SmsSendCodeInput' }
+        - type: object
+          required: [code]
+          properties:
+            code: { type: string, pattern: '^\d{6}$' }
     SessionUser:
       type: object
       required: [account, name, role, tenantIds, permissions, permissionVersion]

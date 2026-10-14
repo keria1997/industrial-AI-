@@ -9,7 +9,6 @@ import java.util.UUID;
 
 public class InMemoryRegisteredUserStore implements RegisteredUserStore {
     private final Map<String, RegisteredUser> users = new LinkedHashMap<>();
-    private final java.security.SecureRandom random = new java.security.SecureRandom();
     private final Map<String, SmsCode> smsCodes = new LinkedHashMap<>();
     private final Map<String, ResetTokenData> resetTokens = new LinkedHashMap<>();
     private final List<String> revokedSessions = new ArrayList<>();
@@ -74,10 +73,8 @@ public class InMemoryRegisteredUserStore implements RegisteredUserStore {
         if (current != null) users.put(account, replace(current, current.passwordHash(), value, current.status()));
     }
     @Override
-    public synchronized String generateSmsCode(String phone) {
-        String code = String.valueOf(100000 + random.nextInt(900000));
+    public synchronized void saveSmsCode(String phone, String code) {
         smsCodes.put(phone, new SmsCode(code, java.time.Instant.now().plusSeconds(300)));
-        return code;
     }
     @Override
     public synchronized boolean verifySmsCode(String phone, String code) {

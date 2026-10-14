@@ -33,7 +33,7 @@ public class AuthController {
     private final String emailProvider;
     private final String sendGridKey;
     private final String appBaseUrl;
-    private final boolean smsConsole;
+    private final SmsSender smsSender;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private final SecureRandom random = new SecureRandom();
     private final Map<String, RateWindow> rates = new ConcurrentHashMap<>();
@@ -48,7 +48,7 @@ public class AuthController {
             @Value("${app.auth.email-provider:console}") String emailProvider,
             @Value("${SENDGRID_API_KEY:}") String sendGridKey,
             @Value("${APP_BASE_URL:http://127.0.0.1:5173}") String appBaseUrl,
-            @Value("${app.auth.sms-provider:console}") String smsProvider
+            SmsSender smsSender
     ) {
         this.users = users;
         this.captchaService = captchaService;
@@ -61,7 +61,7 @@ public class AuthController {
         this.emailProvider = emailProvider;
         this.sendGridKey = sendGridKey;
         this.appBaseUrl = appBaseUrl;
-        this.smsConsole = !"volcengine".equals(smsProvider);
+        this.smsSender = smsSender;
     }
 
     @PostMapping("/api/v1/session/captcha")
@@ -100,19 +100,33 @@ public class AuthController {
         limit(request, "sms", 5);
         String phone = text(input, "phone");
         if (!phone.matches("1[3-9]\\d{9}")) throw bad("请输入有效手机号", "检查手机号后重试");
-        String code = users.generateSmsCode(phone);
-        if (!smsConsole) throw dependency("短信服务商调用失败（错误码：UNSUPPORTED_PROVIDER）", "查看后端日志中的 RequestId，或稍后重试");
-        return Map.of("message", "验证码已发送", "expiresIn", 300, "devCode", code);
+        RegisteredUser registered = users.findByPhone(phone).orElse(null);
+        if (registered == null) throw bad("手机号未绑定账号", "请先注册账号或联系管理员绑定手机号");
+        if ("disabled".equals(registered.status())) throw forbidden("该账号已被禁用", "联系租户管理员");
+        limitKey("sms-phone:" + phone, 1);
+        String code = String.valueOf(100000 + random.nextInt(900000));
+        SmsSender.Delivery delivery = smsSender.send(phone, code);
+        users.saveSmsCode(phone, code);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("message", delivery.development() ? "开发验证码已生成" : "验证码已发送，请查收短信");
+        result.put("expiresIn", 300);
+        result.put("requestId", delivery.requestId());
+        if (delivery.development()) result.put("devCode", code);
+        return result;
     }
 
     @PostMapping("/api/v1/session/sms/login")
-    public ResponseEntity<?> smsLogin(@RequestBody JsonNode input) {
+    public ResponseEntity<?> smsLogin(@RequestBody JsonNode input, HttpServletRequest request) {
+        limit(request, "sms-login", 10);
         String phone = text(input, "phone"); String code = text(input, "code");
-        if (!phone.matches("1[3-9]\\d{9}") || code.length() != 6) throw bad("请求字段不符合规则", "检查手机号和验证码后重试");
-        if (!users.verifySmsCode(phone, code)) throw unauthorized("验证码错误或已过期", "重新获取验证码后重试");
+        if (!phone.matches("1[3-9]\\d{9}") || !code.matches("\\d{6}")) throw bad("请求字段不符合规则", "检查手机号和验证码后重试");
+        limitKey("sms-login-phone:" + phone, 5);
         RegisteredUser registered = users.findByPhone(phone).orElse(null);
-        SessionUser user = registered == null ? developmentUser("test01") : registeredUser(registered);
-        return ResponseEntity.ok(response(issue(user, registered == null ? "development-session-v1" : "registered-user-v1"), user, null));
+        if (registered == null) throw unauthorized("手机号或验证码不正确", "检查账号绑定的手机号和验证码");
+        if ("disabled".equals(registered.status())) throw forbidden("该账号已被禁用", "联系租户管理员");
+        if (!users.verifySmsCode(phone, code)) throw unauthorized("验证码错误或已过期", "重新获取验证码后重试");
+        SessionUser user = registeredUser(registered);
+        return ResponseEntity.ok(response(issue(user, "registered-user-v1"), user, null));
     }
 
     @PostMapping("/api/v1/session/password/forgot")
@@ -350,13 +364,15 @@ public class AuthController {
         System.out.println("[EMAIL:dev] 密码重置链接已生成 to=" + email + " link=" + link);
     }
     private void limit(HttpServletRequest request, String operation, int max) {
-        String key = operation + ":" + Optional.ofNullable(request.getHeader("X-Forwarded-For")).orElse("unknown");
+        limitKey(operation + ":" + request.getRemoteAddr(), max);
+    }
+    private void limitKey(String key, int max) {
         Instant now = Instant.now();
         RateWindow window = rates.compute(key, (ignored, value) ->
                 value == null || value.window().isBefore(now) ? new RateWindow(now.plusSeconds(60), new ArrayList<>()) : value);
         synchronized (window) {
             window.requests().removeIf(item -> item.isBefore(now.minusSeconds(60)));
-            if (window.requests().size() >= max) throw unauthorized("请求过于频繁，请 60 秒后重试", "稍后再试");
+            if (window.requests().size() >= max) throw error(429, "AUTH_RATE_LIMITED", "请求过于频繁，请 60 秒后重试", "稍后再试");
             window.requests().add(now);
         }
     }
