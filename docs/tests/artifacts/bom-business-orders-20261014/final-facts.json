@@ -1,0 +1,607 @@
+{
+  "at": "2026-10-14T00:52:53.214Z",
+  "deployment": {
+    "at": "2026-10-14T00:52:11.597Z",
+    "release": "/Users/liyi/Desktop/projects1/gongye_ai_plat/deploy/artifacts/industrial-ai-bom-orders-7175-20261014-320914e",
+    "previous": "/Users/liyi/Desktop/projects1/gongye_ai_plat/deploy/artifacts/industrial-ai-bom-orders-7175-20261014-edc7b77",
+    "backup": "/Users/liyi/Desktop/projects1/gongye_ai_plat/deploy/artifacts/local-runtime-7175/backups/industrial-ai-2026-10-14T00-52-00-026Z.dump",
+    "javaPid": 45576,
+    "frontend": "http://127.0.0.1:7175",
+    "backend": "http://127.0.0.1:8081",
+    "database": "industrial_ai",
+    "storage": "PostgreSQL",
+    "demoAuthEnabled": true,
+    "manifest": "industrial-ai BOM and business orders\nbuild-time: 2026-10-14T00:51:59.863Z\ngit-commit: 320914e04069bb95909371ef66034c1c02edde13\nverification: Java 113, frontend 148, routes 267, typecheck and build passed\n",
+    "jarSha256": "0daca98980454fc1926a933924cf26ca21f12aff825801cf8fa82242eb0dcbeb"
+  },
+  "health": {
+    "status": "ok",
+    "runtime": "java",
+    "at": "2026-10-14T00:52:53.166533Z"
+  },
+  "boms": [
+    {
+      "id": "d02d32e5-4bb4-46d7-88af-5aa4466bcaf5",
+      "lines": [
+        {
+          "uom": "PCS",
+          "qtyPer": "2.1",
+          "materialId": "RM201",
+          "warehouseId": "WH-RM-01",
+          "materialName": "AI算力芯片"
+        },
+        {
+          "uom": "PCS",
+          "qtyPer": "1.02",
+          "materialId": "RM202",
+          "warehouseId": "WH-RM-01",
+          "materialName": "12层空PCB板"
+        },
+        {
+          "uom": "PCS",
+          "qtyPer": "1",
+          "materialId": "RM305",
+          "warehouseId": "WH-RM-01",
+          "materialName": "铝合金防护外壳"
+        }
+      ],
+      "status": "EFFECTIVE",
+      "version": 2,
+      "tenantId": "TENANT-SHWS",
+      "productId": "FG001",
+      "updatedAt": "2026-10-14T00:30:57.660299Z",
+      "productName": "工业控制器顶配版",
+      "publishedBy": "test01",
+      "routingSnapshot": {
+        "id": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c",
+        "productId": "FG001",
+        "operations": [
+          {
+            "code": "SMT",
+            "name": "SMT 贴片加工",
+            "sequence": 10,
+            "standardMinutes": "30",
+            "workCenterResourceId": "WC-SH-ASSY-01"
+          },
+          {
+            "code": "ASSEMBLY",
+            "name": "总装组装",
+            "sequence": 20,
+            "standardMinutes": "72",
+            "workCenterResourceId": "WC-SH-ASSY-01"
+          }
+        ]
+      },
+      "routingSnapshotId": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c"
+    }
+  ],
+  "ordinary": {
+    "id": "5ba59439-1ef0-42ec-874a-8e7cf5140dbd",
+    "uom": "PCS",
+    "code": "WO-MV7DPLM9963F",
+    "status": "CLOSED",
+    "dueDate": "2026-10-21",
+    "version": 9,
+    "inputQty": "1",
+    "tenantId": "TENANT-SHWS",
+    "createdAt": "2026-10-14T00:35:55.186188Z",
+    "createdBy": "test01",
+    "postedQty": "1",
+    "productId": "FG001",
+    "updatedAt": "2026-10-14T00:42:18.362921Z",
+    "plannedQty": "1",
+    "bomSnapshot": {
+      "id": "d02d32e5-4bb4-46d7-88af-5aa4466bcaf5",
+      "lines": [
+        {
+          "uom": "PCS",
+          "qtyPer": "2.1",
+          "materialId": "RM201",
+          "warehouseId": "WH-RM-01",
+          "materialName": "AI算力芯片"
+        },
+        {
+          "uom": "PCS",
+          "qtyPer": "1.02",
+          "materialId": "RM202",
+          "warehouseId": "WH-RM-01",
+          "materialName": "12层空PCB板"
+        },
+        {
+          "uom": "PCS",
+          "qtyPer": "1",
+          "materialId": "RM305",
+          "warehouseId": "WH-RM-01",
+          "materialName": "铝合金防护外壳"
+        }
+      ],
+      "status": "EFFECTIVE",
+      "version": 2,
+      "tenantId": "TENANT-SHWS",
+      "productId": "FG001",
+      "updatedAt": "2026-10-14T00:30:57.660299Z",
+      "productName": "工业控制器顶配版",
+      "publishedBy": "test01",
+      "routingSnapshot": {
+        "id": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c",
+        "productId": "FG001",
+        "operations": [
+          {
+            "code": "SMT",
+            "name": "SMT 贴片加工",
+            "sequence": 10,
+            "standardMinutes": "30",
+            "workCenterResourceId": "WC-SH-ASSY-01"
+          },
+          {
+            "code": "ASSEMBLY",
+            "name": "总装组装",
+            "sequence": 20,
+            "standardMinutes": "72",
+            "workCenterResourceId": "WC-SH-ASSY-01"
+          }
+        ]
+      },
+      "routingSnapshotId": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c"
+    },
+    "productName": "FG001 - 工业控制器顶配版",
+    "bomSnapshotId": "d02d32e5-4bb4-46d7-88af-5aa4466bcaf5",
+    "correlationId": "39905145-900d-4af4-9df2-58a3a26a561a",
+    "kittingStatus": "READY",
+    "reportedGoodQty": "1",
+    "routingSnapshot": {
+      "id": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c",
+      "productId": "FG001",
+      "operations": [
+        {
+          "code": "SMT",
+          "name": "SMT 贴片加工",
+          "sequence": 10,
+          "standardMinutes": "30",
+          "workCenterResourceId": "WC-SH-ASSY-01"
+        },
+        {
+          "code": "ASSEMBLY",
+          "name": "总装组装",
+          "sequence": 20,
+          "standardMinutes": "72",
+          "workCenterResourceId": "WC-SH-ASSY-01"
+        }
+      ]
+    },
+    "kittingCheckedAt": "2026-10-14T00:36:04.668691Z",
+    "reportedScrapQty": "0",
+    "factoryResourceId": "FAC-SH-01",
+    "parameterSnapshot": {
+      "demandIds": [
+        {
+          "demandId": "fab460d7-6047-4fe3-bf6a-dbc8e6f569c1",
+          "allocatedQty": "1",
+          "promisedDate": "2026-10-21"
+        }
+      ],
+      "inventoryWarehouseId": "WH-FG-01"
+    },
+    "reportedDefectQty": "0",
+    "routingSnapshotId": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c",
+    "materialReservation": {
+      "status": "READY",
+      "reservations": [
+        {
+          "id": "c61b2f97-9fb6-4faf-bbe5-623711b2209b",
+          "uom": "PCS",
+          "status": "ACTIVE",
+          "tenantId": "TENANT-SHWS",
+          "createdAt": "2026-10-14T00:36:04.657455Z",
+          "productId": "RM201",
+          "sourceType": "PRODUCTION",
+          "consumedQty": "0",
+          "reservedQty": "2.1",
+          "warehouseId": "WH-RM-01",
+          "workOrderId": "5ba59439-1ef0-42ec-874a-8e7cf5140dbd",
+          "shipmentTaskId": "production:5ba59439-1ef0-42ec-874a-8e7cf5140dbd"
+        },
+        {
+          "id": "6a0b0b9b-3755-4c94-ae2d-26601ae2fc41",
+          "uom": "PCS",
+          "status": "ACTIVE",
+          "tenantId": "TENANT-SHWS",
+          "createdAt": "2026-10-14T00:36:04.658921Z",
+          "productId": "RM202",
+          "sourceType": "PRODUCTION",
+          "consumedQty": "0",
+          "reservedQty": "1.02",
+          "warehouseId": "WH-RM-01",
+          "workOrderId": "5ba59439-1ef0-42ec-874a-8e7cf5140dbd",
+          "shipmentTaskId": "production:5ba59439-1ef0-42ec-874a-8e7cf5140dbd"
+        },
+        {
+          "id": "a0aceebc-6c27-42d7-a9ff-6abbf8d2cfdc",
+          "uom": "PCS",
+          "status": "ACTIVE",
+          "tenantId": "TENANT-SHWS",
+          "createdAt": "2026-10-14T00:36:04.659489Z",
+          "productId": "RM305",
+          "sourceType": "PRODUCTION",
+          "consumedQty": "0",
+          "reservedQty": "1",
+          "warehouseId": "WH-RM-01",
+          "workOrderId": "5ba59439-1ef0-42ec-874a-8e7cf5140dbd",
+          "shipmentTaskId": "production:5ba59439-1ef0-42ec-874a-8e7cf5140dbd"
+        }
+      ]
+    },
+    "qualityRecoveredQty": "0",
+    "scheduleCandidateId": "b1b20291-6f92-46ab-b433-459747dc9d3e",
+    "workCenterResourceId": "WC-SH-ASSY-01"
+  },
+  "sales": {
+    "id": "ff6065ea-cb50-40d0-9586-2d8132f44d25",
+    "uom": "PCS",
+    "code": "WO-MV7E2IGAEF82",
+    "status": "CLOSED",
+    "dueDate": "2026-10-14",
+    "version": 9,
+    "inputQty": "1",
+    "tenantId": "TENANT-SHWS",
+    "createdAt": "2026-10-14T00:45:57.610457Z",
+    "createdBy": "test01",
+    "postedQty": "1",
+    "productId": "FG001",
+    "updatedAt": "2026-10-14T00:46:34.504917Z",
+    "plannedQty": "1",
+    "bomSnapshot": {
+      "id": "d02d32e5-4bb4-46d7-88af-5aa4466bcaf5",
+      "lines": [
+        {
+          "uom": "PCS",
+          "qtyPer": "2.1",
+          "materialId": "RM201",
+          "warehouseId": "WH-RM-01",
+          "materialName": "AI算力芯片"
+        },
+        {
+          "uom": "PCS",
+          "qtyPer": "1.02",
+          "materialId": "RM202",
+          "warehouseId": "WH-RM-01",
+          "materialName": "12层空PCB板"
+        },
+        {
+          "uom": "PCS",
+          "qtyPer": "1",
+          "materialId": "RM305",
+          "warehouseId": "WH-RM-01",
+          "materialName": "铝合金防护外壳"
+        }
+      ],
+      "status": "EFFECTIVE",
+      "version": 2,
+      "tenantId": "TENANT-SHWS",
+      "productId": "FG001",
+      "updatedAt": "2026-10-14T00:30:57.660299Z",
+      "productName": "工业控制器顶配版",
+      "publishedBy": "test01",
+      "routingSnapshot": {
+        "id": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c",
+        "productId": "FG001",
+        "operations": [
+          {
+            "code": "SMT",
+            "name": "SMT 贴片加工",
+            "sequence": 10,
+            "standardMinutes": "30",
+            "workCenterResourceId": "WC-SH-ASSY-01"
+          },
+          {
+            "code": "ASSEMBLY",
+            "name": "总装组装",
+            "sequence": 20,
+            "standardMinutes": "72",
+            "workCenterResourceId": "WC-SH-ASSY-01"
+          }
+        ]
+      },
+      "routingSnapshotId": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c"
+    },
+    "bomSnapshotId": "d02d32e5-4bb4-46d7-88af-5aa4466bcaf5",
+    "correlationId": "ec236788-ea0a-46f9-b12d-d0c3b3d7cf6b",
+    "kittingStatus": "READY",
+    "reportedGoodQty": "1",
+    "routingSnapshot": {
+      "id": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c",
+      "productId": "FG001",
+      "operations": [
+        {
+          "code": "SMT",
+          "name": "SMT 贴片加工",
+          "sequence": 10,
+          "standardMinutes": "30",
+          "workCenterResourceId": "WC-SH-ASSY-01"
+        },
+        {
+          "code": "ASSEMBLY",
+          "name": "总装组装",
+          "sequence": 20,
+          "standardMinutes": "72",
+          "workCenterResourceId": "WC-SH-ASSY-01"
+        }
+      ]
+    },
+    "kittingCheckedAt": "2026-10-14T00:45:57.716560Z",
+    "reportedScrapQty": "0",
+    "factoryResourceId": "FAC-SH-01",
+    "parameterSnapshot": {
+      "demandIds": [
+        {
+          "demandId": "0c0b6026-6ec9-4c89-9397-1fd417f5805a",
+          "allocatedQty": "1",
+          "promisedDate": "2026-10-14"
+        }
+      ],
+      "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+    },
+    "reportedDefectQty": "0",
+    "routingSnapshotId": "ROUTE-b8481875-c5d7-4b38-89f3-a2f467d9f10c",
+    "materialReservation": {
+      "status": "READY",
+      "reservations": [
+        {
+          "id": "d60495ba-644d-47c4-be45-2f32bb83f497",
+          "uom": "PCS",
+          "status": "ACTIVE",
+          "tenantId": "TENANT-SHWS",
+          "createdAt": "2026-10-14T00:45:57.708858Z",
+          "productId": "RM201",
+          "sourceType": "PRODUCTION",
+          "consumedQty": "0",
+          "reservedQty": "2.1",
+          "warehouseId": "WH-RM-01",
+          "workOrderId": "ff6065ea-cb50-40d0-9586-2d8132f44d25",
+          "shipmentTaskId": "production:ff6065ea-cb50-40d0-9586-2d8132f44d25"
+        },
+        {
+          "id": "0996f1b2-776e-45a0-a0a2-ba151735edc0",
+          "uom": "PCS",
+          "status": "ACTIVE",
+          "tenantId": "TENANT-SHWS",
+          "createdAt": "2026-10-14T00:45:57.709299Z",
+          "productId": "RM202",
+          "sourceType": "PRODUCTION",
+          "consumedQty": "0",
+          "reservedQty": "1.02",
+          "warehouseId": "WH-RM-01",
+          "workOrderId": "ff6065ea-cb50-40d0-9586-2d8132f44d25",
+          "shipmentTaskId": "production:ff6065ea-cb50-40d0-9586-2d8132f44d25"
+        },
+        {
+          "id": "fdee9d20-1cd1-4107-9bb2-b882ef9d1c85",
+          "uom": "PCS",
+          "status": "ACTIVE",
+          "tenantId": "TENANT-SHWS",
+          "createdAt": "2026-10-14T00:45:57.709538Z",
+          "productId": "RM305",
+          "sourceType": "PRODUCTION",
+          "consumedQty": "0",
+          "reservedQty": "1",
+          "warehouseId": "WH-RM-01",
+          "workOrderId": "ff6065ea-cb50-40d0-9586-2d8132f44d25",
+          "shipmentTaskId": "production:ff6065ea-cb50-40d0-9586-2d8132f44d25"
+        }
+      ]
+    },
+    "qualityRecoveredQty": "0",
+    "scheduleCandidateId": "bc3024b7-f4a4-4bb3-a93a-140eb6cc8acb",
+    "workCenterResourceId": "WC-SH-ASSY-01"
+  },
+  "salesOrder": {
+    "id": "fdf26bcc-ee60-4b70-992d-f8e645853259",
+    "lines": [
+      {
+        "id": "b488024f-4cd4-4ef3-ab88-8e55de76675f",
+        "uom": "PCS",
+        "lineNo": 1,
+        "taxRate": "0",
+        "version": 6,
+        "productId": "FG001",
+        "unitPrice": "100",
+        "lineStatus": "SHIPPED",
+        "orderedQty": "2",
+        "shippedQty": "2",
+        "productName": "工业控制器顶配版",
+        "reservedQty": "0",
+        "promisedDate": "2026-10-14",
+        "remainingQty": "0",
+        "specification": "IC-X900 / 32G / 双网口",
+        "activeRequestedQty": "0",
+        "allowPartialShipment": true
+      }
+    ],
+    "remark": "BOM工艺正式版本验收-销售缺货-20261014",
+    "orderNo": "SO-20261014-FDF26BCC",
+    "version": 8,
+    "currency": "CNY",
+    "tenantId": "TENANT-SHWS",
+    "createdAt": "2026-10-14T00:43:42.399140Z",
+    "createdBy": "test01",
+    "orderDate": "2026-10-14",
+    "recipient": {
+      "city": "上海",
+      "name": "李经理",
+      "address": "上海市浦东新区金桥开发区",
+      "country": "中国",
+      "province": "上海",
+      "phoneMasked": "138****0000"
+    },
+    "updatedAt": "2026-10-14T00:46:59.232544Z",
+    "customerId": "KH-20260612-001",
+    "validUntil": "2026-11-13",
+    "totalAmount": "200",
+    "customerName": "上海万申产业股份有限公司",
+    "discountRate": "100",
+    "reviewStatus": "APPROVED",
+    "correlationId": "ec236788-ea0a-46f9-b12d-d0c3b3d7cf6b",
+    "overallStatus": "SHIPPED",
+    "discountAmount": "0",
+    "originalAmount": "200",
+    "reviewRequired": true,
+    "shipmentStatus": "SHIPPED",
+    "ownerEmployeeId": "test01",
+    "factoryResourceId": "FAC-SH-01",
+    "reviewPolicyVersion": "SALES-REVIEW-PILOT-V1",
+    "allowPartialShipment": true,
+    "requestedDeliveryDate": "2026-10-14",
+    "fulfillmentWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1"
+  },
+  "readyDemands": [
+    {
+      "id": "eb8467fb-24c8-4db6-a66f-7ccd98392760",
+      "qty": "3",
+      "uom": "PCS",
+      "code": "DM-MV7E655HA099",
+      "status": "PENDING_REVIEW",
+      "dueDate": "2026-10-21",
+      "version": 2,
+      "priority": 50,
+      "revision": 2,
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-14T00:48:46.997650Z",
+      "createdBy": "test01",
+      "productId": "FG001",
+      "updatedAt": "2026-10-14T00:48:47.101863Z",
+      "assignedAt": "2026-10-14T00:48:47.101883Z",
+      "reviewerId": "test01",
+      "sourceType": "SALES_ORDER_SHORTAGE",
+      "handlerRole": "PRODUCTION_DIRECTOR",
+      "blockReasons": [],
+      "correlationId": "9d181cc9-9619-4e94-87c8-cd1e9b55a1d2",
+      "factoryResourceId": "FAC-SH-01",
+      "source": {
+        "id": "35472494-56ea-4d9e-97af-d73ad9e64130",
+        "qty": "3",
+        "demandId": "eb8467fb-24c8-4db6-a66f-7ccd98392760",
+        "sourceId": "0bcc3bc7-1505-4c19-9881-8be3d01ab071",
+        "tenantId": "TENANT-SHWS",
+        "sourceType": "SALES_ORDER_SHORTAGE",
+        "sourceLineId": "de4d0a0a-0a06-4565-9384-8bfcff62eb3f",
+        "sourceSystem": "INVENTORY_FULFILLMENT",
+        "sourceRevision": 2,
+        "payloadSnapshot": {
+          "traceId": "trace-66174142831917",
+          "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+          "salesOrderId": "0bcc3bc7-1505-4c19-9881-8be3d01ab071",
+          "correlationId": "9d181cc9-9619-4e94-87c8-cd1e9b55a1d2",
+          "salesOrderLineId": "de4d0a0a-0a06-4565-9384-8bfcff62eb3f",
+          "shipmentRequestId": "9051f586-ad33-4f6a-8c89-11a0ff9da6b0",
+          "inventoryFactVersion": 0,
+          "shipmentRequestLineId": "e330a1dc-58b4-48d0-adb5-b09e1c914304"
+        },
+        "salesOrderLineId": "de4d0a0a-0a06-4565-9384-8bfcff62eb3f",
+        "shipmentRequestId": "9051f586-ad33-4f6a-8c89-11a0ff9da6b0",
+        "shipmentRequestLineId": "e330a1dc-58b4-48d0-adb5-b09e1c914304"
+      }
+    },
+    {
+      "id": "f88b13ee-654d-469e-86d2-94a0cbebca4a",
+      "qty": "2",
+      "uom": "PCS",
+      "code": "DM-MV7E4HGA-37DF",
+      "status": "PENDING_REVIEW",
+      "dueDate": "2026-10-21",
+      "version": 2,
+      "priority": 50,
+      "revision": 1,
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-14T00:48:13.463337Z",
+      "createdBy": "test01",
+      "productId": "FG001",
+      "updatedAt": "2026-10-14T00:48:13.522386Z",
+      "assignedAt": "2026-10-14T00:48:13.522421Z",
+      "reviewerId": "test01",
+      "sourceType": "MANUAL",
+      "handlerRole": "PRODUCTION_DIRECTOR",
+      "productName": "FG001 - 工业控制器顶配版",
+      "blockReasons": [],
+      "correlationId": "f29fd704-30d9-4ffd-9532-c2e65737773c",
+      "factoryResourceId": "FAC-SH-01",
+      "sourceDescription": "工业控制器常规补货计划-20261014",
+      "inventoryWarehouseId": "WH-FG-01"
+    }
+  ],
+  "completions": [
+    {
+      "id": "ad17041d-d818-471a-ab10-79d3e7f7ad11",
+      "qty": "1",
+      "uom": "PCS",
+      "code": "CMP-MV7DS8YL492F",
+      "status": "POSTED",
+      "taskId": "dfd1b190-3bbc-408d-927e-7ea2c7d0d967",
+      "version": 2,
+      "postedAt": "2026-10-14T00:37:59.217613Z",
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-14T00:37:58.752910Z",
+      "createdBy": "test01",
+      "traceMode": "NONE",
+      "updatedAt": "2026-10-14T00:37:59.217595Z",
+      "workOrderId": "5ba59439-1ef0-42ec-874a-8e7cf5140dbd",
+      "inspectionId": "d5e2e51b-cb21-43ad-a92c-cf6955c54664",
+      "serialNumbers": [],
+      "productionDate": "2026-10-14",
+      "allocationRevision": 1,
+      "warehouseResourceId": "WH-FG-01",
+      "inventoryWarehouseId": "WH-FG-01",
+      "externalTransactionId": "production-completion:TENANT-SHWS:ad17041d-d818-471a-ab10-79d3e7f7ad11",
+      "inventoryIdempotencyKey": "inventory-completion:TENANT-SHWS:ad17041d-d818-471a-ab10-79d3e7f7ad11"
+    },
+    {
+      "id": "b6368940-c16b-4437-9edf-506deb2b2f30",
+      "qty": "1",
+      "uom": "PCS",
+      "code": "CMP-MV7E2X3L77F7",
+      "status": "POSTED",
+      "taskId": "8887c71c-ec4a-484f-aa86-a9ef082caaa1",
+      "version": 2,
+      "postedAt": "2026-10-14T00:46:17.875048Z",
+      "tenantId": "TENANT-SHWS",
+      "createdAt": "2026-10-14T00:46:16.593297Z",
+      "createdBy": "test01",
+      "traceMode": "NONE",
+      "updatedAt": "2026-10-14T00:46:17.875039Z",
+      "workOrderId": "ff6065ea-cb50-40d0-9586-2d8132f44d25",
+      "inspectionId": "96e540d0-4746-40dc-85f0-0ca799cd0be8",
+      "serialNumbers": [],
+      "productionDate": "2026-10-14",
+      "allocationRevision": 1,
+      "warehouseResourceId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+      "inventoryWarehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+      "externalTransactionId": "production-completion:TENANT-SHWS:b6368940-c16b-4437-9edf-506deb2b2f30",
+      "inventoryIdempotencyKey": "inventory-completion:TENANT-SHWS:b6368940-c16b-4437-9edf-506deb2b2f30"
+    }
+  ],
+  "stock": [
+    {
+      "uom": "PCS",
+      "asOf": "2026-10-14T00:46:59.184Z",
+      "tenantId": "TENANT-SHWS",
+      "frozenQty": "0",
+      "productId": "FG001",
+      "factVersion": 14,
+      "warehouseId": "8f71619b-ff69-4949-8c03-1c154db6cbe1",
+      "inTransitQty": "0",
+      "sourceSystem": "REFERENCE_WMS",
+      "sourceEventId": "2afa2c9b-b7c4-423b-ba05-5f12dd91bceb",
+      "formulaVersion": "FULFILLABLE-V1",
+      "fulfillableQty": "0",
+      "safetyStockQty": "0",
+      "qualifiedOnHandQty": "0",
+      "allocatedReservedQty": "0"
+    }
+  ],
+  "seedDemandsStillActive": [],
+  "frontendHealth": {
+    "status": "ok",
+    "runtime": "java",
+    "at": "2026-10-14T00:53:51.314355Z"
+  },
+  "frontendAsset": "/assets/index-Beew5LQ0.js"
+}
