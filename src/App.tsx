@@ -83,6 +83,7 @@ import { restoreShippedSalesOutbounds, syncShippedSalesOutbounds } from './featu
 import { compareQuantity, subtractQuantity } from './shared/decimal';
 import {
   mapProductionDemandStatus,
+  normalizeProductionDemandTrace,
   planningMaterialShortages,
   recoverMpsFromPlannedDemand,
   planningResultCoversDemand,
@@ -5784,7 +5785,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   };
 
   const mapFormalDemandRow = (demand) => {
-      const trace = demand.source;
+      const trace = normalizeProductionDemandTrace(demand);
       const sourceSalesOrder = trace?.salesOrderId || '';
       const sourceOrderLine = trace?.salesOrderLineId || '';
       const sourceShipment = trace?.shipmentRequestId || '';
@@ -6233,7 +6234,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               `来源类型：${t.sourceType}`,
               t.salesOrderId ? `销售订单：${t.salesOrderId}` : null,
               t.salesOrderLineId ? `订单行：${t.salesOrderLineId}` : null,
-              t.shipmentRequestId ? `出库任务：${t.shipmentRequestId}` : null,
+              t.shipmentRequestId ? `发货申请：${t.shipmentRequestId}` : null,
               t.inventoryFactVersion != null ? `库存事实版本：v${t.inventoryFactVersion}` : null,
               `Correlation：${t.correlationId}`,
               t.traceId ? `Trace：${t.traceId}` : null,

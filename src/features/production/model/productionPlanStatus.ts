@@ -13,6 +13,31 @@ export const mapProductionDemandStatus = (demand: ProductionDemandLike) => {
   return demand.status;
 };
 
+type DemandSource = {
+  sourceId?: string; sourceLineId?: string; salesOrderId?: string; salesOrderLineId?: string;
+  shipmentRequestId?: string; shipmentRequestLineId?: string; inventoryWarehouseId?: string;
+  inventoryFactVersion?: number; correlationId?: string; traceId?: string;
+  payloadSnapshot?: {
+    salesOrderId?: string; salesOrderLineId?: string; warehouseId?: string; inventoryWarehouseId?: string;
+    inventoryFactVersion?: number; correlationId?: string; traceId?: string;
+  };
+};
+
+export const normalizeProductionDemandTrace = (demand: { source?: DemandSource | null; correlationId?: string }) => {
+  if (!demand.source) return null;
+  const source = demand.source;
+  const payload = source.payloadSnapshot;
+  return {
+    ...source,
+    salesOrderId: source.salesOrderId || payload?.salesOrderId || source.sourceId || "",
+    salesOrderLineId: source.salesOrderLineId || payload?.salesOrderLineId || source.sourceLineId || "",
+    inventoryWarehouseId: source.inventoryWarehouseId || payload?.inventoryWarehouseId || payload?.warehouseId || "",
+    inventoryFactVersion: source.inventoryFactVersion ?? payload?.inventoryFactVersion,
+    correlationId: source.correlationId || payload?.correlationId || demand.correlationId || "",
+    traceId: source.traceId || payload?.traceId || "",
+  };
+};
+
 export const planningResultCoversDemand = (result: unknown, demandId: string) => {
   const mpsLines = (result as { mpsLines?: Array<{ demandId?: string }> } | undefined)?.mpsLines;
   return Array.isArray(mpsLines) && mpsLines.some((line) => line.demandId === demandId);
@@ -39,10 +64,7 @@ type PlannedDemandLike = {
   scheduleCandidateId?: string;
   workOrderId?: string;
   workOrderCode?: string;
-  source?: {
-    salesOrderId?: string;
-    inventoryFactVersion?: number;
-  };
+  source?: DemandSource;
 };
 
 type PlanningTaskLike = {
@@ -77,8 +99,8 @@ export const recoverMpsFromPlannedDemand = (demand: PlannedDemandLike, task: Pla
     workOrderCode: demand.workOrderCode,
     formalMps: true,
     priority: "紧急",
-    sourceSalesOrder: demand.source?.salesOrderId || "",
-    sourceFactVersion: demand.source?.inventoryFactVersion,
+    sourceSalesOrder: normalizeProductionDemandTrace(demand)?.salesOrderId || "",
+    sourceFactVersion: normalizeProductionDemandTrace(demand)?.inventoryFactVersion,
     sourceCustomer: "业务来源",
     demandId: demand.id,
   };
