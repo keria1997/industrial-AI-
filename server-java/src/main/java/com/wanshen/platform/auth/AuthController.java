@@ -101,8 +101,7 @@ public class AuthController {
         String phone = text(input, "phone");
         if (!phone.matches("1[3-9]\\d{9}")) throw bad("请输入有效手机号", "检查手机号后重试");
         RegisteredUser registered = users.findByPhone(phone).orElse(null);
-        if (registered == null) throw bad("手机号未绑定账号", "请先注册账号或联系管理员绑定手机号");
-        if ("disabled".equals(registered.status())) throw forbidden("该账号已被禁用", "联系租户管理员");
+        if (registered != null && "disabled".equals(registered.status())) throw forbidden("该账号已被禁用", "联系租户管理员");
         limitKey("sms-phone:" + phone, 1);
         String code = String.valueOf(100000 + random.nextInt(900000));
         SmsSender.Delivery delivery = smsSender.send(phone, code);

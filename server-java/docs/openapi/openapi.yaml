@@ -107,8 +107,8 @@ paths:
       - { url: /api/v1, description: 当前来源的同源代理地址 }
     post:
       tags: [Session]
-      summary: 向已绑定且启用的账号手机号发送登录验证码
-      description: 火山引擎受理发送后才保存5分钟有效的验证码；每手机号每60秒最多一次、每来源每分钟最多5次。正式模式不返回验证码，console仅在演示登录启用时可用。发送受理不等于运营商送达。
+      summary: 向有效手机号发送登录验证码
+      description: 获取验证码不要求手机号已绑定账号，已绑定禁用账号仍被拒绝；不会自动创建账号或签发会话，登录时仍要求手机号绑定启用账号。火山引擎受理发送后才保存5分钟有效的验证码；每手机号每60秒最多一次、每来源每分钟最多5次。正式模式不返回验证码，console仅在演示登录启用时可用。发送受理不等于运营商送达。
       security: []
       requestBody:
         required: true
@@ -117,7 +117,7 @@ paths:
             schema: { $ref: '#/components/schemas/SmsSendCodeInput' }
       responses:
         '200': { description: 短信发送已受理, content: { application/json: { schema: { $ref: '#/components/schemas/SmsSendCodeResponse' } } } }
-        '400': { description: 手机号格式错误或未绑定账号 }
+        '400': { description: 手机号格式错误 }
         '403': { description: 账号已禁用 }
         '424': { description: 配置缺失、短信发送失败或发送结果未知；错误details提供providerCode和requestId，不返回原始响应或密钥 }
         '429': { description: 获取验证码过于频繁 }

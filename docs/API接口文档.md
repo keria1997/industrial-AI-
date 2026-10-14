@@ -74,12 +74,12 @@ npm run dev:java-api
 - `POST /api/v1/session/login`：非生产环境使用开发账号取得 8 小时签名访问令牌。
 - `POST /api/v1/session/captcha`：获取服务端生成的一次性账号登录图形验证码，有效期 5 分钟。
 - `GET /api/v1/session/me`：校验访问令牌和当前租户。
-- `POST /api/v1/session/sms/send-code`：向已绑定且启用的账号手机号发送验证码。输入 `{phone}`，火山引擎受理后返回 `message/expiresIn=300/requestId`；仅开发console模式返回 `devCode`。每手机号60秒一次、每来源每分钟5次。正式短信配置为 `SMS_PROVIDER=volcengine`、`SMS_ACCOUNT`、`SMS_ACCESS_KEY_ID`、`SMS_ACCESS_KEY_SECRET`、`SMS_SIGN_NAME`、`SMS_TEMPLATE_CODE`、`SMS_TEMPLATE_VARIABLE`；区域固定cn-north-1，SendSms版本2020-01-01。发送失败/结果未知返回424，details包含安全的providerCode和requestId，不返回密钥、验证码或原始服务响应；不自动重发。
+- `POST /api/v1/session/sms/send-code`：向有效手机号发送验证码，未绑定账号的手机号也可获取；已绑定禁用账号返回403。获取验证码不创建账号或签发会话，登录仍要求绑定启用账号。输入 `{phone}`，火山引擎受理后返回 `message/expiresIn=300/requestId`；仅开发console模式返回 `devCode`。每手机号60秒一次、每来源每分钟5次。正式短信配置为 `SMS_PROVIDER=volcengine`、`SMS_ACCOUNT`、`SMS_ACCESS_KEY_ID`、`SMS_ACCESS_KEY_SECRET`、`SMS_SIGN_NAME`、`SMS_TEMPLATE_CODE`、`SMS_TEMPLATE_VARIABLE`；区域固定cn-north-1，SendSms版本2020-01-01。发送失败/结果未知返回424，details包含安全的providerCode和requestId，不返回密钥、验证码或原始服务响应；不自动重发。
 - `POST /api/v1/session/sms/login`：输入 `{phone,code}`，登录手机号对应的已有账号；验证码5分钟过期、一次性使用、新码替换旧码。未知手机号返回401，禁用账号返回403，每手机号每分钟5次验证、每来源每分钟10次；超限429。不存在未知手机号回退test01的管理员路径。
 - 开发账号：`test01`、`reviewer`、`operator`、`inspector`；默认密码 `123456`。
 - 生产环境禁用开发登录并强制配置 `AUTH_SECRET`。
 
-当前会话基线没有刷新令牌、服务端撤销、密码治理、短信服务或企业 SSO/OIDC。令牌保存在浏览器 `sessionStorage`，关闭标签页后清除。
+当前会话基线已接火山引擎短信服务，没有刷新令牌、服务端撤销、完整密码治理或企业 SSO/OIDC。令牌保存在浏览器 `sessionStorage`，关闭标签页后清除。
 
 账号登录必须先请求图形验证码，提交 `captchaId` 和 `captchaCode`。验证码一次性有效；校验失败、过期或账号密码错误后，需要重新获取验证码并让用户重新输入。
 

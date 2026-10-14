@@ -61,16 +61,29 @@ class AuthSmsTests {
         assertThat(users.verifySmsCode(phone, code.get())).isFalse();
     }
 
-    @Test void unknownOrDisabledPhonesNeverSendOrBecomeDemoAdministrators() throws Exception {
+    @Test void unboundPhoneCanReceiveCodeWithoutCreatingAnAccountOrSession() throws Exception {
+        AtomicReference<String> sent = new AtomicReference<>();
+        AtomicReference<String> code = new AtomicReference<>();
+        MockMvc mvc = mvc((to, value) -> {
+            sent.set(to); code.set(value); return new SmsSender.Delivery("unbound-request", false);
+        });
+        mvc.perform(post("/api/v1/session/sms/send-code").contentType("application/json").content(body(phone, "")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.requestId").value("unbound-request"))
+                .andExpect(jsonPath("$.devCode").doesNotExist()).andExpect(jsonPath("$.accessToken").doesNotExist());
+        assertThat(sent.get()).isEqualTo(phone);
+        assertThat(code.get()).matches("\\d{6}");
+        assertThat(users.findByPhone(phone)).isEmpty();
+        mvc.perform(post("/api/v1/session/sms/login").contentType("application/json").content(body(phone, code.get())))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.accessToken").doesNotExist());
+        assertThat(users.verifySmsCode(phone, code.get())).isTrue();
+    }
+
+    @Test void disabledAccountCannotSendOrLogin() throws Exception {
         AtomicReference<String> sent = new AtomicReference<>();
         MockMvc mvc = mvc((to, value) -> { sent.set(to); return new SmsSender.Delivery("", true); });
-        mvc.perform(post("/api/v1/session/sms/send-code").contentType("application/json").content(body(phone, "")))
-                .andExpect(status().isBadRequest());
-        users.saveSmsCode(phone, "123456");
-        mvc.perform(post("/api/v1/session/sms/login").contentType("application/json").content(body(phone, "123456")))
-                .andExpect(status().isUnauthorized());
         var registered = user();
         users.updateUserStatus(registered.id(), "disabled");
+        users.saveSmsCode(phone, "123456");
         mvc.perform(post("/api/v1/session/sms/send-code").contentType("application/json").content(body(phone, "")))
                 .andExpect(status().isForbidden());
         mvc.perform(post("/api/v1/session/sms/login").contentType("application/json").content(body(phone, "123456")))
