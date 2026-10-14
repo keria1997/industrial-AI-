@@ -1,5 +1,7 @@
 # 工业 AI 平台 API 接口文档
 
+> 2026-10-14 BOM/工艺发布：新增 `GET /api/v1/production/bom-snapshots` 查询当前租户生效版本，要求 `production.bom.manage` 或 `production.demand.review`。POST 同路径现在必须包含完整 `routingSnapshot`，其 id/productId 与 BOM 关联一致，operations 非空、sequence 正整数递增、code 唯一、名称/工作中心必填、standardMinutes 为正十进制字符串。发布同时保存工艺、物料、版本、发布人和审计；工单固化 BOM 及工艺快照。旧版仅有编号的配置需发布完整工艺后才能通过需求校验。初始化需求归档保留，退出当前需求列表。
+
 > 2026-10-14 权限环境补齐：角色页 snapshot 返回租户未初始化 404 时调用已有 `/api/v1/platform/tenants/self-provision` 幂等初始化，再重新读取真实授权。服务端只允许 `*` 或 `platform.role.manage`，校验 `X-Tenant-Id` 在签名租户范围内，不再始终初始化第一个租户；非管理员及跨租户返回 403。初始化不会覆盖已有授权。
 
 > 2026-10-13 主计划权限变更：`production.mps.view` 菜单自动授予需求创建/校验/审批/接收、MRP/APS、建工单及规划任务查询，明确 action 拒绝优先。需求制单人可审批本人需求，`*` 为最高权限；不改变状态、版本、租户、审计及幂等检查。`GET /api/v1/production/readiness` 新增最终 `permissions`；已纳入平台管理的签名账号按真实岗位/角色重算，授权撤销下次请求生效。`PUT /api/v1/platform/roles/{id}/grants` 发布持久化授权并递增角色版本，支持 `If-Match` 冲突校验。普通需求支持 `sourceDescription` 和 `inventoryWarehouseId`。路由没有增加，原路由基线保持一致。

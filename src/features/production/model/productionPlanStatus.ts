@@ -4,7 +4,8 @@ export type ProductionDemandLike = {
 };
 
 export const mapProductionDemandStatus = (demand: ProductionDemandLike) => {
-  if (['RECEIVED', 'BLOCKED'].includes(demand.status)) return '待校验';
+  if (demand.status === 'RECEIVED') return '待校验';
+  if (demand.status === 'BLOCKED') return '校验阻断';
   if (demand.status === 'PENDING_REVIEW') return '待审批';
   if (demand.status === 'APPROVED') return demand.acceptedAt ? '待展算' : '待接收';
   if (demand.status === 'PLANNED') return '已展算';

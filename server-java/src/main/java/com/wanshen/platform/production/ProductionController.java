@@ -129,6 +129,12 @@ public class ProductionController {
         return command(request, () -> service.checkKitting(context(request), id, object(body)));
     }
 
+    @GetMapping("/api/v1/production/bom-snapshots")
+    public ResponseEntity<?> boms(HttpServletRequest request) {
+        RequestContext context = contexts.from(request);
+        return ok(context, service.listBoms(context));
+    }
+
     @PostMapping("/api/v1/production/bom-snapshots")
     public ResponseEntity<?> saveBom(@RequestBody(required = false) ObjectNode body, HttpServletRequest request) {
         return command(request, () -> service.saveBom(context(request), object(body)));

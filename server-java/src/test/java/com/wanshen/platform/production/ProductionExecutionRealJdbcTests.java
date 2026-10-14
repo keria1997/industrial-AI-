@@ -33,6 +33,19 @@ class ProductionExecutionRealJdbcTests {
         config.setMaximumPoolSize(4);
         return new HikariDataSource(config);
     }
+    @Test void publishedBomAndRoutingSurviveConnectionReload() {
+        String tenant = "bom-jdbc-" + UUID.randomUUID();
+        try (var data = dataSource(); var production = new JdbcProductionStore(data, MAPPER)) {
+            var service = new ProductionService(production, MAPPER);
+            service.saveBom(context(tenant, "admin", "publish", null), ProductionBomSnapshotTests.bom());
+        }
+        try (var data = dataSource(); var production = new JdbcProductionStore(data, MAPPER)) {
+            var service = new ProductionService(production, MAPPER);
+            var bom = service.listBoms(context(tenant, "admin", "read", null)).get(0);
+            assertThat(bom.path("routingSnapshot").path("operations").get(0).path("standardMinutes").asText()).isEqualTo("1.5");
+            assertThat(service.listBoms(context("OTHER", "admin", "read", null))).isEmpty();
+        }
+    }
     @Test void fullChainAndSecondReceiptSurviveReloadAndAreTenantScoped() {
         String tenant = "production-jdbc-" + UUID.randomUUID();
         String id;

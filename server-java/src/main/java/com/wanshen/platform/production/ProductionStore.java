@@ -153,6 +153,7 @@ public class ProductionStore {
     ) {
         List<JsonNode> values = demands.values().stream()
                 .filter(item -> text(item, "tenantId").equals(tenantId))
+                .filter(item -> !item.path("archived").asBoolean())
                 .filter(item -> status == null || text(item, "status").equals(status))
                 .filter(item -> factoryResourceId == null || text(item, "factoryResourceId").equals(factoryResourceId))
                 .filter(item -> matches(search, text(item, "code"), text(item, "productId"), text(item, "productName")))

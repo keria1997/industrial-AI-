@@ -8,6 +8,7 @@ import {
 describe('production plan status', () => {
   it('maps formal demand states without treating approval as planning success', () => {
     expect(mapProductionDemandStatus({ status: 'RECEIVED' })).toBe('待校验');
+    expect(mapProductionDemandStatus({ status: 'BLOCKED' })).toBe('校验阻断');
     expect(mapProductionDemandStatus({ status: 'PENDING_REVIEW' })).toBe('待审批');
     expect(mapProductionDemandStatus({ status: 'APPROVED' })).toBe('待接收');
     expect(mapProductionDemandStatus({ status: 'APPROVED', acceptedAt: '2026-01-01' })).toBe('待展算');

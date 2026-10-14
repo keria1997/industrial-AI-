@@ -91,6 +91,7 @@
   "GET /api/v1/procurement/purchase-returns",
   "GET /api/v1/procurement/suppliers",
   "GET /api/v1/procurement/suppliers/{id}",
+  "GET /api/v1/production/bom-snapshots",
   "GET /api/v1/production/completions",
   "GET /api/v1/production/completions/{id}",
   "GET /api/v1/production/dashboard/kpis",

@@ -13,6 +13,7 @@ import { productionOperationsApi } from './api/production/operations';
 import { formalProductionOrder, formalProductionJob, formalProductionInspection } from './features/production/model/formalProduction';
 import { useFormalProduction } from './features/production/model/useFormalProduction';
 import { ProductionReportModal } from './features/production/components/ProductionReportModal';
+import { FormalBomPanel } from './features/production/components/FormalBomPanel';
 import { procurementApi } from './api/procurement';
 import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, registerTenant, requestLoginCaptcha, requestPasswordReset, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
 import * as financeApi from './api/finance';
@@ -4552,6 +4553,8 @@ const mpsDemandSourceMeta = {
     '普通生产': { icon: TrendingUp, className: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
 };
 const mpsStatusClassMap = {
+    '校验阻断': 'bg-rose-50 text-rose-700 border-rose-200',
+    '待审批': 'bg-purple-50 text-purple-700 border-purple-200',
     '草稿': 'bg-slate-100 text-slate-600 border-slate-200',
     '待确认': 'bg-amber-50 text-amber-700 border-amber-200',
     '待接收': 'bg-orange-50 text-orange-700 border-orange-200',
@@ -4651,7 +4654,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                                         <td className="px-5 py-4 text-right font-mono font-bold text-slate-800">{r.quantity} {r.unit || 'PCS'}</td>
                                         <td className="px-5 py-4 text-slate-500 font-mono">{r.date}</td>
                                         <td className="px-5 py-4">{r.sourceSalesOrder ? <div className="text-[11px] text-blue-500 font-mono">SO: {String(r.sourceSalesOrder).slice(0, 12)}{r.sourceFactVersion != null ? ` \u00b7 v${r.sourceFactVersion}` : ''}</div> : <div className="text-[11px] text-slate-400">{r.source || '-'}</div>}{r.sourceCustomer && <div className="text-[11px] text-slate-400 mt-0.5">{r.sourceCustomer}</div>}{r.rawDemand?.formalDemand?.handlerRole && <div className="text-[11px] text-slate-500 mt-0.5">{r.rawDemand.formalDemand.handlerRole === 'PRODUCTION_PLANNER' ? '接收池：生产计划员' : `处理角色：${r.rawDemand.formalDemand.handlerRole}`}{r.rawDemand.formalDemand.handlerId ? ` \u00b7 ${r.rawDemand.formalDemand.handlerId}` : ''}</div>}</td>
-                                        <td className="px-5 py-4"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${mpsStatusClassMap[r.status] || mpsStatusClassMap['草稿']}`}>{r.status === '已下发' ? '已推MRP' : r.status}</span></td>
+                                        <td className="px-5 py-4"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${mpsStatusClassMap[r.status] || mpsStatusClassMap['草稿']}`}>{r.status === '已下发' ? '已推MRP' : r.status}</span>{r.apiStatus === 'BLOCKED' && <div className="mt-2 max-w-[220px] text-[11px] text-rose-600">{r.rawDemand?.formalDemand?.blockReasons?.join('；') || '请补齐生产主数据后重新校验'}</div>}</td>
                                         <td className="px-5 py-4 text-right">
                                             <div className="flex items-center justify-end space-x-1.5">
                                                 {isDraft ? <>
@@ -5347,7 +5350,7 @@ const Prod_ImportBomModal = ({ onClose, onImport }) => (
     </div>
 );
 
-const Prod_BomView = ({ bomData, setBomData, showToast }) => {
+const Prod_BomView = ({ bomData, setBomData, showToast, formalCtx = null }) => {
     const [activeBomId, setActiveBomId] = useState(bomData[0]?.id);
     const [searchKw, setSearchKw] = useState('');
     const [bomModal, setBomModal] = useState({ open: false, action: 'add', nodeId: null, parentId: null });
@@ -5454,12 +5457,17 @@ const Prod_BomView = ({ bomData, setBomData, showToast }) => {
     };
 
     const changeStatus = (id, status) => {
+        if (formalCtx && status === '已生效') {
+            showToast('请在上方生效版本中确认物料及工艺后发布', 'warning');
+            return;
+        }
         setBomData(prev => prev.map(b => b.id === id ? { ...b, status } : b));
         showToast(`状态已更新为: ${status}`, 'success');
     };
 
     return (
         <div className="flex flex-col gap-5 h-full relative animate-in fade-in duration-300">
+            {formalCtx && <FormalBomPanel context={formalCtx} />}
             <div className="flex flex-1 gap-5 overflow-hidden min-h-[500px]">
                 <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col shrink-0 overflow-hidden">
                     <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
@@ -5974,7 +5982,10 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               accessToken: currentUser?.accessToken || '',
           }, targetDemand.formalDemand);
           setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
-          showToast(`生产需求 [${demandId}] 校验完成`, 'success');
+          showToast(updated.status === 'PENDING_REVIEW'
+              ? `生产需求 [${demandId}] 校验通过，等待审批`
+              : `生产需求 [${demandId}] 校验阻断：${updated.blockReasons?.join('；') || '请检查生产主数据'}`,
+              updated.status === 'PENDING_REVIEW' ? 'success' : 'error');
       } catch (error) {
           showToast(error instanceof Error ? `需求校验失败：${error.message}` : '需求校验失败', 'error');
       }
@@ -6771,7 +6782,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
                   {activeTab === 'execution' && <Prod_ExecutionView jobs={jobs} onStartJob={handleStartJob} onReportJob={handleReportJob} onSendFqc={handleSendFqc} onMaterialReq={handleMaterialReq} onReturnMaterial={handleReturnMaterial} onSendOutsource={handleSendOutsource} onReceiveOutsource={handleReceiveOutsource} onReworkOrder={handleReworkOrder} showToast={showToast} />}
 	                  {activeTab === 'qc_cost' && <Prod_QcView qc={qc} orders={orders} onCloseOrder={handleCloseOrder} onQcComplete={handleQcComplete} onConfirmInbound={handleConfirmInbound} onDisposition={handleQualityDisposition} showToast={showToast} />}
 	                  {activeTab === 'equipment' && <Prod_EquipmentView productionLines={productionLines} equipments={equipments} onAddEq={handleAddEq} onEditEq={handleEditEq} onDeleteEq={handleDeleteEq} onFixEquipment={handleFixEquipment} onSimulateFailure={handleSimulateFailure} />}
-                  {activeTab === 'bom' && <Prod_BomView bomData={bomData} setBomData={setBomData} showToast={showToast} />}
+                  {activeTab === 'bom' && <Prod_BomView bomData={bomData} setBomData={setBomData} showToast={showToast} formalCtx={formalCtx} />}
                   {activeTab === 'routing' && <Prod_RoutingView routingData={routingData} setRoutingData={setRoutingData} equipments={equipments} showToast={showToast} />}
               </div>
           </main>

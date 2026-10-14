@@ -1,6 +1,7 @@
 package com.wanshen.platform.production;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wanshen.platform.auth.TokenService;
 import com.wanshen.platform.web.ApiExceptionHandler;
 import com.wanshen.platform.web.RequestContextService;
@@ -38,6 +39,11 @@ class ProductionControllerTests {
                 .put("id", "bom-1").put("routingSnapshotId", "routing-1")
                 .set("lines", objectMapper.createArrayNode().add(objectMapper.createObjectNode()
                         .put("materialId", "RM1").put("qtyPer", "1").put("uom", "PCS").put("warehouseId", "WH1"))));
+        ((ObjectNode) store.bomSnapshots.get("TENANT-SHWS:FG001")).set("routingSnapshot",
+                objectMapper.createObjectNode().put("id", "routing-1").put("productId", "FG001")
+                        .set("operations", objectMapper.createArrayNode().add(objectMapper.createObjectNode()
+                                .put("sequence", 10).put("code", "OP1").put("name", "Assembly")
+                                .put("workCenterResourceId", "WC1").put("standardMinutes", "1"))));
         inventory.saveAvailability(objectMapper.createObjectNode().put("tenantId", "TENANT-SHWS")
                 .put("warehouseId", "WH1").put("productId", "RM1").put("uom", "PCS").put("fulfillableQty", "100")
                 .put("qualifiedOnHandQty", "100").put("allocatedReservedQty", "0").put("factVersion", 1));

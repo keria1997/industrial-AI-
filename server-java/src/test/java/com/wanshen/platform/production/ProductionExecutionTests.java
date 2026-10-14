@@ -43,6 +43,8 @@ class ProductionExecutionTests {
         var writer = context(tenant, "writer", "bom", null);
         service.saveBom(writer, json("""
                 {"productId":"FG1","routingSnapshotId":"route-1",
+                  "routingSnapshot":{"id":"route-1","productId":"FG1","operations":[
+                    {"sequence":10,"code":"ASSEMBLY","name":"Assembly","workCenterResourceId":"WC1","standardMinutes":"2"}]},
                   "lines":[{"materialId":"RM1","qtyPer":"2","warehouseId":"RM-WH","uom":"PCS"}]}
                 """));
         JsonNode demand = sourceDemand != null ? sourceDemand : service.createDemand(context(tenant, "writer", "demand", null), json("""

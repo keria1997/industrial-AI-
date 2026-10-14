@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 工业 AI 平台生产与首期履约 API
-  version: 1.14.0
+  version: 1.15.0
   description: |
     2026-10-13 库存单件计数单位 PCS/件/台/个等价，库存事实与流水写入统一使用 PCS。
     历史订单和任务保留来源单位；预留及扣减使用同一兼容规则，套/箱/重量不做隐式换算。
@@ -377,10 +377,21 @@ paths:
       requestBody: { content: { application/json: { schema: { type: object } } } }
       responses: { '200': { description: 最新工单及 materialReservation }, default: { $ref: '#/components/responses/Error' } }
   /bom-snapshots:
+    get:
+      tags: [Planning]
+      summary: 查询当前租户的生效 BOM 与完整关联工艺
+      description: 需要 production.bom.manage 或 production.demand.review；返回版本、物料行、工序及发布人。
+      responses:
+        '200':
+          description: 生效版本数组
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+        default: { $ref: '#/components/responses/Error' }
     post:
       tags: [Planning]
       summary: 保存生效 BOM 与工艺快照关联
-      description: 需要 production.bom.manage；覆盖同产品 BOM 应携带已有 version 的 If-Match。物料行按仓库和物料唯一，数量为正十进制字符串。
+      description: 需要 production.bom.manage；覆盖同产品 BOM 应携带已有 version 的 If-Match。完整工艺快照随 BOM 同事务保存，工单固化此版本；禁止仅传关联编号。物料行按仓库和物料唯一，数量为正十进制字符串。
       parameters: [ { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' } ]
       requestBody:
         required: true
@@ -388,10 +399,28 @@ paths:
           application/json:
             schema:
               type: object
-              required: [productId, routingSnapshotId, lines]
+              required: [productId, routingSnapshotId, routingSnapshot, lines]
               properties:
                 productId: { type: string }
                 routingSnapshotId: { type: string }
+                routingSnapshot:
+                  type: object
+                  required: [id, productId, operations]
+                  properties:
+                    id: { type: string, description: 必须等于 routingSnapshotId }
+                    productId: { type: string, description: 必须等于 BOM 产品编码 }
+                    operations:
+                      type: array
+                      minItems: 1
+                      items:
+                        type: object
+                        required: [sequence, code, name, workCenterResourceId, standardMinutes]
+                        properties:
+                          sequence: { type: integer, minimum: 1, description: 顺序严格递增 }
+                          code: { type: string, description: 同快照中唯一 }
+                          name: { type: string }
+                          workCenterResourceId: { type: string }
+                          standardMinutes: { type: string, pattern: '^(0|[1-9]\d*)(\.\d{1,6})?$', description: 正数，每件标准分钟 }
                 lines:
                   type: array
                   minItems: 1

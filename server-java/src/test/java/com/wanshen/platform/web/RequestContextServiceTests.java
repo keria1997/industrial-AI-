@@ -42,7 +42,12 @@ class RequestContextServiceTests {
         var production = new com.wanshen.platform.production.ProductionService(demandStore, new ObjectMapper());
         var mapper = new ObjectMapper();
         production.saveBom(new RequestContextService.RequestContext("T", "admin", List.of("*"), "bom", "bom", null),
-                mapper.readTree("{\"productId\":\"FG1\",\"routingSnapshotId\":\"ROUTE1\",\"lines\":[{\"materialId\":\"RM1\",\"qtyPer\":\"1\",\"warehouseId\":\"RM-WH\",\"uom\":\"PCS\"}]}"));
+                mapper.readTree("""
+                    {"productId":"FG1","routingSnapshotId":"ROUTE1",
+                     "routingSnapshot":{"id":"ROUTE1","productId":"FG1","operations":[
+                       {"sequence":10,"code":"OP1","name":"Assembly","workCenterResourceId":"WC1","standardMinutes":"1"}]},
+                     "lines":[{"materialId":"RM1","qtyPer":"1","warehouseId":"RM-WH","uom":"PCS"}]}
+                    """));
         request.addHeader("X-Idempotency-Key", "create");
         var demand = production.createDemand(contexts.from(request), mapper.readTree("""
                 {"sourceType":"MANUAL","productId":"FG1","qty":"1","uom":"PCS","dueDate":"2026-11-30","factoryResourceId":"FAC1"}

@@ -230,12 +230,16 @@ public class ProductionService {
         ObjectNode payload = payloadWithId(id, input);
         return command(context, "ValidateDemand", payload, repository -> {
             JsonNode demand = require(store.demand(context.tenantId(), id), "需求");
+            if (demand.path("archived").asBoolean()) invalid("已归档需求不能执行校验");
             requireStatus(demand, "需求", "RECEIVED", "BLOCKED");
             requireVersion(context, version(demand));
             ArrayNode missing = arrayNode();
             JsonNode bom = store.bom(context.tenantId(), text(demand, "productId")).orElse(null);
             if (bom == null) missing.add("缺少服务端生效 BOM");
-            else if (text(bom, "routingSnapshotId").isBlank()) missing.add("缺少服务端工艺快照关联");
+            else if (text(bom, "routingSnapshotId").isBlank()
+                    || !text(bom, "routingSnapshotId").equals(text(bom.path("routingSnapshot"), "id"))
+                    || !bom.path("routingSnapshot").path("operations").isArray()
+                    || bom.path("routingSnapshot").path("operations").isEmpty()) missing.add("缺少服务端生效工艺快照");
             if (input.path("productActive").isBoolean() && !input.path("productActive").asBoolean()) missing.add("产品未启用");
             if (input.path("factoryActive").isBoolean() && !input.path("factoryActive").asBoolean()) missing.add("工厂不可用");
             if (input.path("bomEffective").isBoolean() && !input.path("bomEffective").asBoolean()) missing.add("缺少有效 BOM");
@@ -324,6 +328,7 @@ public class ProductionService {
             order.put("bomSnapshotId", text(bom, "id")).put("routingSnapshotId", text(bom, "routingSnapshotId"))
                     .put("kittingStatus", "UNCHECKED");
             order.set("bomSnapshot", bom.deepCopy());
+            order.set("routingSnapshot", bom.path("routingSnapshot").deepCopy());
             order.put("factoryResourceId", text(input, "factoryResourceId"))
                     .put("workCenterResourceId", text(input, "workCenterResourceId"))
                     .put("plannedQty", text(input, "plannedQty")).put("inputQty", text(input, "inputQty", "0"))
@@ -1288,10 +1293,37 @@ public class ProductionService {
                 .filter(value -> context.tenantId().equals(text(value, "tenantId"))).map(ProductionStore::copy).toList());
     }
 
+    public List<JsonNode> listBoms(RequestContext context) {
+        if (!context.has("production.bom.manage") && !context.has("production.demand.review")) {
+            require(context, "production.bom.manage");
+        }
+        return store.transaction(context.tenantId(), repository -> store.bomSnapshots.values().stream()
+                .filter(bom -> context.tenantId().equals(text(bom, "tenantId")))
+                .sorted(java.util.Comparator.comparing(bom -> text(bom, "productId")))
+                .map(bom -> (JsonNode) bom.deepCopy()).toList());
+    }
+
     public Command saveBom(RequestContext context, JsonNode input) {
         require(context, "production.bom.manage");
         if (text(input, "productId").isBlank() || text(input, "routingSnapshotId").isBlank()
                 || input.withArray("lines").isEmpty()) invalid("BOM 必须包含产品、工艺快照及物料行");
+        JsonNode routing = input.path("routingSnapshot");
+        if (!text(input, "routingSnapshotId").equals(text(routing, "id"))
+                || !text(input, "productId").equals(text(routing, "productId"))
+                || !routing.path("operations").isArray() || routing.path("operations").isEmpty()) {
+            invalid("工艺快照必须与产品及关联编号一致，且包含工序");
+        }
+        Set<String> operationCodes = new java.util.HashSet<>();
+        int previousSequence = 0;
+        for (JsonNode operation : routing.path("operations")) {
+            int sequence = operation.path("sequence").asInt();
+            if (!operation.path("sequence").isIntegralNumber() || sequence <= previousSequence
+                    || text(operation, "code").isBlank() || text(operation, "name").isBlank()
+                    || text(operation, "workCenterResourceId").isBlank()
+                    || !operationCodes.add(text(operation, "code"))) invalid("工序须按正整数顺序排列，编码唯一，名称和工作中心必填");
+            positive(operation, "standardMinutes");
+            previousSequence = sequence;
+        }
         Set<String> keys = new java.util.HashSet<>();
         for (JsonNode line : input.withArray("lines")) {
             positive(line, "qtyPer");
@@ -1304,7 +1336,8 @@ public class ProductionService {
             JsonNode current = store.bom(context.tenantId(), text(input, "productId")).orElse(null);
             if (current != null) requireVersion(context, version(current));
             ObjectNode bom = copy(input).put("id", uuid()).put("tenantId", context.tenantId())
-                    .put("version", current == null ? 1 : version(current) + 1).put("updatedAt", now());
+                    .put("version", current == null ? 1 : version(current) + 1).put("updatedAt", now())
+                    .put("publishedBy", context.actorId()).put("status", "EFFECTIVE");
             store.bomSnapshots.put(ProductionStore.key(context.tenantId(), text(input, "productId")), bom);
             audit(repository, context, "BOM_PUBLISH", "BomSnapshot", text(bom, "id"), current, bom, null);
             return created(bom, "BomSnapshot", text(bom, "id"));
@@ -1355,6 +1388,7 @@ public class ProductionService {
     }
 
     private void requireStatus(JsonNode value, String label, String... allowed) {
+        if (value.path("archived").asBoolean()) invalid(label + "已归档，不能执行业务操作");
         if (!Arrays.asList(allowed).contains(text(value, "status"))) {
             throw new ApiException(409, "PRODUCTION_409_ILLEGAL_STATE",
                     label + "当前状态 " + text(value, "status") + " 不允许此操作",

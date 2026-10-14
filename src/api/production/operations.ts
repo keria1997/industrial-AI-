@@ -24,6 +24,16 @@ export type DemandDto = {
   inventoryWarehouseId?: string; scheduleCandidateId?: string; workOrderId?: string; workOrderCode?: string;
 };
 
+export type BomSnapshot = {
+  id: string; productId: string; productName?: string; version: number;
+  routingSnapshotId: string; updatedAt?: string; publishedBy?: string; status?: string;
+  lines: Array<{ materialId: string; materialName?: string; warehouseId: string; qtyPer: string; uom: string }>;
+  routingSnapshot: {
+    id: string; productId: string;
+    operations: Array<{ sequence: number; code: string; name: string; workCenterResourceId: string; standardMinutes: string }>;
+  };
+};
+
 export type WorkOrderDto = {
   id: string; code: string; productId: string; productName?: string; factoryResourceId: string; workCenterResourceId: string;
   plannedQty: string; inputQty: string; reportedGoodQty: string; reportedDefectQty: string; reportedScrapQty: string;
@@ -72,6 +82,12 @@ export type PlanningTaskAcceptedDto = {
 };
 
 export const productionOperationsApi = {
+  listBoms: (context: ApiContext) => apiRequest<BomSnapshot[]>("/api/v1/production/bom-snapshots", context),
+  publishBom: (context: ApiContext, bom: Omit<BomSnapshot, "id" | "version">, version?: number, key?: string) =>
+    apiRequest<BomSnapshot>("/api/v1/production/bom-snapshots", context, {
+      method: "POST", body: JSON.stringify(bom), expectedVersion: version,
+      idempotencyKey: key ?? `bom-publish:${context.tenantId}:${bom.productId}:${crypto.randomUUID()}`,
+    }),
   readiness: (context: ApiContext) => apiRequest<{ permissions: string[] }>("/api/v1/production/readiness", context),
   dashboard: (context: ApiContext) => apiRequest<DashboardDto>("/api/v1/production/dashboard/kpis", context),
   listDemands: (context: ApiContext) => apiRequest<{ items: DemandDto[]; total: number }>("/api/v1/production/demands?page=1&pageSize=200", context),
