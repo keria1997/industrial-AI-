@@ -112,7 +112,7 @@ public class FinanceController {
 
     @PostMapping("/receivables/{id}/settlement")
     public ResponseEntity<?> settleReceivable(
-            @PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request
+            @PathVariable String id, @RequestBody @jakarta.validation.Valid com.wanshen.platform.finance.dto.SettlementRequest input, HttpServletRequest request
     ) {
         RequestContext context = context(request);
         require(context, "finance.payment.create");
@@ -120,9 +120,10 @@ public class FinanceController {
         require(context, "finance.invoice.create");
         require(context, "finance.voucher.create");
         require(context, "finance.voucher.post");
-        validateSettlement(input);
+        var inputJson = objectMapper.valueToTree(input);
+        validateSettlement(inputJson);
         log.info("[财务管理] AR结算 | 单据: {} | 租户: {}", id, context.tenantId());
-        return command(context, "finance.receivable.settle", input(id, input), () -> {
+        return command(context, "finance.receivable.settle", input(id, inputJson), () -> {
             Receivable current = getReceivable(context.tenantId(), id);
             if ("void".equals(current.status())) {
                 throw conflict("已作废应收单不能结算", "刷新应收列表后重试");
@@ -210,7 +211,7 @@ public class FinanceController {
 
     @PostMapping("/payables/{id}/settlement")
     public ResponseEntity<?> settlePayable(
-            @PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request
+            @PathVariable String id, @RequestBody @jakarta.validation.Valid com.wanshen.platform.finance.dto.SettlementRequest input, HttpServletRequest request
     ) {
         RequestContext context = context(request);
         require(context, "finance.payment.create");
@@ -298,7 +299,7 @@ public class FinanceController {
     }
 
     @PostMapping("/payments")
-    public ResponseEntity<?> registerPayment(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> registerPayment(@RequestBody @jakarta.validation.Valid com.wanshen.platform.finance.dto.CreatePaymentRequest input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.payment.create");
         validatePayment(input);
         log.info("[财务管理] 登记收付款 | 方向: {} | 租户: {}", input.path("direction").asText("?"), context.tenantId());
