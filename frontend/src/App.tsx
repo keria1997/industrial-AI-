@@ -3530,11 +3530,26 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       listFulfillmentOrders(formalContext)
         .then(res => {
           if (res.items && res.items.length > 0) {
-            setOrders(res.items.map(o => ({
-              id: o.id, orderNo: o.orderNo, customer: o.customerName,
-              status: o.overallStatus, totalAmount: o.totalAmount,
-              deliveryDate: o.requestedDeliveryDate, lines: o.lines,
-            } as any)));
+            const statusMap = { OPEN: '待发货', CONFIRMED: '已确认', REPLENISHING: '生产补货中', PARTIALLY_SHIPPED: '部分发货', SHIPPED: '已发货', COMPLETED: '已完成', CANCELED: '已取消' };
+            setOrders(res.items.map((o: any) => {
+              const firstLine = o.lines?.[0] || {};
+              const totalQty = (o.lines || []).reduce((s, l) => s + Number(l.orderedQty || 0), 0);
+              const totalAmount = (o.lines || []).reduce((s, l) => s + Number(l.unitPrice || 0) * Number(l.orderedQty || 0), 0);
+              return {
+                id: o.orderNo || o.id,
+                client: o.customerName || o.recipient?.name || '-',
+                product: firstLine.productId ? `${firstLine.productId} × ${firstLine.orderedQty} 件` : '-',
+                productName: firstLine.productId || '-',
+                qty: totalQty,
+                amount: `¥${totalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`,
+                receivable: o.status === 'COMPLETED' ? '已结算' : '待生成',
+                date: (o.createdAt || '').split('T')[0],
+                deliveryDate: firstLine.promisedDate || o.requestedDeliveryDate || '-',
+                outStatus: o.status === 'SHIPPED' || o.status === 'COMPLETED' ? '已发货' : '未发货',
+                status: statusMap[o.status] || o.status || '待发货',
+                createdAt: (o.createdAt || '').replace('T', ' ').substring(0, 19),
+              };
+            }));
           }
         })
         .catch(() => {/* API 失败时保留 localStorage 数据 */});

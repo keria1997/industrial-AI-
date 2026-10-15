@@ -22,4 +22,4 @@ public record CreatePaymentRequest(
         String referenceNo,
         String remark,
         @NotBlank(message = "幂等键不能为空") String idempotencyKey
-+) {}
+) {}
