@@ -73,6 +73,9 @@ public class ProductionDemand {
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 
+    @Column(name = "idempotency_key", unique = true)
+    private String idempotencyKey;
+
     @Version
     @Column(name = "row_version", nullable = false)
     private Long rowVersion;

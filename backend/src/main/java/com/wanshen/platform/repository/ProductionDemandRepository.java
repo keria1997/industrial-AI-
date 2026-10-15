@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface ProductionDemandRepository extends JpaRepository<ProductionDemand, UUID> {
 
-    Optional<ProductionDemand> findByTenantIdAndDemandNo(String tenantId, String demandNo);
+    Optional<ProductionDemand> findByTenantIdAndCode(String tenantId, String code);
 
     List<ProductionDemand> findByTenantIdAndStatus(String tenantId, String status);
 

@@ -15,6 +15,10 @@ export default defineConfig(({ mode }) => {
         '/api/v1': {
           target: apiTarget,
           changeOrigin: false
+        },
+        '/api/v2': {
+          target: apiTarget,
+          changeOrigin: false
         }
       }
     }

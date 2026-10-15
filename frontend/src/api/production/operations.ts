@@ -90,37 +90,37 @@ export const productionOperationsApi = {
     }),
   readiness: (context: ApiContext) => apiRequest<{ permissions: string[] }>("/api/v1/production/readiness", context),
   dashboard: (context: ApiContext) => apiRequest<DashboardDto>("/api/v1/production/dashboard/kpis", context),
-  listDemands: (context: ApiContext) => apiRequest<{ items: DemandDto[]; total: number }>("/api/v1/production/demands?page=1&pageSize=200", context),
-  validateDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/validate`, context, {
+  listDemands: (context: ApiContext) => apiRequest<{ items: DemandDto[]; total: number }>("/api/v2/production/demands?page=1&pageSize=200", context),
+  validateDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v2/production/demands/${demand.id}/validate`, context, {
     method: "POST", body: JSON.stringify({ productActive: true, factoryActive: true, bomEffective: true, routingEffective: true }),
     expectedVersion: demand.version, idempotencyKey: `demand-validate:${context.tenantId}:${demand.id}:${demand.version}`,
   }),
-  approveDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/approve`, context, {
+  approveDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v2/production/demands/${demand.id}/approve`, context, {
     method: "POST", body: JSON.stringify({ remark: "生产作业台复核通过" }), expectedVersion: demand.version,
     idempotencyKey: `demand-approve:${context.tenantId}:${demand.id}:${demand.version}`,
   }),
-  claimDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/claim`, context, {
+  claimDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v2/production/demands/${demand.id}/claim`, context, {
     method: "POST", expectedVersion: demand.version,
     idempotencyKey: `demand-claim:${context.tenantId}:${demand.id}:${demand.version}`,
   }),
-  listWorkOrders: (context: ApiContext) => apiRequest<{ items: WorkOrderDto[]; total: number }>("/api/v1/production/work-orders?page=1&pageSize=200", context),
-  getWorkOrder: (context: ApiContext, id: string) => apiRequest<WorkOrderDto>(`/api/v1/production/work-orders/${id}`, context),
-  createDemand: (context: ApiContext, input: Record<string, unknown>, key: string) => apiRequest<DemandDto>("/api/v1/production/demands", context, {
+  listWorkOrders: (context: ApiContext) => apiRequest<{ items: WorkOrderDto[]; total: number }>("/api/v2/production/work-orders?page=1&pageSize=200", context),
+  getWorkOrder: (context: ApiContext, id: string) => apiRequest<WorkOrderDto>(`/api/v2/production/work-orders/${id}`, context),
+  createDemand: (context: ApiContext, input: Record<string, unknown>, key: string) => apiRequest<DemandDto>("/api/v2/production/demands", context, {
     method: "POST", body: JSON.stringify(input), idempotencyKey: key,
   }),
-  createWorkOrder: (context: ApiContext, input: Record<string, unknown>, businessKey: string) => apiRequest<WorkOrderDto>("/api/v1/production/work-orders", context, {
+  createWorkOrder: (context: ApiContext, input: Record<string, unknown>, businessKey: string) => apiRequest<WorkOrderDto>("/api/v2/production/work-orders", context, {
     method: "POST", body: JSON.stringify(input), idempotencyKey: businessKey,
   }),
-  releaseImpact: (context: ApiContext, orderId: string) => apiRequest<{ canRelease: boolean; blockers: Array<{ code: string; message: string; repairAction: string }>; version: number }>(`/api/v1/production/work-orders/${orderId}/release-impact`, context, { method: "POST" }),
-  checkKitting: (context: ApiContext, order: WorkOrderDto) => apiRequest<WorkOrderDto>(`/api/v1/production/work-orders/${order.id}/kitting-check`, context, {
+  releaseImpact: (context: ApiContext, orderId: string) => apiRequest<{ canRelease: boolean; blockers: Array<{ code: string; message: string; repairAction: string }>; version: number }>(`/api/v2/production/work-orders/${orderId}/release-impact`, context, { method: "POST" }),
+  checkKitting: (context: ApiContext, order: WorkOrderDto) => apiRequest<WorkOrderDto>(`/api/v2/production/work-orders/${order.id}/kitting-check`, context, {
     method: "POST", body: "{}", expectedVersion: order.version, idempotencyKey: `kitting:${context.tenantId}:${order.id}:${order.version}`,
   }),
   workOrderCommand: (context: ApiContext, order: WorkOrderDto, command: "release" | "start" | "pause" | "resume", reason?: string) =>
-    apiRequest<WorkOrderDto>(`/api/v1/production/work-orders/${order.id}/${command}`, context, {
+    apiRequest<WorkOrderDto>(`/api/v2/production/work-orders/${order.id}/${command}`, context, {
       method: "POST", body: JSON.stringify(reason ? { reason } : {}), expectedVersion: order.version,
       idempotencyKey: `work-order-${command}:${context.tenantId}:${order.id}:${order.version}`,
     }),
-  submitReport: (context: ApiContext, order: WorkOrderDto, quantities: string | ReportQuantities) => apiRequest<{ workOrder: WorkOrderDto }>(`/api/v1/production/work-orders/${order.id}/reports`, context, {
+  submitReport: (context: ApiContext, order: WorkOrderDto, quantities: string | ReportQuantities) => apiRequest<{ workOrder: WorkOrderDto }>(`/api/v2/production/work-orders/${order.id}/reports`, context, {
     method: "POST", body: JSON.stringify({ ...(typeof quantities === "string" ? { goodQty: quantities, defectQty: "0", scrapQty: "0", inputQty: "0" } : quantities), uom: order.uom, source: "WEB" }),
     expectedVersion: order.version, idempotencyKey: `work-report:${context.tenantId}:${order.id}:${order.version}`,
   }),
@@ -149,7 +149,7 @@ export const productionOperationsApi = {
   retryCompletion: (context: ApiContext, completionId: string) => apiRequest<unknown>(`/api/v1/production/completions/${completionId}/retry`, context, {
     method: "POST", body: "{}", idempotencyKey: `completion-retry:${context.tenantId}:${completionId}:${crypto.randomUUID()}`,
   }),
-  createCompletion: (context: ApiContext, order: WorkOrderDto, inspection: InspectionDto, inventoryWarehouseId: string) => apiRequest<{ completionId: string; taskId: string; status: string; traceId: string }>(`/api/v1/production/work-orders/${order.id}/completions`, context, {
+  createCompletion: (context: ApiContext, order: WorkOrderDto, inspection: InspectionDto, inventoryWarehouseId: string) => apiRequest<{ completionId: string; taskId: string; status: string; traceId: string }>(`/api/v2/production/work-orders/${order.id}/completions`, context, {
     method: "POST",
     body: JSON.stringify({ inspectionId: inspection.id, qty: inspection.passedQty, uom: order.uom, warehouseResourceId: inventoryWarehouseId, inventoryWarehouseId, traceMode: "NONE", productionDate: new Date().toISOString().slice(0, 10), allocationRevision: 1 }),
     idempotencyKey: `completion-create:${context.tenantId}:${order.id}:${inspection.id}:${inspection.version}`,
@@ -165,7 +165,7 @@ export const productionOperationsApi = {
   },
   listCompletions: (context: ApiContext) => apiRequest<CompletionDto[]>("/api/v1/production/completions", context),
   listCloses: (context: ApiContext) => apiRequest<CloseRequestDto[]>("/api/v1/production/work-order-closes", context),
-  submitClose: (context: ApiContext, order: WorkOrderDto) => apiRequest<CloseRequestDto>(`/api/v1/production/work-orders/${order.id}/close-submit`, context, {
+  submitClose: (context: ApiContext, order: WorkOrderDto) => apiRequest<CloseRequestDto>(`/api/v2/production/work-orders/${order.id}/close-submit`, context, {
     method: "POST", body: "{}", expectedVersion: order.version, idempotencyKey: `close:${context.tenantId}:${order.id}:${order.version}`,
   }),
   approveClose: (context: ApiContext, close: CloseRequestDto) => apiRequest<unknown>(`/api/v1/production/work-order-closes/${close.id}/approve`, context, {

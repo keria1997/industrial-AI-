@@ -310,10 +310,10 @@ export const settlePayable = (context: ApiContext, id: string, input: Settlement
 
 // Payments
 export const listPayments = (context: ApiContext, filter?: FinanceListFilter) =>
-  apiRequest<{ items: Payment[]; total: number }>(`/api/v1/finance/payments${buildQuery(filter)}`, context, { method: "GET" });
+  apiRequest<{ items: Payment[]; total: number }>(`/api/v2/finance/payments${buildQuery(filter)}`, context, { method: "GET" });
 
 export const registerPayment = (context: ApiContext, input: RegisterPaymentInput) =>
-  apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>("/api/v1/finance/payments", context, {
+  apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>("/api/v2/finance/payments", context, {
     method: "POST",
     headers: { "X-Idempotency-Key": key() },
     body: JSON.stringify(input),
@@ -321,7 +321,7 @@ export const registerPayment = (context: ApiContext, input: RegisterPaymentInput
 
 export const confirmPayment = (context: ApiContext, id: string, version: number) =>
   apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>(
-    `/api/v1/finance/payments/${encodeURIComponent(id)}/confirm`,
+    `/api/v2/finance/payments/${encodeURIComponent(id)}/confirm`,
     context,
     {
       method: "POST",
