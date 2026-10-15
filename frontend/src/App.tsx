@@ -51,6 +51,10 @@ import {
   validateShipmentDeliveryDate,
 } from './features/sales/model/salesRules';
 import { SalesShipmentOrderEditModal } from './features/sales/components/SalesShipmentOrderEditModal';
+import { RmaManagementPanel } from './features/sales/components/RmaManagementPanel';
+import { CustomerReceiptPanel } from './features/sales/components/CustomerReceiptPanel';
+import { CostAccumulationPanel } from './features/production/components/CostAccumulationPanel';
+import { PaymentAllocationModal } from './features/finance/components/PaymentAllocationModal';
 import { confirmSalesOrderContents, mergeFormalSalesOrders, mergePersistedSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
 import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
 import { createQuickSalesOrder } from './features/sales/model/quickSalesOrder';
@@ -3893,6 +3897,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       { id: 'quotes', icon: <MessageSquare size={14} className="mr-1.5" />, label: '产品报价' },
       { id: 'orders', icon: <FileText size={14} className="mr-1.5" />, label: '销售订单' },
       { id: 'customers', icon: <Users size={14} className="mr-1.5" />, label: '客户管理' },
+      { id: 'rma', icon: <RotateCcw size={14} className="mr-1.5" />, label: '退货管理' },
+      { id: 'receipts', icon: <CheckCircle2 size={14} className="mr-1.5" />, label: '客户签收' },
       { id: 'basic-data', icon: <BookOpen size={14} className="mr-1.5" />, label: '基础数据' },
   ];
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab) || tabs[0];
@@ -3901,6 +3907,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       quotes: '报价有效期、审批确认与订单转化',
       orders: '订单复核、发货申请与履约状态跟踪',
       customers: '客户档案、联系人与合作状态维护',
+      rma: '退货申请、审批、检验与红字AR闭环管理',
+      receipts: '客户签收登记与差额处置跟踪',
       'basic-data': '销售等级、行业字典与触达规则维护',
   };
 
@@ -3946,6 +3954,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                   {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
                   {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} orderCreationRevision={orderCreationRevision} apiContext={formalContext} />}
                   {activeTab === 'customers' && <Sales_CustomersView customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
+                  {activeTab === 'rma' && <RmaManagementPanel />}
+                  {activeTab === 'receipts' && <CustomerReceiptPanel />}
                   {activeTab === 'basic-data' && <Sales_BaseDataView levels={levels} setLevels={setLevels} industries={industries} setIndustries={setIndustries} customers={customers} outreachSettings={outreachSettings} setOutreachSettings={setOutreachSettings} onToast={showToast} onAudit={addAudit} />}
               </div>
               
@@ -6786,6 +6796,11 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
                   {activeTab === 'orders' && <Prod_OrdersView orders={orders} onCheckKit={handleCheckKit} onDispatch={handleDispatch} onUpdateOrder={handleUpdateOrder} onDeleteOrder={handleDeleteOrder} showToast={showToast} />}
                   {activeTab === 'execution' && <Prod_ExecutionView jobs={jobs} onStartJob={handleStartJob} onReportJob={handleReportJob} onSendFqc={handleSendFqc} onMaterialReq={handleMaterialReq} onReturnMaterial={handleReturnMaterial} onSendOutsource={handleSendOutsource} onReceiveOutsource={handleReceiveOutsource} onReworkOrder={handleReworkOrder} showToast={showToast} />}
 	                  {activeTab === 'qc_cost' && <Prod_QcView qc={qc} orders={orders} onCloseOrder={handleCloseOrder} onQcComplete={handleQcComplete} onConfirmInbound={handleConfirmInbound} onDisposition={handleQualityDisposition} showToast={showToast} />}
+	                  {activeTab === 'qc_cost' && (
+	                      <div className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+	                          <CostAccumulationPanel workOrderNo={jobs.find(j => j.status === 'COMPLETED')?.orderId || 'WO-2026-001'} />
+	                      </div>
+	                  )}
 	                  {activeTab === 'equipment' && <Prod_EquipmentView productionLines={productionLines} equipments={equipments} onAddEq={handleAddEq} onEditEq={handleEditEq} onDeleteEq={handleDeleteEq} onFixEquipment={handleFixEquipment} onSimulateFailure={handleSimulateFailure} />}
                   {activeTab === 'bom' && <Prod_BomView bomData={bomData} setBomData={setBomData} showToast={showToast} formalCtx={formalCtx} />}
                   {activeTab === 'routing' && <Prod_RoutingView routingData={routingData} setRoutingData={setRoutingData} equipments={equipments} showToast={showToast} />}
@@ -10115,6 +10130,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant, refreshSignal = 0 }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [actionModal, setActionModal] = useState(null);
+    const [paymentModal, setPaymentModal] = useState(null);
     const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
     const [apiArData, setApiArData] = useState([]);
     const [apiApData, setApiApData] = useState([]);
@@ -10265,6 +10281,10 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     };
 
     const openFinanceRowAction = (kind, row) => {
+      if (kind === 'arCollect') {
+        setPaymentModal({ arNo: row.id, balance: formatCurrency(row.amount - row.received) });
+        return;
+      }
       const configs = {
         arView: {
           kind,
@@ -10555,6 +10575,18 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
               )}
           </div>
         </main>
+      {paymentModal && (
+          <PaymentAllocationModal
+              open
+              arNo={paymentModal.arNo}
+              balance={paymentModal.balance}
+              onClose={() => setPaymentModal(null)}
+              onSubmit={(amount, method, remark) => {
+                  setPaymentModal(null);
+                  setToast({ show: true, msg: `收款 ${amount} 已登记核销（${method}）`, type: 'success' });
+              }}
+          />
+      )}
       </div>
     );
 };
