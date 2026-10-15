@@ -109,7 +109,7 @@ public class MessageController {
     }
 
     @PostMapping("/templates")
-    public ResponseEntity<?> createTemplate(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createTemplate(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "message.template.create");
         requireText(input, "code", 100);
@@ -145,7 +145,7 @@ public class MessageController {
 
     @PatchMapping("/templates/{id}")
     public ResponseEntity<?> updateTemplate(
-            @PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request
+            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch, HttpServletRequest request
     ) {
         RequestContext context = context(request);
         require(context, "message.template.update");
@@ -224,7 +224,7 @@ public class MessageController {
     }
 
     @PostMapping("/messages")
-    public ResponseEntity<?> send(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> send(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "message.send");
         validateSendMessage(input, false);
@@ -252,7 +252,7 @@ public class MessageController {
     }
 
     @PostMapping("/messages/batch")
-    public ResponseEntity<?> sendBatch(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> sendBatch(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "message.send");
         validateSendMessage(input, true);
@@ -282,7 +282,7 @@ public class MessageController {
     }
 
     @PostMapping("/messages/mark-all-read")
-    public ResponseEntity<?> markAllRead(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> markAllRead(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "message.read");
         requireText(input, "recipientId", 100);
@@ -352,7 +352,7 @@ public class MessageController {
 
     @PostMapping("/messages/{id}/star")
     public ResponseEntity<?> star(
-            @PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request
+            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request
     ) {
         RequestContext context = context(request);
         require(context, "message.read");
@@ -390,7 +390,7 @@ public class MessageController {
     }
 
     @PutMapping("/preferences")
-    public ResponseEntity<?> updatePreference(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> updatePreference(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "message.preference.update");
         requireEnum(input, "category", CATEGORIES);
@@ -443,7 +443,7 @@ public class MessageController {
     }
 
     @PostMapping("/subscriptions")
-    public ResponseEntity<?> createSubscription(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createSubscription(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "message.subscription.create");
         requireText(input, "eventType", 200);

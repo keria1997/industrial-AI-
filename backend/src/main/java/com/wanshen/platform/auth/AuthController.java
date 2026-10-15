@@ -242,7 +242,7 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/platform/employee-accounts")
-    public ResponseEntity<?> createEmployeeAccount(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createEmployeeAccount(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         String tenantId = requireTenantAdmin(request);
         String name = text(input, "name"); String phone = req.phone(); String email = req.email();
         String account = text(input, "account"); String department = text(input, "department");
@@ -264,7 +264,7 @@ public class AuthController {
     }
 
     @PutMapping("/api/v1/platform/employee-accounts/{id}/status")
-    public ResponseEntity<Void> updateEmployeeStatus(@PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<Void> updateEmployeeStatus(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         String tenantId = requireTenantAdmin(request);
         String status = text(input, "status");
         if (!Set.of("active", "disabled").contains(status)) throw bad("状态不合法", "检查输入后重试");
@@ -315,7 +315,7 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/session/change-password")
-    public ResponseEntity<Void> changePassword(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<Void> changePassword(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         TokenService.Claims claims = authenticate(request);
         String oldPassword = text(input, "oldPassword"); String newPassword = text(input, "newPassword");
         validatePassword(newPassword);
@@ -328,7 +328,7 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/session/complete-first-login")
-    public ResponseEntity<Void> completeFirstLogin(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<Void> completeFirstLogin(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         limit(request, "first-login", 10);
         String account = text(input, "account"); String currentPassword = text(input, "currentPassword");
         String newPassword = text(input, "newPassword");

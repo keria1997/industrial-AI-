@@ -67,7 +67,7 @@ public class AiController {
     }
 
     @PostMapping("/models")
-    public ResponseEntity<?> createModel(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createModel(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "ai.model.create");
         validateModel(input, false);
         String code = text(input, "code");
@@ -91,7 +91,7 @@ public class AiController {
     }
 
     @PatchMapping("/models/{id}")
-    public ResponseEntity<?> updateModel(@PathVariable String id, @RequestBody JsonNode patch,
+    public ResponseEntity<?> updateModel(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch,
                                          HttpServletRequest request) {
         RequestContext context = require(request, "ai.model.update");
         validateUuid(id);
@@ -130,14 +130,14 @@ public class AiController {
     }
 
     @PostMapping("/chat")
-    public ResponseEntity<?> chat(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> chat(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "ai.chat");
         validateChat(input);
         return command(context, "ai.chat", input, () -> new Command(chat(context, input), 201));
     }
 
     @PostMapping("/map-columns")
-    public Map<String, Object> mapColumns(@RequestBody JsonNode input, HttpServletRequest request) {
+    public Map<String, Object> mapColumns(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "ai.import.use");
         validateMapColumns(input);
         ModelConfig model = store.primaryModelConfig(context.tenantId()).orElse(null);
@@ -193,7 +193,7 @@ public class AiController {
     }
 
     @PostMapping("/messages/{id}/feedback")
-    public ResponseEntity<?> feedback(@PathVariable String id, @RequestBody JsonNode input,
+    public ResponseEntity<?> feedback(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode input,
                                       HttpServletRequest request) {
         RequestContext context = require(request, "ai.chat");
         validateUuid(id);
@@ -212,7 +212,7 @@ public class AiController {
     }
 
     @PostMapping("/nl2sql")
-    public Map<String, Object> nl2sql(@RequestBody JsonNode input, HttpServletRequest request) {
+    public Map<String, Object> nl2sql(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "ai.nl2sql");
         if (!input.hasNonNull("query") || input.get("query").asText().isBlank()
                 || input.get("query").asText().length() > 2000) throw bad("query 不合法", "检查请求字段后重试");
@@ -265,7 +265,7 @@ public class AiController {
     }
 
     @PostMapping("/insights")
-    public ResponseEntity<?> createInsight(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createInsight(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "ai.insight.create");
         validateInsight(input, false);
         return command(context, "ai.insight.create", input, () -> {
@@ -310,7 +310,7 @@ public class AiController {
     }
 
     @PostMapping("/action-plans/submit")
-    public ResponseEntity<?> submitActionPlan(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> submitActionPlan(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "ai.action.submit");
         validateUuid(text(input, "messageId"));
         validateUuid(text(input, "conversationId"));
@@ -334,7 +334,7 @@ public class AiController {
     }
 
     @PostMapping("/action-plans/{id}/review")
-    public ResponseEntity<?> reviewActionPlan(@PathVariable String id, @RequestBody JsonNode input,
+    public ResponseEntity<?> reviewActionPlan(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode input,
                                               HttpServletRequest request) {
         RequestContext context = require(request, "ai.action.review");
         validateUuid(id);

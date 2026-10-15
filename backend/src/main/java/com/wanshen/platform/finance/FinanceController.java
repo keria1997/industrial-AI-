@@ -423,7 +423,7 @@ public class FinanceController {
     }
 
     @PostMapping("/invoices")
-    public ResponseEntity<?> createInvoice(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createInvoice(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.invoice.create");
         requireEnum(input, "invoiceType", Set.of("SALES", "PURCHASE"));
         requireText(input, "counterpartyId", 200);
@@ -464,7 +464,7 @@ public class FinanceController {
     }
 
     @PostMapping("/vouchers")
-    public ResponseEntity<?> createVoucher(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createVoucher(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.voucher.create");
         requireEnum(input, "voucherType", Set.of("general", "receipt", "payment", "transfer"));
         requireText(input, "summary", 500);
@@ -540,7 +540,7 @@ public class FinanceController {
     }
 
     @PostMapping("/cost-accounting")
-    public ResponseEntity<?> createCost(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createCost(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.cost.create");
         requireText(input, "productId", 200);
         requireText(input, "productName", 200);
