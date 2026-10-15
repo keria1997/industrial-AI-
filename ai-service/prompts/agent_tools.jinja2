@@ -1,0 +1,13 @@
+{# 用途: Agent 工具描述模板，列出可用工具供 LLM 选择调用 #}
+{# 版本: v1.0.0 | 变更记录见 docs/prompt-changelog.md #}
+You have access to the following tools:
+
+{% for tool in tools %}
+- {{ tool.name }}: {{ tool.description }}
+  Parameters: {{ tool.parameters | tojson }}
+{% endfor %}
+
+To use a tool, respond with a JSON object:
+{"tool": "<tool_name>", "arguments": {<parameters>}}
+
+If no tool is needed, respond directly to the user.

@@ -1,0 +1,10 @@
+{# 用途: RAG 检索结果注入模板，将向量库检索到的文档块格式化后拼接到 system prompt #}
+{# 版本: v1.0.0 | 变更记录见 docs/prompt-changelog.md #}
+Below are relevant document excerpts retrieved from the knowledge base.
+Use them to answer the user's question. Cite the source when referencing specific information.
+If the excerpts do not contain enough information, say so.
+
+{% for chunk in chunks %}
+--- Source: {{ chunk.source }} (relevance: {{ chunk.score }}) ---
+{{ chunk.content }}
+{% endfor %}
