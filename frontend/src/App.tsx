@@ -10874,7 +10874,9 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
         <div className="bg-white border border-slate-200 rounded-xl inline-flex p-1.5 shadow-sm mb-6 shrink-0 w-max relative z-10">
           <button onClick={() => setActiveTab('dashboard')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><LayoutDashboard size={14} className="mr-1.5" /> 人员监控舱</button>
           <button onClick={() => setActiveTab('directory')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'directory' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><BookOpen size={14} className="mr-1.5" /> 员工档案表</button>
+          {/* 考勤与排班暂不露出
           <button onClick={() => setActiveTab('attendance')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'attendance' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><CalendarDays size={14} className="mr-1.5" /> 考勤与排班</button>
+          */}
           <button onClick={() => setActiveTab('skills')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'skills' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Award size={14} className="mr-1.5" /> 资质技能</button>
         </div>
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
@@ -10956,7 +10958,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                     </div><Pagination total={employees.length} page={1} limit={10} />
                 </div>
             )}
-            {activeTab === 'attendance' && (
+            {false && activeTab === 'attendance' && ( /* 考勤与排班暂不露出 */
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
                     <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
                         <div className="flex justify-between items-center mb-4">
