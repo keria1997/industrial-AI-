@@ -10881,10 +10881,10 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
                   metrics={[
-                    { title: '在职员工总数', value: '342', unit: '人', icon: Users, trend: 'up', trendValue: '+5人', theme: 'blue' },
-                    { title: '今日出勤率', value: '98.5', unit: '%', icon: UserCheck, trend: 'up', trendValue: '+1.2%', theme: 'emerald' },
-                    { title: '近期资质过期预警', value: '12', unit: '人', icon: Award, trend: 'down', trendValue: '-2人', theme: 'amber' },
-                    { title: '高离职风险人员', value: '8', unit: '人', icon: ShieldAlert, trend: 'up', trendValue: '+3人', theme: 'red' },
+                    { title: '在职员工总数', value: String(employees.length), unit: '人', icon: Users, trend: 'flat', trendValue: '当前在职', theme: 'blue' },
+                    { title: '本月考勤记录', value: String(attendances.length), unit: '条', icon: UserCheck, trend: 'flat', trendValue: '当月记录', theme: 'emerald' },
+                    { title: '资质证书数', value: String(skills.length), unit: '份', icon: Award, trend: 'flat', trendValue: '已登记证书', theme: 'amber' },
+                    { title: '涉及部门数', value: String(new Set(employees.map(e => e.dept)).size), unit: '个', icon: Building, trend: 'flat', trendValue: '涉及部门', theme: 'red' },
                   ]}
                   aiCards={[
                     {
@@ -10935,16 +10935,42 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
             )}
             {activeTab === 'directory' && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
-                    <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><BookOpen className="w-4.5 h-4.5 text-blue-600" /> 花名册</h4></div>
+                    <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><BookOpen className="w-4.5 h-4.5 text-blue-600" /> 花名册</h4>
+                            <div className="flex gap-2">
+                                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-blue-600 text-white text-[12px] font-medium hover:bg-blue-700" onClick={() => showCenterToast('新增员工功能开发中')}><Plus size={14}/>新增</button>
+                                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-medium hover:bg-slate-50" onClick={() => showCenterToast('导入功能开发中')}><UploadCloud size={14}/>导入</button>
+                                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-medium hover:bg-slate-50" onClick={() => showCenterToast('导出功能开发中')}><Download size={14}/>导出</button>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 items-center">
+                            <div className="relative flex-1 max-w-xs"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/><input placeholder="搜索工号、姓名、部门..." className="w-full h-8 pl-8 pr-3 rounded-lg border border-slate-200 text-[12px] outline-none focus:border-blue-400"/></div>
+                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部状态</option><option>在职</option><option>离职</option><option>休假</option></select>
+                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部部门</option><option>总装车间</option><option>计划物流部</option></select>
+                        </div>
+                    </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">工号</th><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">部门</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">{employees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>在职</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /><TableActionButton icon={Edit2} label="维护" tone="purple" onClick={() => openHrRowAction('employeeEdit', r)} /></TableActionGroup></td></tr>)}</tbody></table>
+                        <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">工号</th><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">部门</th><th className="px-6 py-4 font-bold">岗位</th><th className="px-6 py-4 font-bold">入职日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">{employees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept}</td><td className="px-6 py-4 font-medium text-slate-600">{r.role}</td><td className="px-6 py-4 text-slate-500 font-mono text-[12px]">{r._backend?.hireDate || '-'}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>在职</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /><TableActionButton icon={Edit2} label="维护" tone="purple" onClick={() => openHrRowAction('employeeEdit', r)} /></TableActionGroup></td></tr>)}</tbody></table>
                     </div><Pagination total={employees.length} page={1} limit={10} />
                 </div>
             )}
             {activeTab === 'attendance' && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
-                    <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CalendarDays className="w-4.5 h-4.5 text-blue-600" /> 考勤与排班</h4></div>
+                    <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CalendarDays className="w-4.5 h-4.5 text-blue-600" /> 考勤与排班</h4>
+                            <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-medium hover:bg-slate-50" onClick={() => showCenterToast('考勤导出功能开发中')}><Download size={14}/>导出考勤</button>
+                        </div>
+                        <div className="flex gap-3 items-center">
+                            <input type="date" className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400" defaultValue="2026-10-01"/>
+                            <span className="text-slate-400 text-[12px]">至</span>
+                            <input type="date" className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400" defaultValue="2026-10-31"/>
+                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部员工</option><option>张工</option><option>李敏</option><option>王强</option></select>
+                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部班次</option><option>白班</option><option>夜班</option></select>
+                        </div>
+                    </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">日期</th><th className="px-6 py-4 font-bold">班次</th><th className="px-6 py-4 font-bold font-mono">打卡时间</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">{attendances.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.date}</td><td className="px-6 py-4 font-medium text-slate-600">{r.shift}</td><td className="px-6 py-4 font-mono font-bold text-slate-800">{r.clockIn} - {r.clockOut}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openHrRowAction('attendanceDetail', r)} /><TableActionButton icon={CalendarRange} label="调班" tone="amber" onClick={() => openHrRowAction('attendanceAdjust', r)} /></TableActionGroup></td></tr>)}</tbody></table>

@@ -3,6 +3,11 @@ package com.wanshen.platform.auth;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wanshen.platform.auth.RegisteredUserStore.CreateUserInput;
+import com.wanshen.platform.auth.dto.ForgotPasswordRequest;
+import com.wanshen.platform.auth.dto.RegisterTenantRequest;
+import com.wanshen.platform.auth.dto.ResetPasswordRequest;
+import com.wanshen.platform.auth.dto.SendSmsRequest;
+import com.wanshen.platform.auth.dto.SmsLoginRequest;
 import com.wanshen.platform.platform.TenantProvisioningService;
 import com.wanshen.platform.web.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -101,9 +106,9 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/session/sms/send-code")
-    public Map<String, Object> sendSms(@RequestBody JsonNode input, HttpServletRequest request) {
+    public Map<String, Object> sendSms(@RequestBody @jakarta.validation.Valid SendSmsRequest req, HttpServletRequest request) {
         limit(request, "sms", 5);
-        String phone = text(input, "phone");
+        String phone = req.phone();
         if (!phone.matches("1[3-9]\\d{9}")) throw bad("请输入有效手机号", "检查手机号后重试");
         RegisteredUser registered = users.findByPhone(phone).orElse(null);
         if (registered != null && "disabled".equals(registered.status())) throw forbidden("该账号已被禁用", "联系租户管理员");
@@ -120,9 +125,9 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/session/sms/login")
-    public ResponseEntity<?> smsLogin(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> smsLogin(@RequestBody @jakarta.validation.Valid SmsLoginRequest req, HttpServletRequest request) {
         limit(request, "sms-login", 10);
-        String phone = text(input, "phone"); String code = text(input, "code");
+        String phone = req.phone(); String code = text(input, "code");
         if (!phone.matches("1[3-9]\\d{9}") || !code.matches("\\d{6}")) throw bad("请求字段不符合规则", "检查手机号和验证码后重试");
         limitKey("sms-login-phone:" + phone, 5);
         RegisteredUser registered = users.findByPhone(phone).orElse(null);
@@ -135,9 +140,9 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/session/password/forgot")
-    public Map<String, Object> forgotPassword(@RequestBody JsonNode input, HttpServletRequest request) {
+    public Map<String, Object> forgotPassword(@RequestBody @jakarta.validation.Valid ForgotPasswordRequest req, HttpServletRequest request) {
         limit(request, "forgot", 3);
-        String email = text(input, "email");
+        String email = req.email();
         if (!email.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) throw bad("请输入有效邮箱地址", "检查邮箱后重试");
         limitKey("forgot-email:" + email.toLowerCase(java.util.Locale.ROOT), 3);
         if (!"sendgrid".equals(emailProvider) || sendGridKey.isBlank()) {
@@ -154,9 +159,9 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/session/password/reset")
-    public ResponseEntity<Void> resetPassword(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<Void> resetPassword(@RequestBody @jakarta.validation.Valid ResetPasswordRequest req, HttpServletRequest request) {
         limit(request, "password-reset", 10);
-        String token = text(input, "token"); String password = text(input, "newPassword");
+        String token = req.token(); String password = req.newPassword();
         validatePassword(password);
         if (token.length() != 43 || !users.resetPassword(token, passwordHasher.hash(password))) {
             throw unauthorized("重置链接无效或已过期", "重新申请密码重置");
@@ -165,12 +170,12 @@ public class AuthController {
     }
 
     @PostMapping("/api/v1/session/register")
-    public ResponseEntity<?> register(@RequestBody JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> register(@RequestBody @jakarta.validation.Valid RegisterTenantRequest req, HttpServletRequest request) {
         limit(request, "register", 3);
-        String account = text(input, "account"); String password = text(input, "password");
-        String name = text(input, "name"); String phone = text(input, "phone");
-        String email = text(input, "email"); String tenantName = text(input, "tenantName");
-        String industry = text(input, "industry");
+        String account = req.account(); String password = req.password();
+        String name = text(input, "name"); String phone = req.phone();
+        String email = req.email(); String tenantName = text(input, "tenantName");
+        String industry = req.industry();
         if (account.length() < 2 || account.length() > 50) throw bad("账号长度 2-50 个字符", "检查输入后重试");
         validatePassword(password);
         if (name.isBlank() || name.length() > 100) throw bad("姓名不合法", "检查输入后重试");
@@ -239,7 +244,7 @@ public class AuthController {
     @PostMapping("/api/v1/platform/employee-accounts")
     public ResponseEntity<?> createEmployeeAccount(@RequestBody JsonNode input, HttpServletRequest request) {
         String tenantId = requireTenantAdmin(request);
-        String name = text(input, "name"); String phone = text(input, "phone"); String email = text(input, "email");
+        String name = text(input, "name"); String phone = req.phone(); String email = req.email();
         String account = text(input, "account"); String department = text(input, "department");
         String position = text(input, "position"); String employeeNo = optional(input, "employeeNo", "");
         if (name.isBlank() || name.length() > 100 || !phone.matches("1[3-9]\\d{9}")
