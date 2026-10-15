@@ -6,6 +6,7 @@
  */
 
 import { DataTable, type Column } from '../../../components/DataTable';
+import { formatAmountWithCurrency } from '../../../shared/format';
 
 interface CostItem {
   costType: string;
@@ -29,9 +30,10 @@ export function CostAccumulationPanel({ workOrderNo }: { workOrderNo: string }) 
 
   const cols: Column<CostItem>[] = [
     { key: 'costType', label: '成本项' },
-    { key: 'amount', label: '金额', align: 'right', render: r => (
-      <span className={r.amount.startsWith('-') ? 'text-rose-600' : 'text-slate-800'}>{r.amount}</span>
-    )},
+    { key: 'amount', label: '金额', align: 'right', render: r => {
+      const num = parseFloat(r.amount.replace(/[¥,]/g, ''));
+      return <span className={num < 0 ? 'text-rose-600' : 'text-slate-800'}>{formatAmountWithCurrency(num)}</span>;
+    }},
     { key: 'source', label: '来源' },
   ];
 
@@ -42,7 +44,7 @@ export function CostAccumulationPanel({ workOrderNo }: { workOrderNo: string }) 
       <div className="flex justify-end items-center gap-4 px-4 py-2 bg-slate-50 rounded-lg">
         <span className="text-[13px] font-bold text-slate-600">工单总成本：</span>
         <span className="text-[16px] font-bold text-slate-900 tabular-nums">
-          ¥{total.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {formatAmountWithCurrency(total)}
         </span>
       </div>
     </div>

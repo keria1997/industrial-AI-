@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { DataTable, type Column } from '../../../components/DataTable';
 import { Badge } from '../../../components/Badge';
 import { Plus } from 'lucide-react';
+import { formatAmountWithCurrency } from '../../../shared/format';
 
 interface RmaRecord {
   rmaNo: string;
@@ -50,7 +51,7 @@ export function RmaManagementPanel() {
     { key: 'approvedQty', label: '批准退回', align: 'right' },
     { key: 'qualifiedQty', label: '检验合格', align: 'right' },
     { key: 'status', label: '状态', align: 'center', render: r => { const s = STATUS_MAP[r.status]; return s ? <Badge color={s.color as 'amber'}>{s.label}</Badge> : r.status; } },
-    { key: 'creditAr', label: '红字AR', align: 'right' },
+    { key: 'creditAr', label: '红字AR', align: 'right', render: r => <span className={r.creditAr.startsWith('-') ? 'text-rose-600 font-medium' : ''}>{r.creditAr === '-' ? '-' : r.creditAr}</span> },
     { key: 'createdAt', label: '创建时间' },
   ];
 

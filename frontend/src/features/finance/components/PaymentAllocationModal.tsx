@@ -6,6 +6,7 @@
  */
 
 import { useState, type FormEvent } from 'react';
+import { formatAmountWithCurrency } from '../../../shared/format';
 
 interface Props {
   open: boolean;
@@ -33,7 +34,7 @@ export function PaymentAllocationModal({ open, arNo, balance, onClose, onSubmit 
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
         <div className="p-6 pb-0">
           <h3 className="text-lg font-bold text-slate-800">登记收款</h3>
-          <p className="text-[13px] text-slate-500 mt-1">应收单号: {arNo} · 余额: {balance}</p>
+          <p className="text-[13px] text-slate-500 mt-1">应收单号: {arNo} · 余额: {formatAmountWithCurrency(balance)}</p>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
