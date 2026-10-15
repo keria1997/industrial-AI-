@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  后端日志配置
+  - 开发环境: 控制台彩色输出
+  - 生产环境: 文件输出 + 每日滚动 + 单独错误文件
+  - 日志目录: ./logs (可通过 LOG_DIR 环境变量覆盖)
+  - 保留天数: 30 天 (可通过 LOG_RETENTION_DAYS 覆盖)
+-->
+<configuration>
+    <springProperty scope="context" name="LOG_DIR" source="logging.file.path" defaultValue="./logs"/>
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="industrial-ai-api"/>
+
+    <!-- 控制台输出 (开发用，带颜色) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%thread] %cyan(%logger{36}) - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 全量日志文件 (INFO及以上，每日滚动) -->
+    <appender name="FILE_ALL" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>${LOG_RETENTION_DAYS:-30}</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 错误日志文件 (仅ERROR，单独文件便于监控) -->
+    <appender name="FILE_ERROR" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}-error.log</file>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>ERROR</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}-error.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>${LOG_RETENTION_DAYS:-30}</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} - %msg%n%ex</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 业务日志文件 (核心业务操作审计) -->
+    <appender name="FILE_BIZ" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}-business.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}-business.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>${LOG_RETENTION_DAYS:-30}</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 异步写文件，避免阻塞业务线程 -->
+    <appender name="ASYNC_ALL" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="FILE_ALL"/>
+    </appender>
+    <appender name="ASYNC_ERROR" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>256</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="FILE_ERROR"/>
+    </appender>
+    <appender name="ASYNC_BIZ" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="FILE_BIZ"/>
+    </appender>
+
+    <!-- 业务日志 Logger (单独输出到 business.log) -->
+    <logger name="com.wanshen.platform.BUSINESS" level="INFO" additivity="false">
+        <appender-ref ref="ASYNC_BIZ"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- 模块级别控制 -->
+    <logger name="com.wanshen.platform.auth" level="INFO"/>
+    <logger name="com.wanshen.platform.fulfillment" level="INFO"/>
+    <logger name="com.wanshen.platform.production" level="INFO"/>
+    <logger name="com.wanshen.platform.finance" level="INFO"/>
+    <logger name="com.wanshen.platform.platform" level="INFO"/>
+    <logger name="com.wanshen.platform.message" level="INFO"/>
+    <logger name="com.wanshen.platform.workbench" level="INFO"/>
+    <logger name="com.wanshen.platform.storage" level="INFO"/>
+    <logger name="org.springframework.web" level="WARN"/>
+    <logger name="org.springframework.boot" level="INFO"/>
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+
+    <!-- 根日志 -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_ALL"/>
+        <appender-ref ref="ASYNC_ERROR"/>
+    </root>
+
+    <!-- 生产环境 profile: 关闭控制台，仅写文件 -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="ASYNC_ALL"/>
+            <appender-ref ref="ASYNC_ERROR"/>
+        </root>
+    </springProfile>
+</configuration>

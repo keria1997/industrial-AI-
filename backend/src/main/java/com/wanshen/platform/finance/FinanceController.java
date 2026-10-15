@@ -3,6 +3,8 @@ package com.wanshen.platform.finance;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.wanshen.platform.finance.AbstractFinanceStore.CostAccounting;
 import com.wanshen.platform.finance.AbstractFinanceStore.FinanceFilter;
 import com.wanshen.platform.finance.AbstractFinanceStore.Invoice;
@@ -34,6 +36,7 @@ import java.util.function.Supplier;
 @RequestMapping("/api/v1/finance")
 @ConditionalOnProperty(value = "app.finance.native-enabled", havingValue = "true")
 public class FinanceController {
+    private static final Logger log = LoggerFactory.getLogger(FinanceController.class);
     private static final Set<String> PAYMENT_METHODS = Set.of(
             "bank_transfer", "cash", "check", "offset", "other"
     );
@@ -118,6 +121,7 @@ public class FinanceController {
         require(context, "finance.voucher.create");
         require(context, "finance.voucher.post");
         validateSettlement(input);
+        log.info("[财务管理] AR结算 | 单据: {} | 租户: {}", id, context.tenantId());
         return command(context, "finance.receivable.settle", input(id, input), () -> {
             Receivable current = getReceivable(context.tenantId(), id);
             if ("void".equals(current.status())) {
@@ -297,6 +301,7 @@ public class FinanceController {
     public ResponseEntity<?> registerPayment(@RequestBody JsonNode input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.payment.create");
         validatePayment(input);
+        log.info("[财务管理] 登记收付款 | 方向: {} | 租户: {}", input.path("direction").asText("?"), context.tenantId());
         return command(context, "finance.payment.register", input, () -> {
             String direction = text(input, "direction");
             Receivable receivable = null;

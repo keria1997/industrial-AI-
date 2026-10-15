@@ -7,6 +7,8 @@ import com.wanshen.platform.web.RequestContextService;
 import com.wanshen.platform.web.RequestContextService.RequestContext;
 import com.wanshen.platform.web.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,7 @@ import java.util.List;
 @RestController
 @ConditionalOnProperty(value = "app.fulfillment.native-enabled", havingValue = "true")
 public class FulfillmentController {
+    private static final Logger log = LoggerFactory.getLogger(FulfillmentController.class);
     private final FulfillmentService service;
     private final RequestContextService contexts;
     private final ObjectMapper mapper;
@@ -34,6 +37,7 @@ public class FulfillmentController {
     public ResponseEntity<JsonNode> createOrder(@RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = contexts.from(request);
         FulfillmentService.Command result = service.createOrder(context, body);
+        log.info("[销售管理] 创建订单 | 租户: {} | 状态: {}", context.tenantId(), result.statusCode());
         return command(result);
     }
 
@@ -83,7 +87,9 @@ public class FulfillmentController {
     public ResponseEntity<JsonNode> confirmOrder(
             @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
-        return command(service.confirmOrder(contexts.from(request), id, body));
+        RequestContext ctx = contexts.from(request);
+        log.info("[销售管理] 确认订单 | 单据: {} | 租户: {}", id, ctx.tenantId());
+        return command(service.confirmOrder(ctx, id, body));
     }
 
     @PostMapping("/api/v1/sales/sales-orders/{id}/shipment-requests")
@@ -220,7 +226,9 @@ public class FulfillmentController {
     public ResponseEntity<JsonNode> postOutbound(
             @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
-        return command(service.postOutbound(contexts.from(request), id, body));
+        RequestContext ctx = contexts.from(request);
+        log.info("[库存管理] 出库过账 | 单据: {} | 租户: {}", id, ctx.tenantId());
+        return command(service.postOutbound(ctx, id, body));
     }
 
     @GetMapping("/api/v1/inventory/transactions")

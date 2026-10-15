@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wanshen.platform.web.ApiException;
 import com.wanshen.platform.web.RequestContextService.RequestContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -28,6 +30,7 @@ import java.util.UUID;
 import java.util.function.Function;
 
 public class ProductionService {
+    private static final Logger log = LoggerFactory.getLogger(ProductionService.class);
     public record Command(int statusCode, JsonNode body, String aggregateType, String aggregateId, boolean replayed) {}
 
     private final ProductionStore store;
