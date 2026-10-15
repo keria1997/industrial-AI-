@@ -107,9 +107,10 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/sales/sales-orders/{id}/cancel")
     public ResponseEntity<JsonNode> cancelOrder(
-            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody @jakarta.validation.Valid com.wanshen.platform.fulfillment.dto.CancelOrderRequest body, HttpServletRequest request
     ) {
-        return command(service.cancelOrder(contexts.from(request), id, body));
+        var bodyJson = mapper.valueToTree(body);
+        return command(service.cancelOrder(contexts.from(request), id, bodyJson));
     }
 
     @GetMapping("/api/v1/inventory/availability")
