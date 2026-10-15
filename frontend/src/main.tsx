@@ -1,16 +1,13 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App';
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './app/App';
 import './styles.css';
+import { installProductionStorageGuard } from './shared/productionStorage';
 
-const rootEl = document.getElementById('root');
-if (!rootEl) {
-  console.error('[app] #root element not found in DOM');
-} else {
-  console.log('[app] mounting to #root');
-  createRoot(rootEl).render(
-    <StrictMode>
-      <App />
-    </StrictMode>
-  );
-}
+installProductionStorageGuard(window.localStorage, import.meta.env.PROD);
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

@@ -1,35 +1,23 @@
-/**
- * 全局布局壳
- *
- * 左侧固定侧栏 + 顶栏 + 主内容区。
- * 调用链路: App -> AppShell -> Sidebar + Header + {children}
- */
+import React, { type ReactNode } from 'react';
 
-import type { ReactNode } from 'react';
-import { Sidebar } from '../components/Sidebar';
-import { Header } from '../components/Header';
-import type { RoleName } from './moduleRegistry';
+export const AppShell = ({ children }: { children: ReactNode }) => (
+  <div className="h-screen min-h-0 bg-[#F8FAFC] text-slate-800 font-sans flex overflow-hidden">
+    {children}
+  </div>
+);
 
-interface Props {
-  role: RoleName;
-  userName: string;
-  activeModule: string;
-  onNavigate: (moduleId: string) => void;
-  onOpenAi: () => void;
-  onLogout: () => void;
-  children: ReactNode;
-}
+export const AppShellSidebar = ({ children, expanded }: { children: ReactNode; expanded: boolean }) => (
+  <aside className={`${expanded ? 'w-[300px]' : 'w-64'} bg-white border-r border-slate-200 shadow-sm hidden lg:flex flex-col z-20 shrink-0 transition-[width] duration-200`}>
+    {children}
+  </aside>
+);
 
-export function AppShell({ role, userName, activeModule, onNavigate, onOpenAi, onLogout, children }: Props) {
-  return (
-    <div className="h-screen bg-[#F8FAFC] text-slate-800 font-sans flex overflow-hidden">
-      <Sidebar role={role} activeModule={activeModule} onNavigate={onNavigate} />
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <Header role={role} userName={userName} onOpenAi={onOpenAi} onLogout={onLogout} />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
-      </div>
-    </div>
-  );
-}
+export const AppShellMain = ({ children }: { children: ReactNode }) => (
+  <main className="flex-1 flex flex-col h-screen overflow-hidden relative">{children}</main>
+);
+
+export const AppShellHeader = ({ children }: { children: ReactNode }) => (
+  <header className="h-16 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm flex items-center justify-between px-3 sm:px-5 lg:justify-end lg:px-8 z-10 shrink-0">
+    {children}
+  </header>
+);
