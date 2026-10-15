@@ -5,6 +5,8 @@
  */
 
 import type { ChatMessage } from '../types/chat';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Props {
   message: ChatMessage;
@@ -21,7 +23,15 @@ export function MessageBubble({ message }: Props) {
             : 'bg-white text-slate-800 border border-slate-200 rounded-bl-sm'
         }`}
       >
-        {message.content}
+        {isUser ? (
+          message.content
+        ) : (
+          <div className="markdown-body">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
       </div>
     </div>
   );

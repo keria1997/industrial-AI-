@@ -62,14 +62,27 @@ export async function* streamChat(
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // 解析 SSE 格式: event:xxx\ndata:yyy\n\n
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.startsWith('data:')) {
-        const data = line.slice(5).trim();
-        if (data && data !== '[DONE]') {
-          yield data;
+      // 解析 SSE 格式: 按 \n\n 分割事件
+    const events = buffer.split('\n\n');
+    buffer = events.pop() ?? '';
+    for (const event of events) {
+      for (const line of event.split('\n')) {
+        if (line.startsWith('data:')) {
+          const data = line.slice(5).trim();
+          if (data && data !== '[DONE]') {
+            // 解析 JSON 格式的 delta
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                yield parsed.content;
+              } else if (typeof parsed === 'string') {
+                yield parsed;
+              }
+            } catch {
+              // 纯文本 data
+              yield data;
+            }
+          }
         }
       }
     }

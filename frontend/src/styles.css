@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Markdown rendering in assistant messages */
+.markdown-body p { margin-bottom: 0.5rem; }
+.markdown-body p:last-child { margin-bottom: 0; }
+.markdown-body pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.markdown-body code {
+  background: rgba(0,0,0,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-body ul, .markdown-body ol {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.markdown-body ul { list-style-type: disc; }
+.markdown-body ol { list-style-type: decimal; }
+.markdown-body li { margin-bottom: 4px; }
+.markdown-body blockquote {
+  border-left: 3px solid #93c5fd;
+  padding-left: 12px;
+  color: #64748b;
+  margin: 8px 0;
+}
+.markdown-body a { color: #2563eb; text-decoration: underline; }
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid #e2e8f0;
+  padding: 6px 10px;
+}
+.markdown-body th { background: #f8fafc; font-weight: 600; }
+
