@@ -1,6 +1,7 @@
 package com.wanshen.platform.fulfillment.dto;
 
 import jakarta.validation.constraints.*;
+import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;

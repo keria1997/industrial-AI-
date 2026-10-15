@@ -36,9 +36,9 @@ public class FulfillmentController {
     @PostMapping("/api/v1/sales/sales-orders")
     public ResponseEntity<JsonNode> createOrder(@RequestBody @jakarta.validation.Valid com.wanshen.platform.fulfillment.dto.CreateSalesOrderRequest body, HttpServletRequest request) {
         RequestContext context = contexts.from(request);
+        var bodyJson = mapper.valueToTree(body);
         FulfillmentService.Command result = service.createOrder(context, bodyJson);
         log.info("[销售管理] 创建订单 | 租户: {} | 状态: {}", context.tenantId(), result.statusCode());
-        var bodyJson = mapper.valueToTree(body);
         return command(result);
     }
 

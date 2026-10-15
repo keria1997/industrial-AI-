@@ -127,7 +127,7 @@ public class AuthController {
     @PostMapping("/api/v1/session/sms/login")
     public ResponseEntity<?> smsLogin(@RequestBody @jakarta.validation.Valid SmsLoginRequest req, HttpServletRequest request) {
         limit(request, "sms-login", 10);
-        String phone = req.phone(); String code = text(input, "code");
+        String phone = req.phone(); String code = req.smsCode();
         if (!phone.matches("1[3-9]\\d{9}") || !code.matches("\\d{6}")) throw bad("请求字段不符合规则", "检查手机号和验证码后重试");
         limitKey("sms-login-phone:" + phone, 5);
         RegisteredUser registered = users.findByPhone(phone).orElse(null);
@@ -173,8 +173,8 @@ public class AuthController {
     public ResponseEntity<?> register(@RequestBody @jakarta.validation.Valid RegisterTenantRequest req, HttpServletRequest request) {
         limit(request, "register", 3);
         String account = req.account(); String password = req.password();
-        String name = text(input, "name"); String phone = req.phone();
-        String email = req.email(); String tenantName = text(input, "tenantName");
+        String name = req.name(); String phone = req.phone();
+        String email = req.email(); String tenantName = req.tenantName();
         String industry = req.industry();
         if (account.length() < 2 || account.length() > 50) throw bad("账号长度 2-50 个字符", "检查输入后重试");
         validatePassword(password);
@@ -244,7 +244,7 @@ public class AuthController {
     @PostMapping("/api/v1/platform/employee-accounts")
     public ResponseEntity<?> createEmployeeAccount(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
         String tenantId = requireTenantAdmin(request);
-        String name = text(input, "name"); String phone = req.phone(); String email = req.email();
+        String name = text(input, "name"); String phone = text(input, "phone"); String email = text(input, "email");
         String account = text(input, "account"); String department = text(input, "department");
         String position = text(input, "position"); String employeeNo = optional(input, "employeeNo", "");
         if (name.isBlank() || name.length() > 100 || !phone.matches("1[3-9]\\d{9}")
