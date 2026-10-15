@@ -90,7 +90,12 @@ export const productionOperationsApi = {
     }),
   readiness: (context: ApiContext) => apiRequest<{ permissions: string[] }>("/api/v1/production/readiness", context),
   dashboard: (context: ApiContext) => apiRequest<DashboardDto>("/api/v1/production/dashboard/kpis", context),
-  listDemands: (context: ApiContext) => apiRequest<{ items: DemandDto[]; total: number }>("/api/v2/production/demands?page=1&pageSize=200", context),
+  listDemands: async (context: ApiContext): Promise<{ items: DemandDto[]; total: number }> => {
+    const res = await apiRequest<any>("/api/v2/production/demands?page=1&pageSize=200", context);
+    if (Array.isArray(res)) return { items: res, total: res.length };
+    if (res.data) return { items: res.data, total: res.data.length };
+    return { items: [], total: 0 };
+  },
   validateDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v2/production/demands/${demand.id}/validate`, context, {
     method: "POST", body: JSON.stringify({ productActive: true, factoryActive: true, bomEffective: true, routingEffective: true }),
     expectedVersion: demand.version, idempotencyKey: `demand-validate:${context.tenantId}:${demand.id}:${demand.version}`,
@@ -103,7 +108,12 @@ export const productionOperationsApi = {
     method: "POST", expectedVersion: demand.version,
     idempotencyKey: `demand-claim:${context.tenantId}:${demand.id}:${demand.version}`,
   }),
-  listWorkOrders: (context: ApiContext) => apiRequest<{ items: WorkOrderDto[]; total: number }>("/api/v2/production/work-orders?page=1&pageSize=200", context),
+  listWorkOrders: async (context: ApiContext): Promise<{ items: WorkOrderDto[]; total: number }> => {
+    const res = await apiRequest<any>("/api/v2/production/work-orders?page=1&pageSize=200", context);
+    if (Array.isArray(res)) return { items: res, total: res.length };
+    if (res.data) return { items: res.data, total: res.data.length };
+    return { items: [], total: 0 };
+  },
   getWorkOrder: (context: ApiContext, id: string) => apiRequest<WorkOrderDto>(`/api/v2/production/work-orders/${id}`, context),
   createDemand: (context: ApiContext, input: Record<string, unknown>, key: string) => apiRequest<DemandDto>("/api/v2/production/demands", context, {
     method: "POST", body: JSON.stringify(input), idempotencyKey: key,

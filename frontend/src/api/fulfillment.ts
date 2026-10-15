@@ -77,8 +77,12 @@ const key = (scope: string) => `${scope}:${crypto.randomUUID()}`;
 export const createFulfillmentOrder = (context: ApiContext, input: Record<string, unknown>, idempotencyKey?: string) =>
   apiRequest<FulfillmentOrder>('/api/v2/sales/orders', context, { method: 'POST', idempotencyKey: idempotencyKey || key('sales-order'), body: JSON.stringify(input) });
 
-export const listFulfillmentOrders = (context: ApiContext) =>
-  apiRequest<{ items: FulfillmentOrder[]; total: number }>('/api/v2/sales/orders?page=1&pageSize=200', context);
+export const listFulfillmentOrders = async (context: ApiContext): Promise<{ items: FulfillmentOrder[]; total: number }> => {
+  const res = await apiRequest<{ code: number; data: FulfillmentOrder[] }>('/api/v2/sales/orders?page=1&pageSize=200', context);
+  if (Array.isArray(res)) return { items: res, total: res.length };
+  if (res.data) return { items: res.data, total: res.data.length };
+  return { items: [], total: 0 };
+};
 
 export const getFulfillmentOrder = (context: ApiContext, id: string) =>
   apiRequest<FulfillmentOrder>(`/api/v2/sales/orders/${id}`, context);

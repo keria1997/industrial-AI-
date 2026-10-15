@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID> {
 
-    Optional<WorkOrder> findByTenantIdAndOrderNo(String tenantId, String orderNo);
+    Optional<WorkOrder> findByTenantIdAndCode(String tenantId, String code);
 
     List<WorkOrder> findByTenantIdAndStatus(String tenantId, String status);
 
