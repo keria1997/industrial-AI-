@@ -11,6 +11,7 @@ import { TabNav } from '../../components/TabNav';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Badge } from '../../components/Badge';
 import { PageHeader } from '../../components/PageHeader';
+import { ModuleHeader } from '../../components/ModuleHeader';
 
 /* ---- 简易占位组件 ---- */
 function Placeholder({ text }: { text: string }) {
@@ -43,7 +44,7 @@ export function PersonnelPage() {
   ];
   return (
     <div>
-      <PageHeader title="人员管理" />
+      <ModuleHeader icon={Users} title="人员管理" subtitle="员工 · 组织 · 岗位" theme="rose" />
       <TabNav tabs={PERSONNEL_TABS} active={tab} onChange={setTab} />
       {tab === 'employees' && <DataTable columns={cols} data={SAMPLE_EMPLOYEES} emptyText="暂无员工数据" />}
       {tab === 'org' && <Placeholder text="组织架构管理开发中" />}
