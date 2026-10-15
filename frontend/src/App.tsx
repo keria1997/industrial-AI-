@@ -21,6 +21,7 @@ import { messagesApi } from "./api/messages";
 import { personnelApi } from "./api/personnel";
 import { supplyChainApi } from "./api/supply-chain";
 import { workbenchApi, type WorkbenchDashboardDto, type WorkbenchRole } from './api/workbench';
+import { useSalesOrders, useInventoryAvailability, useProductionDemands, useWorkOrders } from './hooks/useApiData';
 import { AIHubManagement as AIHubManagementV2, AIAssistantDrawer } from './features/ai-hub';
 import {
   approveFulfillmentOrder,
@@ -3520,6 +3521,43 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
     inventoryApi.listWarehouses(formalContext)
       .then((response) => setSalesWarehouseList((response.items || []).filter((warehouse) => warehouse.status === 'active')))
       .catch(() => setSalesWarehouseList([]));
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  // 从后端 API 加载销售订单（替代 localStorage 硬编码数据）
+  useEffect(() => {
+    if (!formalContext) return;
+    import('./api/fulfillment').then(({ listFulfillmentOrders }) => {
+      listFulfillmentOrders(formalContext)
+        .then(res => {
+          if (res.items && res.items.length > 0) {
+            setOrders(res.items.map(o => ({
+              id: o.id, orderNo: o.orderNo, customer: o.customerName,
+              status: o.overallStatus, totalAmount: o.totalAmount,
+              deliveryDate: o.requestedDeliveryDate, lines: o.lines,
+            } as any)));
+          }
+        })
+        .catch(() => {/* API 失败时保留 localStorage 数据 */});
+    });
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  // 从后端 API 加载客户数据（替代硬编码 sales_customersListData）
+  useEffect(() => {
+    if (!formalContext) return;
+    import('./api/supply-chain').then(({ supplyChainApi }) => {
+      supplyChainApi.listCustomers(formalContext)
+        .then(res => {
+          const items = res?.items ?? res;
+          if (Array.isArray(items) && items.length > 0) {
+            setCustomers(prev => prev.length <= 3 ? items.map((c: any) => ({
+              id: c.id, name: c.name, code: c.customerNo || c.id,
+              level: 'A', contact: '', phone: '', status: '正常', industry: '',
+              creditCode: c.creditCode || '', createdAt: c.createdAt || '',
+            })) : prev);
+          }
+        })
+        .catch(() => {/* API 失败时保留本地数据 */});
+    });
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
   useEffect(() => {
