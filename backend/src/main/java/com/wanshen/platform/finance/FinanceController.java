@@ -219,8 +219,9 @@ public class FinanceController {
         require(context, "finance.invoice.create");
         require(context, "finance.voucher.create");
         require(context, "finance.voucher.post");
-        validateSettlement(input);
-        return command(context, "finance.payable.settle", input(id, input), () -> {
+        var inputJson = objectMapper.valueToTree(input);
+        validateSettlement(inputJson);
+        return command(context, "finance.payable.settle", input(id, inputJson), () -> {
             Payable current = getPayable(context.tenantId(), id);
             if ("void".equals(current.status())) throw conflict("已作废应付单不能结算", "刷新应付列表后重试");
             if ("done".equals(current.status())) {
@@ -301,38 +302,39 @@ public class FinanceController {
     @PostMapping("/payments")
     public ResponseEntity<?> registerPayment(@RequestBody @jakarta.validation.Valid com.wanshen.platform.finance.dto.CreatePaymentRequest input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.payment.create");
-        validatePayment(input);
-        log.info("[财务管理] 登记收付款 | 方向: {} | 租户: {}", input.path("direction").asText("?"), context.tenantId());
+        var inputJson = objectMapper.valueToTree(input);
+        validatePayment(inputJson);
+        log.info("[财务管理] 登记收付款 | 方向: {} | 租户: {}", inputJson.path("direction").asText("?"), context.tenantId());
         return command(context, "finance.payment.register", input, () -> {
-            String direction = text(input, "direction");
+            String direction = text(inputJson, "direction");
             Receivable receivable = null;
             Payable payable = null;
-            if ("INBOUND".equals(direction) && input.hasNonNull("receivableId")) {
+            if ("INBOUND".equals(direction) && inputJson.hasNonNull("receivableId")) {
                 receivable = getReceivable(context.tenantId(), input.get("receivableId").asText());
                 if (Set.of("done", "void").contains(receivable.status())) {
                     throw conflict("应收单当前状态不允许收款", "刷新数据后重试");
                 }
-                if (compare(text(input, "amount"), receivable.outstandingAmount()) > 0) {
+                if (compare(text(inputJson, "amount"), receivable.outstandingAmount()) > 0) {
                     throw bad("收款金额超过未收余额", "减少收款金额");
                 }
             }
-            if ("OUTBOUND".equals(direction) && input.hasNonNull("payableId")) {
+            if ("OUTBOUND".equals(direction) && inputJson.hasNonNull("payableId")) {
                 payable = getPayable(context.tenantId(), input.get("payableId").asText());
                 if (Set.of("done", "void").contains(payable.status())) {
                     throw conflict("应付单当前状态不允许付款", "刷新数据后重试");
                 }
-                if (compare(text(input, "amount"), payable.outstandingAmount()) > 0) {
+                if (compare(text(inputJson, "amount"), payable.outstandingAmount()) > 0) {
                     throw bad("付款金额超过未付余额", "减少付款金额");
                 }
             }
             String timestamp = now();
             Payment payment = new Payment(UUID.randomUUID().toString(), context.tenantId(), docNo("PAY"),
-                    direction, textOrNull(input, "receivableId"), textOrNull(input, "payableId"),
-                    text(input, "counterpartyId"), text(input, "counterpartyName"),
-                    textOr(input, "currency", "CNY"), text(input, "amount"),
-                    text(input, "paymentMethod"), text(input, "paymentDate"),
-                    textOrEmpty(input, "bankAccount"), textOrEmpty(input, "referenceNo"), "pending",
-                    textOrEmpty(input, "remark"), 1, timestamp, timestamp, context.actorId());
+                    direction, textOrNull(inputJson, "receivableId"), textOrNull(inputJson, "payableId"),
+                    text(inputJson, "counterpartyId"), text(inputJson, "counterpartyName"),
+                    textOr(inputJson, "currency", "CNY"), text(inputJson, "amount"),
+                    text(inputJson, "paymentMethod"), text(inputJson, "paymentDate"),
+                    textOrEmpty(inputJson, "bankAccount"), textOrEmpty(inputJson, "referenceNo"), "pending",
+                    textOrEmpty(inputJson, "remark"), 1, timestamp, timestamp, context.actorId());
             store.savePayment(payment);
             audit(context, "Payment", payment.id(), 1, "REGISTER", null, payment);
             outbox(context, "finance.payment.registered.v1", "Payment", payment.id(), 1,
@@ -435,16 +437,16 @@ public class FinanceController {
         optionalText(input, "remark", 500);
         return command(context, "finance.invoice.create", input, () -> {
             String timestamp = now();
-            String amount = text(input, "amount");
-            String taxRate = text(input, "taxRate");
+            String amount = text(inputJson, "amount");
+            String taxRate = text(inputJson, "taxRate");
             String taxAmount = multiplyScaled(amount, taxRate).multiply(MICRO)
                     .setScale(0, RoundingMode.DOWN).divide(MICRO, 6, RoundingMode.DOWN).toPlainString();
             Invoice invoice = new Invoice(UUID.randomUUID().toString(), context.tenantId(), docNo("INV"),
-                    text(input, "invoiceType"), textOrNull(input, "receivableId"),
-                    textOrNull(input, "payableId"), text(input, "counterpartyId"),
-                    text(input, "counterpartyName"), "CNY", amount, taxAmount, taxRate,
-                    textOrEmpty(input, "invoiceNo"), textOrNull(input, "invoiceDate"), "pending",
-                    textOrEmpty(input, "remark"), 1, timestamp, timestamp, context.actorId());
+                    text(inputJson, "invoiceType"), textOrNull(inputJson, "receivableId"),
+                    textOrNull(inputJson, "payableId"), text(inputJson, "counterpartyId"),
+                    text(inputJson, "counterpartyName"), "CNY", amount, taxAmount, taxRate,
+                    textOrEmpty(inputJson, "invoiceNo"), textOrNull(inputJson, "invoiceDate"), "pending",
+                    textOrEmpty(inputJson, "remark"), 1, timestamp, timestamp, context.actorId());
             store.saveInvoice(invoice);
             audit(context, "Invoice", invoice.id(), 1, "CREATE", null, invoice);
             return new Command(invoice, 201);
@@ -493,9 +495,9 @@ public class FinanceController {
             String credit = sum(entries.stream().map(VoucherLine::creditAmount).toList());
             if (compare(debit, credit) != 0) throw bad("凭证借贷不平衡", "检查借方和贷方金额");
             Voucher voucher = new Voucher(UUID.randomUUID().toString(), context.tenantId(), docNo("VOU"),
-                    text(input, "voucherType"), text(input, "summary"), debit, credit, "draft",
-                    textOrNull(input, "postingDate"), entries, textOrEmpty(input, "sourceType"),
-                    textOrEmpty(input, "sourceId"), textOrEmpty(input, "remark"), 1, timestamp,
+                    text(inputJson, "voucherType"), text(inputJson, "summary"), debit, credit, "draft",
+                    textOrNull(inputJson, "postingDate"), entries, textOrEmpty(inputJson, "sourceType"),
+                    textOrEmpty(inputJson, "sourceId"), textOrEmpty(inputJson, "remark"), 1, timestamp,
                     timestamp, context.actorId());
             store.saveVoucher(voucher);
             audit(context, "Voucher", voucher.id(), 1, "CREATE", null, voucher);
@@ -553,26 +555,26 @@ public class FinanceController {
         optionalText(input, "workOrderNo", 100);
         optionalText(input, "remark", 500);
         return command(context, "finance.cost.create", input, () -> {
-            if (compare(text(input, "outputQty"), "0") <= 0) {
+            if (compare(text(inputJson, "outputQty"), "0") <= 0) {
                 throw bad("产出数量必须大于 0", "修正产出数量");
             }
             String timestamp = now();
-            String totalCost = add(add(text(input, "materialCost"), text(input, "manufacturingCost")),
-                    text(input, "laborCost"));
-            BigDecimal output = new BigDecimal(text(input, "outputQty"));
+            String totalCost = add(add(text(inputJson, "materialCost"), text(inputJson, "manufacturingCost")),
+                    text(inputJson, "laborCost"));
+            BigDecimal output = new BigDecimal(text(inputJson, "outputQty"));
             String unitCost = new BigDecimal(totalCost).divide(output, 6, RoundingMode.DOWN).toPlainString();
-            BigDecimal standard = new BigDecimal(text(input, "standardUnitCost"));
+            BigDecimal standard = new BigDecimal(text(inputJson, "standardUnitCost"));
             BigDecimal unit = new BigDecimal(unitCost);
             String variance = standard.compareTo(BigDecimal.ZERO) > 0
                     ? unit.subtract(standard).divide(standard, 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP).toPlainString()
                     : "0";
             CostAccounting cost = new CostAccounting(UUID.randomUUID().toString(), context.tenantId(),
-                    docNo("CST"), textOrNull(input, "workOrderId"), textOrNull(input, "workOrderNo"),
-                    text(input, "productId"), text(input, "productName"), text(input, "materialCost"),
-                    text(input, "manufacturingCost"), text(input, "laborCost"), totalCost,
-                    text(input, "outputQty"), unitCost, text(input, "standardUnitCost"), variance,
-                    "pending", textOrEmpty(input, "remark"), 1, timestamp, timestamp, context.actorId());
+                    docNo("CST"), textOrNull(inputJson, "workOrderId"), textOrNull(inputJson, "workOrderNo"),
+                    text(inputJson, "productId"), text(inputJson, "productName"), text(inputJson, "materialCost"),
+                    text(inputJson, "manufacturingCost"), text(inputJson, "laborCost"), totalCost,
+                    text(inputJson, "outputQty"), unitCost, text(inputJson, "standardUnitCost"), variance,
+                    "pending", textOrEmpty(inputJson, "remark"), 1, timestamp, timestamp, context.actorId());
             store.saveCost(cost);
             audit(context, "CostAccounting", cost.id(), 1, "CREATE", null, cost);
             return new Command(cost, 201);
@@ -686,33 +688,33 @@ public class FinanceController {
     private BigDecimal divideScaled(BigDecimal left, BigDecimal right) {
         return left.divide(right, 6, RoundingMode.DOWN);
     }
-    private void decimal(JsonNode input, String field) { decimalValue(text(input, field)); }
+    private void decimal(JsonNode input, String field) { decimalValue(text(inputJson, field)); }
     private void decimalValue(String value) {
         if (value == null || !value.matches("^(0|[1-9]\\d*)(\\.\\d{1,6})?$")) {
             throw bad("金额格式不合法", "使用最多 6 位小数的非负十进制字符串");
         }
     }
     private void requireDate(JsonNode input, String field) {
-        if (!input.hasNonNull(field) || !input.get(field).asText().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+        if (!inputJson.hasNonNull(field) || !input.get(field).asText().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
             throw bad(field + " 不合法", "必须使用 YYYY-MM-DD");
         }
     }
     private void optionalDate(JsonNode input, String field) {
-        if (input.hasNonNull(field) && !input.get(field).asText().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+        if (inputJson.hasNonNull(field) && !input.get(field).asText().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
             throw bad(field + " 不合法", "必须使用 YYYY-MM-DD");
         }
     }
     private void requireEnum(JsonNode input, String field, Set<String> values) {
-        if (!input.hasNonNull(field) || !values.contains(input.get(field).asText())) {
+        if (!inputJson.hasNonNull(field) || !values.contains(input.get(field).asText())) {
             throw bad(field + " 不合法", "检查请求字段后重试");
         }
     }
     private void requireText(JsonNode input, String field, int maxLength) {
-        if (!input.hasNonNull(field)) throw bad(field + " 不合法", "检查请求字段后重试");
+        if (!inputJson.hasNonNull(field)) throw bad(field + " 不合法", "检查请求字段后重试");
         requireRange(input.get(field).asText(), 1, maxLength);
     }
     private void optionalText(JsonNode input, String field, int maxLength) {
-        if (input.hasNonNull(field) && input.get(field).asText().length() > maxLength) {
+        if (inputJson.hasNonNull(field) && input.get(field).asText().length() > maxLength) {
             throw bad(field + " 不合法", "检查请求字段后重试");
         }
     }
@@ -723,11 +725,11 @@ public class FinanceController {
     }
     private String text(JsonNode input, String field) { return input.get(field).asText(); }
     private String textOr(JsonNode input, String field, String fallback) {
-        return input.hasNonNull(field) ? input.get(field).asText() : fallback;
+        return inputJson.hasNonNull(field) ? input.get(field).asText() : fallback;
     }
-    private String textOrEmpty(JsonNode input, String field) { return textOr(input, field, ""); }
+    private String textOrEmpty(JsonNode input, String field) { return textOr(inputJson, field, ""); }
     private String textOrNull(JsonNode input, String field) {
-        return input.hasNonNull(field) ? input.get(field).asText() : null;
+        return inputJson.hasNonNull(field) ? input.get(field).asText() : null;
     }
     private Map<String, Object> input(String id, JsonNode input) {
         Map<String, Object> result = objectMapper.convertValue(input, new TypeReference<Map<String, Object>>() {});
