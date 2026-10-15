@@ -10867,7 +10867,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
             <div className="w-12 h-12 bg-blue-600 text-white flex items-center justify-center rounded-2xl mr-4 shadow-sm"><Users size={24} /></div>
             <div className="flex flex-col justify-center">
               <h1 className="text-[20px] font-bold text-slate-800 leading-tight tracking-wide">人员管理 (HR)</h1>
-              <div className="text-[13px] text-slate-500 mt-1 font-medium">车间考勤、排班调度与技能防呆中心</div>
+              <div className="text-[13px] text-slate-500 mt-1 font-medium">员工档案、资质证书与岗位管理</div>
             </div>
           </div>
         </div>
@@ -10884,7 +10884,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                 <UnifiedMonitorCabin
                   metrics={[
                     { title: '在职员工总数', value: String(employees.length), unit: '人', icon: Users, trend: 'flat', trendValue: '当前在职', theme: 'blue' },
-                    { title: '本月考勤记录', value: String(attendances.length), unit: '条', icon: UserCheck, trend: 'flat', trendValue: '当月记录', theme: 'emerald' },
+                    { title: '在职比例', value: employees.length > 0 ? Math.round(employees.filter(e => e.status === '在职').length / employees.length * 100) + '' : '-', unit: '%', icon: UserCheck, trend: 'flat', trendValue: '在职/总数', theme: 'emerald' },
                     { title: '资质证书数', value: String(skills.length), unit: '份', icon: Award, trend: 'flat', trendValue: '已登记证书', theme: 'amber' },
                     { title: '涉及部门数', value: String(new Set(employees.map(e => e.dept)).size), unit: '个', icon: Building, trend: 'flat', trendValue: '涉及部门', theme: 'red' },
                   ]}
@@ -10901,30 +10901,30 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                       actions: <button onClick={() => openHrAction('rest')} className="ml-auto bg-rose-500 hover:bg-rose-600 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm">生成调休任务</button>
                     },
                     {
-                      title: 'AI 资质与排班防呆',
+                      title: 'AI 资质临期预警',
                       icon: Award,
                       tone: 'amber',
                       subject: '特种岗位资质：12 人临期',
                       badge: '需复核排班',
                       lines: [
-                        <><span className="font-bold text-slate-800">风险识别：</span>下周夜班存在 2 个岗位证书临期人员，若未换班会影响工序合规。</>,
-                        <><span className="font-bold text-slate-800">AI 建议：</span>自动推荐同技能员工替班，并同步发起证书复训提醒。</>,
+                        <><span className="font-bold text-slate-800">风险识别：</span>检测到 2 名员工的关键岗位证书即将到期，若未及时复训将影响工序合规。</>,
+                        <><span className="font-bold text-slate-800">AI 建议：</span>自动生成证书复训提醒，并通知直接主管跟进。</>,
                       ],
                       actions: <button onClick={() => openHrAction('skill')} className="ml-auto bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm">生成复训与替班</button>
                     },
                   ]}
                   trend={{
-                    title: '出勤稳定性与人员风险趋势',
+                    title: '人员资质与稳定性趋势',
                     metric: '8人',
                     metricLabel: '高风险',
                     metricColor: '#f43f5e',
                     ringColor: '#ffe4e6',
                     insightTitle: '人员稳定性洞察',
-                    insight: '出勤率保持高位，但加班强度和资质临期同时上升，正在放大一线岗位稳定性风险。',
-                    recommendation: '优先处理高负荷员工调休，并把资质临期名单与排班规则联动，避免关键岗位失配。',
-                    chartTitle: '近半年出勤率与离职风险趋势',
+                    insight: '资质临期数量上升，需关注关键岗位的证书续期和人员稳定性。',
+                    recommendation: '优先跟进资质临期员工的复训安排，确保证书在到期前完成更新。',
+                    chartTitle: '近半年人员稳定性趋势',
                     legend: [
-                      { label: '出勤率', color: '#2563eb' },
+                      { label: '人员稳定性', color: '#2563eb' },
                       { label: '离职风险预测', color: '#f43f5e' },
                     ],
                     primary: '#2563eb',
