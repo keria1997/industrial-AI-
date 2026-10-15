@@ -22,4 +22,6 @@ public interface SalesQuoteRepository extends JpaRepository<SalesQuote, UUID> {
     List<SalesQuote> findActiveQuotes(@Param("tenantId") String tenantId, @Param("today") LocalDate today);
 
     long countByTenantIdAndStatusIn(String tenantId, List<String> statuses);
+
+    List<SalesQuote> findByTenantIdOrderByUpdatedAtDesc(String tenantId);
 }
