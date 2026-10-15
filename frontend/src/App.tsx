@@ -24,6 +24,7 @@ import {
 import { AiAssistantDrawer } from './components/AiAssistantDrawer';
 
 export default function App() {
+  console.log('[app] App component rendering, isLoggedIn check...');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('');
   const [activeModule, setActiveModule] = useState<string>(() => resolveModule(window.location.search));
