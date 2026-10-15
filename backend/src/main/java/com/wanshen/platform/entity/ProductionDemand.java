@@ -6,13 +6,15 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
  * 生产需求实体
  *
- * <p>映射到 {@code prod_demand} 表（迁移 001/029 定义）。
+ * <p>映射到 {@code prod_demand} 表（实际数据库结构）。
+ * <p>关联通过 sourceId 列引用，不使用数据库外键。
  */
 @Entity
 @Table(name = "prod_demand")
@@ -28,39 +30,48 @@ public class ProductionDemand {
     @Column(name = "tenant_id", nullable = false, updatable = false)
     private String tenantId;
 
-    @Column(name = "demand_no", nullable = false, unique = true)
-    private String demandNo;
+    @Column(name = "code", nullable = false, unique = true)
+    private String code;
 
     @Column(name = "source_type", nullable = false, length = 32)
     private String sourceType;
 
-    @Column(name = "source_id")
-    private UUID sourceId;
-
-    @Column(name = "source_line_id")
-    private UUID sourceLineId;
-
     @Column(name = "product_id", nullable = false)
     private String productId;
+
+    @Column(name = "product_name")
+    private String productName;
 
     @Column(name = "qty", nullable = false, precision = 18, scale = 6)
     private BigDecimal qty;
 
-    @Column(name = "factory_resource_id", nullable = false)
-    private String factoryResourceId;
-
-    @Column(name = "warehouse_id", nullable = false)
-    private String warehouseId;
-
     @Column(name = "uom", nullable = false, length = 32)
     private String uom;
 
-    /** @see com.wanshen.platform.production.model.productionPlanStatus */
+    @Column(name = "due_date", nullable = false)
+    private LocalDate dueDate;
+
+    @Column(name = "priority", nullable = false)
+    private Integer priority;
+
+    @Column(name = "factory_resource_id", nullable = false)
+    private String factoryResourceId;
+
+    /** RECEIVED / PLANNED / SCHEDULED / COMPLETED */
     @Column(name = "status", nullable = false, length = 32)
     private String status;
 
-    @Column(name = "idempotency_key", nullable = false)
-    private String idempotencyKey;
+    @Column(name = "revision", nullable = false)
+    private Integer revision;
+
+    @Column(name = "correlation_id", nullable = false)
+    private String correlationId;
+
+    @Column(name = "block_reasons", nullable = false, columnDefinition = "jsonb DEFAULT '[]'")
+    private String blockReasons;
+
+    @Column(name = "created_by", nullable = false)
+    private String createdBy;
 
     @Version
     @Column(name = "row_version", nullable = false)
@@ -77,6 +88,9 @@ public class ProductionDemand {
         if (createdAt == null) createdAt = OffsetDateTime.now();
         if (updatedAt == null) updatedAt = OffsetDateTime.now();
         if (id == null) id = UUID.randomUUID();
+        if (revision == null) revision = 1;
+        if (priority == null) priority = 50;
+        if (blockReasons == null) blockReasons = "[]";
     }
 
     @PreUpdate

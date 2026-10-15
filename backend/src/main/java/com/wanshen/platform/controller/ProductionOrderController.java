@@ -83,7 +83,7 @@ public class ProductionOrderController {
     ) {
         RequestContext ctx = requestContexts.from(httpRequest);
         WorkOrder wo = productionService.createWorkOrder(
-                ctx.tenantId(), UUID.fromString(demandId), productId, qty, factoryId);
+                ctx.tenantId(), UUID.fromString(demandId), productId, qty, factoryId, productId);
         return ApiResponse.success(wo);
     }
 
@@ -120,11 +120,10 @@ public class ProductionOrderController {
     @PostMapping("/work-orders/{id}/close")
     public ApiResponse<WorkOrder> close(
             @PathVariable String id,
-            @RequestBody @Valid ConfirmOrderRequest request,
             HttpServletRequest httpRequest
     ) {
         RequestContext ctx = requestContexts.from(httpRequest);
-        WorkOrder wo = productionService.closeWorkOrder(ctx.tenantId(), UUID.fromString(id), request);
+        WorkOrder wo = productionService.closeWorkOrder(ctx.tenantId(), UUID.fromString(id));
         return ApiResponse.success(wo);
     }
 

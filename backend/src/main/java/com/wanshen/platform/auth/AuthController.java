@@ -79,7 +79,8 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         limit(httpRequest, "login", 10);
         validateLogin(request);
-        if (!captchaService.verify(request.captchaId(), request.captchaCode())) throw bad("图形验证码错误或已过期", "刷新验证码后重新输入");
+        boolean isDemoLogin = demoAuthEnabled && demoAccounts.contains(request.account());
+        if (!isDemoLogin && !captchaService.verify(request.captchaId(), request.captchaCode())) throw bad("图形验证码错误或已过期", "刷新验证码后重新输入");
         if (demoAuthEnabled && demoAccounts.contains(request.account()) && demoPassword.equals(request.password())) {
             SessionUser user = developmentUser(request.account());
             return ResponseEntity.ok(response(issue(user, "development-session-v1"), user, null));
