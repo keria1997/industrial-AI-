@@ -10940,11 +10940,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                     <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
                         <div className="flex justify-between items-center mb-4">
                             <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><BookOpen className="w-4.5 h-4.5 text-blue-600" /> 花名册</h4>
-                            <div className="flex gap-2">
-                                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-blue-600 text-white text-[12px] font-medium hover:bg-blue-700" onClick={() => showCenterToast('新增员工功能开发中')}><Plus size={14}/>新增</button>
-                                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-medium hover:bg-slate-50" onClick={() => showCenterToast('导入功能开发中')}><UploadCloud size={14}/>导入</button>
-                                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-medium hover:bg-slate-50" onClick={() => showCenterToast('导出功能开发中')}><Download size={14}/>导出</button>
-                            </div>
+
                         </div>
                         <div className="flex gap-3 items-center">
                             <div className="relative flex-1 max-w-xs"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/><input placeholder="搜索工号、姓名、部门..." className="w-full h-8 pl-8 pr-3 rounded-lg border border-slate-200 text-[12px] outline-none focus:border-blue-400"/></div>
