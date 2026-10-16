@@ -9,8 +9,8 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: '127.0.0.1',
-      port: 5175,
-      strictPort: true,
+      port: 5173,
+      strictPort: false,
       proxy: {
         '/api/v1': {
           target: apiTarget,
