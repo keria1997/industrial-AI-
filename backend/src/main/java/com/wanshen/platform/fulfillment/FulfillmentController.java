@@ -21,13 +21,15 @@ public class FulfillmentController {
     private final FulfillmentService service;
     private final RequestContextService contexts;
     private final ObjectMapper mapper;
+    private final javax.sql.DataSource dataSource;
 
     public FulfillmentController(
-            FulfillmentService service, RequestContextService contexts, ObjectMapper mapper
+            FulfillmentService service, RequestContextService contexts, ObjectMapper mapper, javax.sql.DataSource dataSource
     ) {
         this.service = service;
         this.contexts = contexts;
         this.mapper = mapper;
+        this.dataSource = dataSource;
     }
 
     @PostMapping("/api/v1/sales/sales-orders")
@@ -629,6 +631,41 @@ public class FulfillmentController {
         result.put("monthlyOrderCount", monthlyOrderCount);
         result.put("stalledCount", stalledOrders.size());
         result.put("deliveryRiskCount", deliveryRisk.size());
+        // 报价到期预警（AI 订单转化延期预警 & 智能挽回）
+        List<Map<String, Object>> riskyQuotes = new java.util.ArrayList<>();
+        try {
+            var conn = dataSource.getConnection();
+            try (var ps = conn.prepareStatement(
+                    "SELECT quote_no, customer_name, valid_until, total_amount, status FROM sales_quote " +
+                    "WHERE tenant_id = ? AND status IN ('ACTIVE','EXPIRING','EXPIRED') " +
+                    "AND converted_order_id IS NULL " +
+                    "AND valid_until <= CURRENT_DATE + 7 " +
+                    "ORDER BY valid_until ASC LIMIT 5")) {
+                ps.setString(1, tenantId);
+                try (var rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        var validUntil = rs.getDate("valid_until").toLocalDate();
+                        var daysLeft = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), validUntil);
+                        var risk = daysLeft < 0 ? "极高流失风险" : daysLeft <= 3 ? "高流失风险" : "中等流失风险";
+                        var row = new java.util.LinkedHashMap<String, Object>();
+                        row.put("quoteNo", rs.getString("quote_no"));
+                        row.put("customerName", rs.getString("customer_name"));
+                        row.put("validUntil", validUntil.toString());
+                        row.put("daysLeft", daysLeft);
+                        row.put("totalAmount", rs.getBigDecimal("total_amount").toPlainString());
+                        row.put("status", rs.getString("status"));
+                        row.put("riskLevel", risk);
+                        riskyQuotes.add(row);
+                    }
+                }
+            } finally {
+                conn.close();
+            }
+        } catch (java.sql.SQLException e) {
+            log.warn("AI洞察查询报价到期失败: {}", e.getMessage());
+        }
+
+        result.put("riskyQuotes", riskyQuotes);
         result.put("generatedAt", java.time.Instant.now().toString());
         return result;
     }

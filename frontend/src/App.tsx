@@ -812,14 +812,17 @@ const UnifiedMonitorCabin = ({ metrics, aiCards, trend }) => {
         <span className="text-slate-400 text-[14px]">暂无 AI 预警</span>
       </div>
     )}
-    {hasTrendData ? (
-      <MonitorTrendChart trend={trend} />
-    ) : (
-      <div className="bg-white border border-slate-200 rounded-2xl p-12 flex flex-col items-center justify-center">
-        <Inbox size={24} className="text-slate-300 mb-3" />
-        <span className="text-slate-400 text-[14px]">暂无趋势数据</span>
-      </div>
-    )}
+    <MonitorTrendChart trend={hasTrendData ? trend : {
+      ...trend,
+      points: [
+        { x: 6, y: 90 }, { x: 24, y: 90 }, { x: 42, y: 90 },
+        { x: 60, y: 90 }, { x: 78, y: 90 }, { x: 94, y: 90 },
+      ],
+      path: 'M 50 270 C 145 270, 195 270, 240 270 C 325 270, 350 270, 420 270 C 515 270, 555 270, 600 270 C 705 270, 740 270, 780 270 C 850 270, 890 270, 950 270',
+      area: 'M 50 270 C 145 270, 195 270, 240 270 C 325 270, 350 270, 420 270 C 515 270, 555 270, 600 270 C 705 270, 740 270, 780 270 C 850 270, 890 270, 950 270 L 950 300 L 50 300 Z',
+      labels: ['5月', '6月', '7月', '8月', '9月', '10月(预测)'],
+      yAxis: [10, 8, 5, 3, 0],
+    }} />
   </div>
   );
 };
