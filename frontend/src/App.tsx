@@ -4634,33 +4634,40 @@ const Prod_DashboardView = ({ onAutoReschedule, onTransferLine, workOrders = [],
             { title: '财务核算闭环', value: String(workOrders.filter(w => w.status === 'COMPLETED').length), unit: '单完工', subtitle: '实际成本核算无偏差', theme: 'emerald', icon: ShieldCheck, trend: 'up' },
         ]}
         aiCards={[
-            {
-                title: 'AI 生产延期预警 & 智能排产',
-                icon: Bot,
-                tone: 'purple',
-                subject: workOrders.length ? `工单：${workOrders[0]?.code || workOrders[0]?.id || 'N/A'}` : '暂无活跃工单',
-                badge: '极高延期风险',
-                lines: [
-                    <><span className="font-bold text-slate-800">AI 根因分析：</span>关联【设备管理】数据，前置 CNC 工序机台 OEE 降至 60%，且【库存管理】反馈核心芯片 RM201 采购批次退货率达 15%。综合测算，本单逾期概率达 82%。</>,
-                ],
-                actions: (
-                    <>
-                        <button onClick={onAutoReschedule} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">AI 自动重新排产</button>
-                        <button onClick={onTransferLine} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">转移至备用产线</button>
-                    </>
-                )
-            },
-            {
-                title: 'AI 缺料违约双重预警',
-                icon: AlertTriangle,
-                tone: 'rose',
-                subject: workOrders.length > 1 ? `工单：${workOrders[1]?.code || workOrders[1]?.id || 'N/A'} 交期预警` : '暂无风险工单',
-                badge: '极高风险',
-                lines: [
-                    <><span className="font-bold text-slate-800">执行层：</span>前置组装实际报工耗时超出标准 22%。</>,
-                    <><span className="font-bold text-slate-800">供应链：</span>联动 MRP 发现核心组件供应商履约画像得分降至 75 分，存在晚交货停线风险。综合测算逾期概率达 85%。</>,
-                ],
-            },
+            ...(() => {
+                const activeWOs = workOrders.filter(w => ['RELEASED','IN_PROGRESS'].includes(w.status));
+                if (!activeWOs.length) return [];
+                return [{
+                    title: 'AI 生产延期预警 & 智能排产',
+                    icon: Bot,
+                    tone: 'purple',
+                    subject: `工单：${activeWOs[0]?.code || activeWOs[0]?.id}`,
+                    badge: '延期风险',
+                    lines: [
+                        <><span className="font-bold text-slate-800">AI 根因分析：</span>关联【设备管理】和【库存管理】数据，综合评估工单逾期风险。</>,
+                    ],
+                    actions: (
+                        <>
+                            <button onClick={onAutoReschedule} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">AI 自动重新排产</button>
+                            <button onClick={onTransferLine} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">转移至备用产线</button>
+                        </>
+                    )
+                }];
+            })(),
+            ...(() => {
+                const atRiskWOs = workOrders.filter(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status));
+                if (!atRiskWOs.length) return [];
+                return [{
+                    title: 'AI 缺料违约双重预警',
+                    icon: AlertTriangle,
+                    tone: 'rose',
+                    subject: `工单：${atRiskWOs[0]?.code || 'N/A'} 交期违约`,
+                    badge: '极高风险',
+                    lines: [
+                        <><span className="font-bold text-slate-800">风险来源：</span>关键物料供应和物流波动导致工单交期存在违约风险。</>,
+                    ],
+                }];
+            })(),
         ]}
         trend={{
             title: '生产计划达成率与延期风险趋势',
