@@ -1948,7 +1948,7 @@ const Sales_AIWarningCards = ({ onOpenQuoteModal, onOpenReminderModal, isReminde
         
         <div className="bg-[#F8FAFC] border border-slate-100 rounded-xl p-5 relative">
           <div className="flex justify-between items-start mb-3">
-            <h3 className="font-bold text-slate-800 text-[15px]">客户：test01客户</h3>
+            <h3 className="font-bold text-slate-800 text-[15px]">客户：暂无停滞订单客户</h3>
             <span className="px-2.5 py-1 bg-rose-50 text-rose-600 text-[12px] font-bold rounded">极高流失风险</span>
           </div>
           
@@ -2090,7 +2090,14 @@ const Sales_TrendChart = () => {
 const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCreateQuote, onOpenOrders, onToast, reminderAt, setReminderAt, onAudit }) => {
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
+  const [aiData, setAiData] = useState<any>(null);
   const isReminded = !!reminderAt && Date.now() - new Date(reminderAt).getTime() < 24 * 60 * 60 * 1000;
+  useEffect(() => {
+    import('./api/fulfillment').then(mod => {
+      const apiContext = { tenantId: 'TENANT-SHWS', accessToken: sessionStorage.getItem('industrial-ai-session:v2') ? JSON.parse(sessionStorage.getItem('industrial-ai-session:v2')).accessToken : '' };
+      mod.fetchAiInsights(apiContext).then(setAiData).catch(() => {});
+    });
+  }, []);
   const normalizedQuotes = quotes.map((quote) => ({ ...quote, status: sales_getQuoteStatus(quote) }));
   const riskyQuote = normalizedQuotes
     .filter((quote) => ['临期', '已过期'].includes(quote.status))

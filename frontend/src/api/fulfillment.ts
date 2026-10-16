@@ -285,3 +285,34 @@ export const inventoryApi = {
   submitStocktakeCount: (context: ApiContext, task: StocktakeTaskDto, lines: Array<{ lineId: string; countedQty: string; remark?: string }>) => apiRequest<{ stocktake: StocktakeTaskDto }>(`/api/v1/inventory/stocktake-tasks/${task.id}/count`, context, { method: 'POST', expectedVersion: task.version, idempotencyKey: key(`stocktake-count:${task.id}`), body: JSON.stringify({ lines }) }),
   adjustStocktakeTask: (context: ApiContext, task: StocktakeTaskDto) => apiRequest<{ stocktake: StocktakeTaskDto; adjustments: unknown[] }>(`/api/v1/inventory/stocktake-tasks/${task.id}/adjust`, context, { method: 'POST', expectedVersion: task.version, idempotencyKey: key(`stocktake-adjust:${task.id}`), body: JSON.stringify({ externalTransactionId: `WEB-STA-${task.id}` }) }),
 };
+
+// ===== 销售监控舱 AI 洞察 =====
+
+export type AiInsights = {
+  stalledOrders: Array<{
+    orderId: string;
+    customerId: string;
+    customerName: string;
+    status: string;
+    totalAmount: string;
+  }>;
+  deliveryRiskOrders: Array<{
+    orderId: string;
+    customerName: string;
+    deliveryDate: string;
+    totalAmount: string;
+  }>;
+  totalSalesAmount: string;
+  monthlyOrderCount: number;
+  stalledCount: number;
+  deliveryRiskCount: number;
+  generatedAt: string;
+};
+
+export async function fetchAiInsights(
+  context: ApiContext,
+): Promise<AiInsights> {
+  return apiRequest<AiInsights>("/api/v1/sales/ai-insights", context, {
+    method: "GET",
+  });
+}
