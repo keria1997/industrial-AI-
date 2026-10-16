@@ -2189,9 +2189,11 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
             tone: 'amber',
             subject: `客户：${dormantCustomers.length ? dormantCustomers.map((item) => item.name.slice(0, 8)).join(' / ') : '档案健康'}`,
             badge: dormantCustomers.length ? '建议跟进' : '资料完整',
-            lines: [
+            lines: dormantCustomers.length ? [
               <><span className="font-bold text-slate-800">沉睡预警：</span>发现 {dormantCustomers.length} 家 D 级客户超过 30 天未互动且联系人或行业资料不完整。</>,
               <><span className="font-bold text-slate-800">推介建议：</span>根据数据匹配，建议优先完善联系人档案，并定向推送相关产品信息，以激活沉睡客户。</>,
+            ] : [
+              <><span className="font-bold text-slate-800">暂未发现</span>超过 30 天未互动且联系人或行业资料不完整的客户。</>,
             ],
           },
           {
@@ -2200,11 +2202,12 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
             tone: 'rose',
             subject: `${deliveryRiskOrders.length} 单进入交付倒计时`,
             badge: deliveryRiskOrders.length ? '交付高危' : '交付正常',
-            lines: [
-              <><span className="font-bold text-slate-800">穿透分析：</span>{deliveryRiskOrders.length ? `高危订单为 ${deliveryRiskOrders.map((item) => item.id).join('、')}，核心风险来自库存缺口或待出库环节。` : '当前没有距离交期不足 3 天的未发货订单。'}</>,
-              <><span className="font-bold text-slate-800">AI 建议：</span>立即发起跨部门交付协同，并为客户准备延期沟通与补偿预案。</>,
+            lines: deliveryRiskOrders.length ? [
+              <><span className="font-bold text-slate-800">穿透分析：</span>高危订单为 {deliveryRiskOrders.map((item) => item.id).join('、')}，核心风险来自库存缺口或待出库环节。</>,
+              <><span className="font-bold text-slate-800">建议：</span>立即发起跨部门交付协同。</>,
+            ] : [
+              <><span className="font-bold text-slate-800">穿透分析：</span>当前没有距离交期不足 3 天的未发货订单。</>,
             ],
-            actions: deliveryRiskOrders.length ? <button onClick={onOpenOrders} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-[13px] font-bold transition-colors">查看高危销售订单</button> : null,
           }
         ]}
         trend={{
