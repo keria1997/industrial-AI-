@@ -9961,13 +9961,18 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                             <h3 className="font-bold text-slate-800 text-[14px]">采购申请：{formalRequests.find(r => r.status === 'PENDING_APPROVAL')?.prNo || '暂无待审批 PR'}</h3>
                             <span className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'bg-emerald-50 border border-emerald-100 text-emerald-600' : 'bg-slate-50 border border-slate-100 text-slate-400'}`}>{formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'AI 已寻源' : '无待审批'}</span>
                           </div>
+                          {formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? (
+                          <>
                           <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
-                            <p><span className="font-bold text-slate-800">历史画像匹配：</span> 模型分析了 3 家潜在供应商的历史交期与退货率。推荐将此单下发给 <strong>[深圳华芯科技]</strong>。</p>
-                            <p><span className="font-bold text-slate-800">推荐理由：</span> 该供应商在过去半年内对同类芯片的交期达标率为 98.5%，且当前承诺价格低于市场均价 2%。</p>
+                            <p><span className="font-bold text-slate-800">历史画像匹配：</span> 模型已分析潜在供应商的历史交期与退货率，推荐最优供应商。</p>
                           </div>
                           <div className="flex gap-4">
                             <button onClick={() => openProcAction('adopt')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">一键采纳并生成 PO</button>
                           </div>
+                          </>
+                          ) : (
+                          <div className="text-[13px] text-slate-400">暂无待审批的采购申请。</div>
+                          )}
                         </div>
                       </div>
 
@@ -9981,14 +9986,19 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                             <h3 className="font-bold text-slate-800 text-[14px]">{formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.poNo || '暂无在途 PO'} / {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.materialName || '-'}</h3>
                             <span className="px-2.5 py-1 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-lg">高风险</span>
                           </div>
-                          <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
-                            <p><span className="font-bold text-slate-800">风险来源：</span> 深圳华芯科技近 7 天产线稼动率下降，叠加物流线路拥堵，预计晚交风险升至 68%。</p>
-                            <p><span className="font-bold text-slate-800">AI 建议：</span> 保留原 PO，同时向备选供应商「苏州芯联」发起 300 PCS 询价，降低停线风险。</p>
-                          </div>
-                          <div className="flex gap-4">
+                          {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED') ? (
+                        <>
+                        <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
+                            <p><span className="font-bold text-slate-800">风险来源：</span> 供应商产线稼动率和物流波动可能导致交期延迟。</p>
+                        </div>
+                        <div className="flex gap-4">
                             <button onClick={() => openProcAction('quote')} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">发起备选询价</button>
                             <button onClick={() => openProcAction('notify')} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">通知生产计划</button>
-                          </div>
+                        </div>
+                        </>
+                        ) : (
+                        <div className="text-[13px] text-slate-400">暂无在途采购订单。</div>
+                        )}
                         </div>
                       </div>
                     </div>
