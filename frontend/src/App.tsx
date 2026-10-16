@@ -4068,9 +4068,9 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       { id: 'dashboard', icon: <LayoutDashboard size={14} className="mr-1.5" />, label: '销售监控舱' },
       { id: 'quotes', icon: <MessageSquare size={14} className="mr-1.5" />, label: '产品报价' },
       { id: 'orders', icon: <FileText size={14} className="mr-1.5" />, label: '销售订单' },
-      { id: 'customers', icon: <Users size={14} className="mr-1.5" />, label: '客户管理' },
       { id: 'rma', icon: <RotateCcw size={14} className="mr-1.5" />, label: '退货管理' },
       { id: 'receipts', icon: <CheckCircle2 size={14} className="mr-1.5" />, label: '客户签收' },
+      { id: 'customers', icon: <Users size={14} className="mr-1.5" />, label: '客户管理' },
       { id: 'basic-data', icon: <BookOpen size={14} className="mr-1.5" />, label: '基础数据' },
   ];
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab) || tabs[0];
@@ -4078,9 +4078,9 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       dashboard: '实时监控 · 数据驱动 · 预警提示',
       quotes: '报价有效期、审批确认与订单转化',
       orders: '订单复核、发货申请与履约状态跟踪',
-      customers: '客户档案、联系人与合作状态维护',
       rma: '退货申请、审批、检验与红字AR闭环管理',
       receipts: '客户签收登记与差额处置跟踪',
+      customers: '客户档案、联系人与合作状态维护',
       'basic-data': '销售等级、行业字典与触达规则维护',
   };
 
