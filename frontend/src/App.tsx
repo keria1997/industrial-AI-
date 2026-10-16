@@ -4599,24 +4599,20 @@ const Prod_EqModal = ({ editItem, onClose, onSave, productionLines }) => {
 };
 
 // --- 子视图组件 (重构以接入完整逻辑) ---
-const Prod_DashboardView = ({ onAutoReschedule, onTransferLine }) => (
+const Prod_DashboardView = ({ onAutoReschedule, onTransferLine, workOrders = [], demands = [] }) => (
     <UnifiedMonitorCabin
-        metrics={prod_dashboardMetrics.map(metric => ({
-            id: metric.id,
-            title: metric.title,
-            value: metric.value,
-            unit: metric.suffix,
-            subtitle: metric.subtitle,
-            theme: metric.tagColor,
-            icon: metric.id === 1 ? ClipboardList : metric.id === 2 ? FilePlus : metric.id === 3 ? MonitorCog : ShieldCheck,
-            trend: metric.tagColor === 'rose' ? 'down' : 'up',
-        }))}
+        metrics={[
+            { title: '销售 → 生产', value: String(demands.filter(d => !['COMPLETED','CLOSED'].includes(d.status)).length), unit: '笔新单', subtitle: '订单同步成功待排产', theme: 'blue', icon: ClipboardList, trend: 'up' },
+            { title: '生产 → 采购', value: String(demands.filter(d => d.blockReasons?.length > 0).length), unit: '项缺料', subtitle: '已推送PR采购申请', theme: 'amber', icon: FilePlus, trend: 'up' },
+            { title: '设备异常预警', value: '85%', unit: '%产能', subtitle: '2号机台主轴震动偏高', theme: 'rose', icon: MonitorCog, trend: 'down' },
+            { title: '财务核算闭环', value: String(workOrders.filter(w => w.status === 'COMPLETED').length), unit: '单完工', subtitle: '实际成本核算无偏差', theme: 'emerald', icon: ShieldCheck, trend: 'up' },
+        ]}
         aiCards={[
             {
                 title: 'AI 生产延期预警 & 智能排产',
                 icon: Bot,
                 tone: 'purple',
-                subject: '工单：WO-20260603',
+                subject: workOrders.length ? `工单：${workOrders[0]?.code || workOrders[0]?.id || 'N/A'}` : '暂无活跃工单',
                 badge: '极高延期风险',
                 lines: [
                     <><span className="font-bold text-slate-800">AI 根因分析：</span>关联【设备管理】数据，前置 CNC 工序机台 OEE 降至 60%，且【库存管理】反馈核心芯片 RM201 采购批次退货率达 15%。综合测算，本单逾期概率达 82%。</>,
@@ -4632,7 +4628,7 @@ const Prod_DashboardView = ({ onAutoReschedule, onTransferLine }) => (
                 title: 'AI 缺料违约双重预警',
                 icon: AlertTriangle,
                 tone: 'rose',
-                subject: '工单：WO-2026-105 交期违约',
+                subject: workOrders.length > 1 ? `工单：${workOrders[1]?.code || workOrders[1]?.id || 'N/A'} 交期预警` : '暂无风险工单',
                 badge: '极高风险',
                 lines: [
                     <><span className="font-bold text-slate-800">执行层：</span>前置组装实际报工耗时超出标准 22%。</>,
@@ -4642,7 +4638,7 @@ const Prod_DashboardView = ({ onAutoReschedule, onTransferLine }) => (
         ]}
         trend={{
             title: '生产计划达成率与延期风险趋势',
-            metric: '82%',
+            metric: workOrders.length > 0 ? Math.round(workOrders.reduce((s,w) => s + Number(w.reportedGoodQty || 0), 0) / Math.max(workOrders.reduce((s,w) => s + Number(w.plannedQty || 0), 0), 1) * 100) + '%' : '-',
             metricLabel: '按期达成',
             metricColor: '#8b5cf6',
             ringColor: '#ede9fe',
@@ -7008,7 +7004,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	          <main className="relative mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-8 pb-8">
 	              <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar relative pr-2 pb-6">
 	                  <BusinessFlowDock moduleName="生产管理" flow={businessFlow} onAction={handleProductionFlowAction} onNavigate={onNavigateModule} />
-	                  {activeTab === 'dashboard' && <Prod_DashboardView onAutoReschedule={() => openProdAction('reschedule')} onTransferLine={() => openProdAction('transfer')} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')} canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')} canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')} canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
+	                  {activeTab === 'dashboard' && <Prod_DashboardView onAutoReschedule={() => openProdAction('reschedule')} onTransferLine={() => openProdAction('transfer')} workOrders={orders} demands={productionDemands} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')} canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')} canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')} canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
                   {activeTab === 'mrp' && <Prod_MrpView mrp={mrp} onIssueMrp={handleIssueMrp} onRunGlobalMrp={handleGlobalMrp} onCreatePurchase={handleCreatePurchase} showToast={showToast} />}
                   {activeTab === 'aps' && <Prod_ApsView orders={orders} equipments={equipments} onUpdateOrder={handleUpdateOrder} showToast={showToast} />}
                   {activeTab === 'orders' && <Prod_OrdersView orders={orders} onCheckKit={handleCheckKit} onDispatch={handleDispatch} onUpdateOrder={handleUpdateOrder} onDeleteOrder={handleDeleteOrder} showToast={showToast} />}
