@@ -9968,10 +9968,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
             {activeTab === 'dashboard' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                      <StatCard title="待处理采购申请" value="3" unit="单" icon={FilePlus} trend="up" trendValue="+1单" theme="blue" />
-                      <StatCard title="本月累计采购额" value="145.2" unit="万元" icon={BadgeDollarSign} trend="down" trendValue="-5.2%" theme="purple" />
-                      <StatCard title="整体供应商准交率" value="96.5" unit="%" icon={CheckCircle2} trend="up" trendValue="+0.5%" theme="emerald" />
-                      <StatCard title="异常交付订单" value="2" unit="单" icon={AlertTriangle} trend="down" trendValue="-1单" theme="red" />
+                      <StatCard title="待处理采购申请" value={String(formalRequests.filter(r => r.status === 'PENDING_APPROVAL').length)} unit="单" icon={FilePlus} trend="up" trendValue="当前待处理" theme="blue" />
+                      <StatCard title="本月累计采购额" value={String(Math.round(formalOrders.reduce((s,o) => s + Number(o.totalAmount || 0), 0) / 10000 * 10) / 10)} unit="万元" icon={BadgeDollarSign} trend="flat" trendValue="订单总额" theme="purple" />
+                      <StatCard title="整体供应商准交率" value="-" unit="%" icon={CheckCircle2} trend="flat" trendValue="待后端统计" theme="emerald" />
+                      <StatCard title="异常交付订单" value={String(formalOrders.filter(o => o.status === 'PARTIALLY_RECEIVED').length)} unit="单" icon={AlertTriangle} trend="flat" trendValue="部分收货中" theme="red" />
                     </div>
 
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -9982,8 +9982,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         </div>
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 relative">
                           <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-slate-800 text-[14px]">采购申请：PR-260705-01 (AI算力芯片)</h3>
-                            <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-100 text-emerald-600 text-[11px] font-bold rounded-lg">AI 已寻源</span>
+                            <h3 className="font-bold text-slate-800 text-[14px]">采购申请：{formalRequests.find(r => r.status === 'PENDING_APPROVAL')?.prNo || '暂无待审批 PR'}</h3>
+                            <span className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'bg-emerald-50 border border-emerald-100 text-emerald-600' : 'bg-slate-50 border border-slate-100 text-slate-400'}`}>{formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'AI 已寻源' : '无待审批'}</span>
                           </div>
                           <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
                             <p><span className="font-bold text-slate-800">历史画像匹配：</span> 模型分析了 3 家潜在供应商的历史交期与退货率。推荐将此单下发给 <strong>[深圳华芯科技]</strong>。</p>
@@ -10002,7 +10002,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         </div>
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-5">
                           <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-slate-800 text-[14px]">PO-260706-001 / AI算力芯片</h3>
+                            <h3 className="font-bold text-slate-800 text-[14px]">{formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.poNo || '暂无在途 PO'} / {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.materialName || '-'}</h3>
                             <span className="px-2.5 py-1 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-lg">高风险</span>
                           </div>
                           <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
@@ -10020,7 +10020,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                     <MonitorTrendChart
                       trend={{
                         title: 'PR → PO → 到货闭环趋势',
-                        metric: '96.5%',
+                        metric: formalOrders.length > 0 ? Math.round(formalOrders.filter(o => o.status === 'RECEIVED').length / formalOrders.length * 100) + '%' : '-',
                         metricLabel: '准交率',
                         metricColor: '#10b981',
                         ringColor: '#d1fae5',
