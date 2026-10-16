@@ -3510,9 +3510,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const [toast, setToast] = useState(null);
   const [outboundRequestModal, setOutboundRequestModal] = useState(null);
   const [salesWarehouseList, setSalesWarehouseList] = useState([]);
-  const [inventoryMasterData, setInventoryMasterData] = useState(
-    () => loadInventoryMasterData(window.localStorage, currentTenant?.id),
-  );
+  const [inventoryMasterData, setInventoryMasterData] = useState(() => ({ warehouses: [], products: [], materials: [] }));
 
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
 
@@ -3546,6 +3544,49 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
           }
         })
         .catch(() => {/* API 失败时保留空数据 */});
+    });
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  // 从后端 API 加载库存主数据（替代 localStorage 硬编码数据）
+  useEffect(() => {
+    if (!formalContext) return;
+    Promise.allSettled([
+      inventoryApi.listWarehouses(formalContext),
+      inventoryApi.listProducts(formalContext),
+      inventoryApi.listMaterials(formalContext),
+    ]).then(([whRes, prodRes, matRes]) => {
+      const warehouses = (whRes.status === 'fulfilled' ? whRes.value?.items : []) || [];
+      const products = (prodRes.status === 'fulfilled' ? prodRes.value?.items : []) || [];
+      const materials = (matRes.status === 'fulfilled' ? matRes.value?.items : []) || [];
+      setInventoryMasterData({
+        warehouses: warehouses.map((w: any) => ({
+          id: w.code || w.id, name: w.name, type: w.type || '仓库',
+          organization: w.organization || '', manager: w.manager || '-',
+          address: w.address || '-', capacity: Number(w.capacity) || 0,
+          usedCapacity: Number(w.usedCapacity) || 0,
+          status: w.status === 'active' ? '启用' : w.status,
+          remark: w.remark || '-', updatedAt: w.updatedAt || new Date().toISOString(),
+        })),
+        products: products.map((p: any) => ({
+          id: p.code || p.id, name: p.name,
+          specification: p.specification || '-', category: p.category || '成品',
+          unit: p.uom || '台', unitPrice: Number(p.unitPrice) || 0,
+          defaultWarehouseId: p.warehouseId || 'WH-FG-01',
+          safetyStock: Number(p.safetyStockQty) || 0,
+          traceMode: '序列号', status: p.status === 'active' ? '启用' : p.status,
+          updatedAt: p.updatedAt || new Date().toISOString(),
+        })),
+        materials: materials.map((m: any) => ({
+          id: m.code || m.id, name: m.name,
+          specification: m.specification || '-', materialType: m.materialType === 'raw' ? '原材料' : m.materialType === 'semi' ? '半成品' : m.materialType || '原材料',
+          unit: m.uom || 'PCS', defaultWarehouseId: m.warehouseId || 'WH-RM-01',
+          procurementType: m.materialType === 'purchased' ? '外购' : '自制',
+          safetyStock: Number(m.safetyStockQty) || 0,
+          unitPrice: Number(m.unitPrice) || 0,
+          status: m.status === 'active' ? '启用' : m.status,
+          updatedAt: m.updatedAt || new Date().toISOString(),
+        })),
+      });
     });
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
