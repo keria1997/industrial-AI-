@@ -800,18 +800,11 @@ const UnifiedMonitorCabin = ({ metrics, aiCards, trend }) => {
         />
       ))}
     </div>
-    {hasAiCards ? (
-      <div className={`grid grid-cols-1 gap-6 ${aiCards.length >= 3 ? 'xl:grid-cols-3' : 'xl:grid-cols-2'}`}>
-        {aiCards.map((card) => (
-          <MonitorAIAnalysisCard key={card.title} card={card} />
-        ))}
-      </div>
-    ) : (
-      <div className="bg-white border border-slate-200 rounded-2xl p-12 flex flex-col items-center justify-center">
-        <Inbox size={24} className="text-slate-300 mb-3" />
-        <span className="text-slate-400 text-[14px]">暂无 AI 预警</span>
-      </div>
-    )}
+    <div className={`grid grid-cols-1 gap-6 ${(aiCards?.length ?? 0) >= 3 ? 'xl:grid-cols-3' : (aiCards?.length ?? 0) >= 2 ? 'xl:grid-cols-2' : 'xl:grid-cols-1'}`}>
+      {(aiCards ?? []).map((card) => (
+        <MonitorAIAnalysisCard key={card.title} card={card} />
+      ))}
+    </div>
     <MonitorTrendChart trend={hasTrendData ? trend : {
       ...trend,
       points: [
@@ -9164,7 +9157,16 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                     { title: '呆滞积压资金', value: '-', suffix: '万元', subtitle: '待后端统计', theme: 'rose', icon: Wallet, trend: 'flat' },
                     { title: '本月出入库单', value: '-', suffix: '单', subtitle: '待后端统计', theme: 'blue', icon: ClipboardCheck, trend: 'flat' },
                   ]}
-                  aiCards={[]}
+                  aiCards={[
+                    { title: 'AI 呆滞物料分析与调拨建议', icon: Clock, tone: 'amber',
+                      subject: '暂无呆滞物料数据', badge: '-',
+                      lines: [<><span className="font-bold text-slate-800">分析：</span>暂无呆滞物料数据。请在库存台账录入产品和物料信息后查看分析结果。</>]
+                    },
+                    { title: 'AI 动态安全库存水位预警', icon: AlertTriangle, tone: 'rose',
+                      subject: '暂无低水位预警数据', badge: '-',
+                      lines: [<><span className="font-bold text-slate-800">预警：</span>暂无低于安全库存的物料。</>]
+                    }
+                  ]}
                   trend={{
                     title: '库存周转与安全水位趋势',
                     metric: '-',
