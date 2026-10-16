@@ -276,33 +276,7 @@ public class WorkbenchController {
         return response;
     }
 
-    /**
-     * 近 6 个月订单趋势（销售监控舱趋势图）
-     */
-    @GetMapping("/api/v1/workbench/trend")
-    public Map<String, Object> trend(HttpServletRequest request) {
-        RequestContext context = contexts.from(request);
-        String tenantId = context.tenantId();
-        var now = java.time.LocalDate.now(ZONE);
-        var months = new java.util.ArrayList<Map<String, Object>>();
-        for (int i = 5; i >= 0; i--) {
-            var month = now.minusMonths(i);
-            var start = month.withDayOfMonth(1);
-            var end = month.withDayOfMonth(month.lengthOfMonth());
-            long count = store.orders(context.tenantId()).values().stream()
-                    .filter(order -> {
-                        var created = date(order, "createdAt");
-                        return !created.isBefore(start) && !created.isAfter(end)
-                                && !text(order, "overallStatus").equals("CANCELED");
-                    })
-                    .mapToLong(order -> {
-                        try { return Long.parseLong(text(order, "totalAmount").split("\\.")[0]); }
-                        catch (RuntimeException e) { return 0L; }
-                    }).sum() / 10000;
-            months.add(Map.of("month", month.getMonthValue() + "月", "amount", count));
-        }
-        return Map.of("tenantId", tenantId, "months", months, "generatedAt", Instant.now().toString());
-    }
+    
 
     private Metric metric(String key, String title, Object value, String unit, String definition) {
         return new Metric(key, title, String.valueOf(value), unit, definition);
