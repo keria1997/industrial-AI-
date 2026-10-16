@@ -26,6 +26,8 @@ interface RmaRecord {
   createdAt: string;
 }
 
+// TODO: 以下数据为硬编码模拟数据，后续对接 GET /api/v1/fulfillment/rmas 后替换
+// 后端 API 需求见 docs/前端备忘录.md B-01~B-05
 const SAMPLE_RMAS: RmaRecord[] = [
   { rmaNo: 'RMA-2026-001', orderNo: 'SO-2026-003', product: '工业网关A', requestedQty: '3', approvedQty: '3', receivedQty: '3', qualifiedQty: '3', status: 'CLOSED', creditAr: '-¥22,000.00', createdAt: '2026-10-10' },
   { rmaNo: 'RMA-2026-002', orderNo: 'SO-2026-005', product: '工业网关A', requestedQty: '2', approvedQty: '2', receivedQty: '2', qualifiedQty: '1', status: 'INSPECTION_COMPLETED', creditAr: '-', createdAt: '2026-10-13' },
