@@ -781,7 +781,10 @@ const MonitorTrendChart = ({ trend }) => {
   );
 };
 
-const UnifiedMonitorCabin = ({ metrics, aiCards, trend }) => (
+const UnifiedMonitorCabin = ({ metrics, aiCards, trend }) => {
+  const hasAiCards = aiCards && aiCards.length > 0;
+  const hasTrendData = trend && (trend.points?.length > 0 || trend.labels?.length > 0);
+  return (
   <div className="space-y-6 animate-in fade-in duration-300 pb-10">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       {metrics.map((metric) => (
@@ -797,14 +800,29 @@ const UnifiedMonitorCabin = ({ metrics, aiCards, trend }) => (
         />
       ))}
     </div>
-    <div className={`grid grid-cols-1 gap-6 ${aiCards.length >= 3 ? 'xl:grid-cols-3' : 'xl:grid-cols-2'}`}>
-      {aiCards.map((card) => (
-        <MonitorAIAnalysisCard key={card.title} card={card} />
-      ))}
-    </div>
-    <MonitorTrendChart trend={trend} />
+    {hasAiCards ? (
+      <div className={`grid grid-cols-1 gap-6 ${aiCards.length >= 3 ? 'xl:grid-cols-3' : 'xl:grid-cols-2'}`}>
+        {aiCards.map((card) => (
+          <MonitorAIAnalysisCard key={card.title} card={card} />
+        ))}
+      </div>
+    ) : (
+      <div className="bg-white border border-slate-200 rounded-2xl p-12 flex flex-col items-center justify-center">
+        <Inbox size={24} className="text-slate-300 mb-3" />
+        <span className="text-slate-400 text-[14px]">暂无 AI 预警</span>
+      </div>
+    )}
+    {hasTrendData ? (
+      <MonitorTrendChart trend={trend} />
+    ) : (
+      <div className="bg-white border border-slate-200 rounded-2xl p-12 flex flex-col items-center justify-center">
+        <Inbox size={24} className="text-slate-300 mb-3" />
+        <span className="text-slate-400 text-[14px]">暂无趋势数据</span>
+      </div>
+    )}
   </div>
-);
+  );
+};
 
 const QuickActionBtn = ({ icon: Icon, label, desc }) => (
   <button className="flex flex-col items-center justify-center p-5 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-50 hover:border-blue-200 hover:shadow-sm transition-all group active:scale-[0.98]">
