@@ -8,8 +8,6 @@ import com.wanshen.platform.message.AbstractMessageStore;
 import com.wanshen.platform.personnel.AbstractPersonnelStore;
 import com.wanshen.platform.production.ProductionStore;
 import com.wanshen.platform.supplychain.AbstractSupplyChainStore;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import com.wanshen.platform.web.ApiException;
 import com.wanshen.platform.web.RequestContextService;
 import com.wanshen.platform.web.RequestContextService.RequestContext;
@@ -33,7 +31,6 @@ import java.util.Set;
 
 @RestController
 public class WorkbenchController {
-    private static final Logger log = LoggerFactory.getLogger(WorkbenchController.class);
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final Set<String> TENANT_ADMIN_ROLES = Set.of("老板", "管理员", "超级管理员");
     private static final Set<String> ROLES = Set.of("老板", "销售", "计划员", "采购", "仓管", "车间", "财务", "人事", "管理员", "超级管理员");

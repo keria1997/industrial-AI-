@@ -3,8 +3,6 @@ package com.wanshen.platform.finance;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import com.wanshen.platform.finance.AbstractFinanceStore.CostAccounting;
 import com.wanshen.platform.finance.AbstractFinanceStore.FinanceFilter;
 import com.wanshen.platform.finance.AbstractFinanceStore.Invoice;
@@ -36,7 +34,6 @@ import java.util.function.Supplier;
 @RequestMapping("/api/v1/finance")
 @ConditionalOnProperty(value = "app.finance.native-enabled", havingValue = "true")
 public class FinanceController {
-    private static final Logger log = LoggerFactory.getLogger(FinanceController.class);
     private static final Set<String> PAYMENT_METHODS = Set.of(
             "bank_transfer", "cash", "check", "offset", "other"
     );
@@ -112,18 +109,16 @@ public class FinanceController {
 
     @PostMapping("/receivables/{id}/settlement")
     public ResponseEntity<?> settleReceivable(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid com.wanshen.platform.finance.dto.SettlementRequest input, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request
     ) {
-        var inputJson = objectMapper.valueToTree(input);
         RequestContext context = context(request);
         require(context, "finance.payment.create");
         require(context, "finance.payment.confirm");
         require(context, "finance.invoice.create");
         require(context, "finance.voucher.create");
         require(context, "finance.voucher.post");
-        validateSettlement(inputJson);
-        log.info("[财务管理] AR结算 | 单据: {} | 租户: {}", id, context.tenantId());
-        return command(context, "finance.receivable.settle", input(id, inputJson), () -> {
+        validateSettlement(input);
+        return command(context, "finance.receivable.settle", input(id, input), () -> {
             Receivable current = getReceivable(context.tenantId(), id);
             if ("void".equals(current.status())) {
                 throw conflict("已作废应收单不能结算", "刷新应收列表后重试");
@@ -156,16 +151,16 @@ public class FinanceController {
             String voucherId = UUID.randomUUID().toString();
             Payment payment = new Payment(paymentId, context.tenantId(), docNo("PAY"), "INBOUND", id,
                     null, current.customerId(), current.customerName(), current.currency(), amount,
-                    textOr(inputJson, "paymentMethod", "bank_transfer"), text(inputJson, "paymentDate"), "",
-                    textOrEmpty(inputJson, "referenceNo"), "done", textOrEmpty(inputJson, "remark"), 1,
+                    textOr(input, "paymentMethod", "bank_transfer"), text(input, "paymentDate"), "",
+                    textOrEmpty(input, "referenceNo"), "done", textOrEmpty(input, "remark"), 1,
                     timestamp, timestamp, context.actorId());
             Invoice invoice = new Invoice(invoiceId, context.tenantId(), docNo("INV"), "SALES", id, null,
                     current.customerId(), current.customerName(), current.currency(), current.totalAmount(),
-                    "0", "0", "", text(inputJson, "paymentDate"), "done", "结算自动开票", 1,
+                    "0", "0", "", text(input, "paymentDate"), "done", "结算自动开票", 1,
                     timestamp, timestamp, context.actorId());
             Voucher voucher = new Voucher(voucherId, context.tenantId(), docNo("VOU"), "receipt",
-                    "应收结算 " + current.docNo(), amount, amount, "posted", text(inputJson, "paymentDate"),
-                    lines("INBOUND", amount), "Receivable", id, textOrEmpty(inputJson, "remark"), 1,
+                    "应收结算 " + current.docNo(), amount, amount, "posted", text(input, "paymentDate"),
+                    lines("INBOUND", amount), "Receivable", id, textOrEmpty(input, "remark"), 1,
                     timestamp, timestamp, context.actorId());
             Receivable updated = new Receivable(current.id(), current.tenantId(), current.docNo(), current.title(),
                     current.customerId(), current.customerName(), current.businessType(), current.sourceType(),
@@ -211,17 +206,16 @@ public class FinanceController {
 
     @PostMapping("/payables/{id}/settlement")
     public ResponseEntity<?> settlePayable(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid com.wanshen.platform.finance.dto.SettlementRequest input, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request
     ) {
-        var inputJson = objectMapper.valueToTree(input);
         RequestContext context = context(request);
         require(context, "finance.payment.create");
         require(context, "finance.payment.confirm");
         require(context, "finance.invoice.create");
         require(context, "finance.voucher.create");
         require(context, "finance.voucher.post");
-        validateSettlement(inputJson);
-        return command(context, "finance.payable.settle", input(id, inputJson), () -> {
+        validateSettlement(input);
+        return command(context, "finance.payable.settle", input(id, input), () -> {
             Payable current = getPayable(context.tenantId(), id);
             if ("void".equals(current.status())) throw conflict("已作废应付单不能结算", "刷新应付列表后重试");
             if ("done".equals(current.status())) {
@@ -252,16 +246,16 @@ public class FinanceController {
             String voucherId = UUID.randomUUID().toString();
             Payment payment = new Payment(paymentId, context.tenantId(), docNo("PAY"), "OUTBOUND", null,
                     id, current.supplierId(), current.supplierName(), current.currency(), amount,
-                    textOr(inputJson, "paymentMethod", "bank_transfer"), text(inputJson, "paymentDate"), "",
-                    textOrEmpty(inputJson, "referenceNo"), "done", textOrEmpty(inputJson, "remark"), 1,
+                    textOr(input, "paymentMethod", "bank_transfer"), text(input, "paymentDate"), "",
+                    textOrEmpty(input, "referenceNo"), "done", textOrEmpty(input, "remark"), 1,
                     timestamp, timestamp, context.actorId());
             Invoice invoice = new Invoice(invoiceId, context.tenantId(), docNo("INV"), "PURCHASE", null,
                     id, current.supplierId(), current.supplierName(), current.currency(), current.totalAmount(),
-                    "0", "0", "", text(inputJson, "paymentDate"), "done", "结算自动开票", 1,
+                    "0", "0", "", text(input, "paymentDate"), "done", "结算自动开票", 1,
                     timestamp, timestamp, context.actorId());
             Voucher voucher = new Voucher(voucherId, context.tenantId(), docNo("VOU"), "payment",
-                    "应付结算 " + current.docNo(), amount, amount, "posted", text(inputJson, "paymentDate"),
-                    lines("OUTBOUND", amount), "Payable", id, textOrEmpty(inputJson, "remark"), 1,
+                    "应付结算 " + current.docNo(), amount, amount, "posted", text(input, "paymentDate"),
+                    lines("OUTBOUND", amount), "Payable", id, textOrEmpty(input, "remark"), 1,
                     timestamp, timestamp, context.actorId());
             Payable updated = new Payable(current.id(), current.tenantId(), current.docNo(), current.title(),
                     current.supplierId(), current.supplierName(), current.businessType(), current.sourceType(),
@@ -300,41 +294,39 @@ public class FinanceController {
     }
 
     @PostMapping("/payments")
-    public ResponseEntity<?> registerPayment(@RequestBody @jakarta.validation.Valid com.wanshen.platform.finance.dto.CreatePaymentRequest input, HttpServletRequest request) {
-        var inputJson = objectMapper.valueToTree(input);
+    public ResponseEntity<?> registerPayment(@RequestBody JsonNode input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.payment.create");
-        validatePayment(inputJson);
-        log.info("[财务管理] 登记收付款 | 方向: {} | 租户: {}", inputJson.path("direction").asText("?"), context.tenantId());
-        return command(context, "finance.payment.register", inputJson, () -> {
-            String direction = text(inputJson, "direction");
+        validatePayment(input);
+        return command(context, "finance.payment.register", input, () -> {
+            String direction = text(input, "direction");
             Receivable receivable = null;
             Payable payable = null;
-            if ("INBOUND".equals(direction) && inputJson.hasNonNull("receivableId")) {
-                receivable = getReceivable(context.tenantId(), inputJson.get("receivableId").asText());
+            if ("INBOUND".equals(direction) && input.hasNonNull("receivableId")) {
+                receivable = getReceivable(context.tenantId(), input.get("receivableId").asText());
                 if (Set.of("done", "void").contains(receivable.status())) {
                     throw conflict("应收单当前状态不允许收款", "刷新数据后重试");
                 }
-                if (compare(text(inputJson, "amount"), receivable.outstandingAmount()) > 0) {
+                if (compare(text(input, "amount"), receivable.outstandingAmount()) > 0) {
                     throw bad("收款金额超过未收余额", "减少收款金额");
                 }
             }
-            if ("OUTBOUND".equals(direction) && inputJson.hasNonNull("payableId")) {
-                payable = getPayable(context.tenantId(), inputJson.get("payableId").asText());
+            if ("OUTBOUND".equals(direction) && input.hasNonNull("payableId")) {
+                payable = getPayable(context.tenantId(), input.get("payableId").asText());
                 if (Set.of("done", "void").contains(payable.status())) {
                     throw conflict("应付单当前状态不允许付款", "刷新数据后重试");
                 }
-                if (compare(text(inputJson, "amount"), payable.outstandingAmount()) > 0) {
+                if (compare(text(input, "amount"), payable.outstandingAmount()) > 0) {
                     throw bad("付款金额超过未付余额", "减少付款金额");
                 }
             }
             String timestamp = now();
             Payment payment = new Payment(UUID.randomUUID().toString(), context.tenantId(), docNo("PAY"),
-                    direction, textOrNull(inputJson, "receivableId"), textOrNull(inputJson, "payableId"),
-                    text(inputJson, "counterpartyId"), text(inputJson, "counterpartyName"),
-                    textOr(inputJson, "currency", "CNY"), text(inputJson, "amount"),
-                    text(inputJson, "paymentMethod"), text(inputJson, "paymentDate"),
-                    textOrEmpty(inputJson, "bankAccount"), textOrEmpty(inputJson, "referenceNo"), "pending",
-                    textOrEmpty(inputJson, "remark"), 1, timestamp, timestamp, context.actorId());
+                    direction, textOrNull(input, "receivableId"), textOrNull(input, "payableId"),
+                    text(input, "counterpartyId"), text(input, "counterpartyName"),
+                    textOr(input, "currency", "CNY"), text(input, "amount"),
+                    text(input, "paymentMethod"), text(input, "paymentDate"),
+                    textOrEmpty(input, "bankAccount"), textOrEmpty(input, "referenceNo"), "pending",
+                    textOrEmpty(input, "remark"), 1, timestamp, timestamp, context.actorId());
             store.savePayment(payment);
             audit(context, "Payment", payment.id(), 1, "REGISTER", null, payment);
             outbox(context, "finance.payment.registered.v1", "Payment", payment.id(), 1,

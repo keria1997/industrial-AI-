@@ -1,5 +1,7 @@
 #!/bin/bash
 # 启动前后端服务
+export JAVA_HOME=/Users/liyi/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
 cd "$(dirname "$0")"
 
 # 清理旧进程
@@ -8,7 +10,7 @@ lsof -ti:5173 2>/dev/null | xargs kill -9 2>/dev/null
 sleep 1
 
 # 启动后端
-echo "Starting backend on :8081..."
+echo "Starting backend on :8081 (Java $(java -version 2>&1 | head -1 | awk -F'"' '{print $2}'))..."
 cd backend
 mvn spring-boot:run -q > /dev/null 2>&1 &
 BACKEND_PID=$!
@@ -41,9 +43,7 @@ echo ""
 echo "=========================================="
 echo "  Backend  : http://127.0.0.1:8081  [$BE]"
 echo "  Frontend : http://127.0.0.1:5173  [$FE]"
+echo "  Java     : $(java -version 2>&1 | head -1 | awk -F'"' '{print $2}')"
 echo "=========================================="
 echo ""
 echo "Login: test01 / 123456"
-echo ""
-echo "PID: backend=$BACKEND_PID frontend=$FRONTEND_PID"
-echo "Stop: kill $BACKEND_PID $FRONTEND_PID"

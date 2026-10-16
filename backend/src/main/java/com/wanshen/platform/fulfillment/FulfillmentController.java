@@ -7,8 +7,6 @@ import com.wanshen.platform.web.RequestContextService;
 import com.wanshen.platform.web.RequestContextService.RequestContext;
 import com.wanshen.platform.web.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,7 +18,6 @@ import java.util.List;
 @RestController
 @ConditionalOnProperty(value = "app.fulfillment.native-enabled", havingValue = "true")
 public class FulfillmentController {
-    private static final Logger log = LoggerFactory.getLogger(FulfillmentController.class);
     private final FulfillmentService service;
     private final RequestContextService contexts;
     private final ObjectMapper mapper;
@@ -34,11 +31,9 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/sales/sales-orders")
-    public ResponseEntity<JsonNode> createOrder(@RequestBody @jakarta.validation.Valid com.wanshen.platform.fulfillment.dto.CreateSalesOrderRequest body, HttpServletRequest request) {
+    public ResponseEntity<JsonNode> createOrder(@RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = contexts.from(request);
-        var bodyJson = mapper.valueToTree(body);
-        FulfillmentService.Command result = service.createOrder(context, bodyJson);
-        log.info("[销售管理] 创建订单 | 租户: {} | 状态: {}", context.tenantId(), result.statusCode());
+        FulfillmentService.Command result = service.createOrder(context, body);
         return command(result);
     }
 
@@ -65,37 +60,35 @@ public class FulfillmentController {
 
     @PatchMapping("/api/v1/sales/sales-orders/{id}")
     public ResponseEntity<JsonNode> updateOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.updateOrder(contexts.from(request), id, body));
     }
 
     @PostMapping("/api/v1/sales/sales-orders/{id}/review-submit")
     public ResponseEntity<JsonNode> resubmitReview(
-            @PathVariable String id, @RequestBody(required = false) @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody(required = false) JsonNode body, HttpServletRequest request
     ) {
         return command(service.resubmitReview(contexts.from(request), id, empty(body)));
     }
 
     @PostMapping("/api/v1/sales/sales-orders/{id}/review-decisions")
     public ResponseEntity<JsonNode> decideReview(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.decideReview(contexts.from(request), id, body));
     }
 
     @PostMapping("/api/v1/sales/sales-orders/{id}/confirm")
     public ResponseEntity<JsonNode> confirmOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
-        RequestContext ctx = contexts.from(request);
-        log.info("[销售管理] 确认订单 | 单据: {} | 租户: {}", id, ctx.tenantId());
-        return command(service.confirmOrder(ctx, id, body));
+        return command(service.confirmOrder(contexts.from(request), id, body));
     }
 
     @PostMapping("/api/v1/sales/sales-orders/{id}/shipment-requests")
     public ResponseEntity<JsonNode> createShipmentRequest(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.createShipmentRequest(contexts.from(request), id, body));
     }
@@ -107,10 +100,9 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/sales/sales-orders/{id}/cancel")
     public ResponseEntity<JsonNode> cancelOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid com.wanshen.platform.fulfillment.dto.CancelOrderRequest body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
-        var bodyJson = mapper.valueToTree(body);
-        return command(service.cancelOrder(contexts.from(request), id, bodyJson));
+        return command(service.cancelOrder(contexts.from(request), id, body));
     }
 
     @GetMapping("/api/v1/inventory/availability")
@@ -128,12 +120,12 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/inventory/internal/availability-events")
-    public Object receiveAvailability(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public Object receiveAvailability(@RequestBody JsonNode body, HttpServletRequest request) {
         return service.receiveAvailability(contexts.from(request), body);
     }
 
     @PostMapping("/api/v1/inventory/import/availability")
-    public Object importAvailability(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public Object importAvailability(@RequestBody JsonNode body, HttpServletRequest request) {
         return service.receiveAvailability(contexts.from(request), body);
     }
 
@@ -157,14 +149,14 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/inventory/shipment-tasks/{id}/check-and-reserve")
     public ResponseEntity<JsonNode> checkAndReserve(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.checkAndReserve(contexts.from(request), id, body));
     }
 
     @PostMapping("/api/v1/inventory/shipment-tasks/{id}/production-requests")
     public ResponseEntity<JsonNode> createProductionRequest(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         if (body.path("lines").isEmpty() || body.path("lines").size() > 200) {
             throw new ApiException(400, "PRODUCTION_400_INVALID_ARGUMENT", "lines 必须包含 1 到 200 行",
@@ -188,7 +180,7 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/inventory/reservations/{id}/release")
     public ResponseEntity<JsonNode> releaseReservation(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.releaseReservation(contexts.from(request), id, body));
     }
@@ -200,7 +192,7 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/inventory/internal/completion-results")
-    public Map<String, Object> completionResult(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public Map<String, Object> completionResult(@RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = contexts.from(request);
         if (!body.path("tenantId").asText("").equals(context.tenantId())) {
             throw new ApiException(403, "FULFILLMENT_403_PERMISSION_DENIED", "事件租户与访问租户不一致",
@@ -226,11 +218,9 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/inventory/outbounds/{id}/post")
     public ResponseEntity<JsonNode> postOutbound(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
-        RequestContext ctx = contexts.from(request);
-        log.info("[库存管理] 出库过账 | 单据: {} | 租户: {}", id, ctx.tenantId());
-        return command(service.postOutbound(ctx, id, body));
+        return command(service.postOutbound(contexts.from(request), id, body));
     }
 
     @GetMapping("/api/v1/inventory/transactions")
@@ -262,7 +252,7 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/procurement/purchase-requests")
     public ResponseEntity<JsonNode> createPurchaseRequest(
-            @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.createPurchaseRequest(contexts.from(request), body));
     }
@@ -274,7 +264,7 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/procurement/purchase-requests/{id}/approve")
     public ResponseEntity<JsonNode> approvePurchaseRequest(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.approvePurchaseRequest(contexts.from(request), id, body));
     }
@@ -286,7 +276,7 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/procurement/purchase-orders/{id}/receipts")
     public ResponseEntity<JsonNode> receivePurchaseOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.receivePurchaseOrder(contexts.from(request), id, body));
     }
@@ -297,7 +287,7 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/procurement/suppliers")
-    public ResponseEntity<JsonNode> createSupplier(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<JsonNode> createSupplier(@RequestBody JsonNode body, HttpServletRequest request) {
         return command(service.createSupplier(contexts.from(request), body));
     }
 
@@ -313,7 +303,7 @@ public class FulfillmentController {
 
     @PatchMapping("/api/v1/procurement/suppliers/{id}")
     public ResponseEntity<JsonNode> updateSupplier(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.updateSupplier(contexts.from(request), id, body));
     }
@@ -325,35 +315,35 @@ public class FulfillmentController {
 
     @PostMapping("/api/v1/procurement/purchase-requests/{id}/reject")
     public ResponseEntity<JsonNode> rejectPurchaseRequest(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.rejectPurchaseRequest(contexts.from(request), id, body));
     }
 
     @PostMapping("/api/v1/procurement/purchase-orders/{id}/cancel")
     public ResponseEntity<JsonNode> cancelPurchaseOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.cancelPurchaseOrder(contexts.from(request), id, body));
     }
 
     @PostMapping("/api/v1/procurement/purchase-receipts/{id}/inspect")
     public ResponseEntity<JsonNode> inspectReceipt(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.inspectReceipt(contexts.from(request), id, body));
     }
 
     @PostMapping("/api/v1/procurement/purchase-returns")
     public ResponseEntity<JsonNode> createPurchaseReturn(
-            @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.createPurchaseReturn(contexts.from(request), body));
     }
 
     @PostMapping("/api/v1/procurement/purchase-returns/{id}/process")
     public ResponseEntity<JsonNode> processPurchaseReturn(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.processPurchaseReturn(contexts.from(request), id, body));
     }
@@ -377,14 +367,14 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/inventory/warehouses")
-    public ResponseEntity<JsonNode> createWarehouse(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<JsonNode> createWarehouse(@RequestBody JsonNode body, HttpServletRequest request) {
         return command(service.createMaster(contexts.from(request), body, service.repository().warehouses,
                 "inventory.warehouse.create", "inventory.warehouse.create", "Warehouse"));
     }
 
     @PatchMapping("/api/v1/inventory/warehouses/{id}")
     public ResponseEntity<JsonNode> updateWarehouse(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.updateMaster(contexts.from(request), id, body, service.repository().warehouses,
                 "inventory.warehouse.update", "inventory.warehouse.update", "Warehouse",
@@ -400,9 +390,7 @@ public class FulfillmentController {
 
     @GetMapping("/api/v1/inventory/products")
     public Map<String, Object> products(HttpServletRequest request) {
-        var ctx = contexts.from(request);
-        service.repository().transaction(store -> store.products);
-        return service.masterList(ctx, service.repository().products,
+        return service.masterList(contexts.from(request), service.repository().products,
                 "inventory.product.read");
     }
 
@@ -414,14 +402,14 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/inventory/products")
-    public ResponseEntity<JsonNode> createProduct(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<JsonNode> createProduct(@RequestBody JsonNode body, HttpServletRequest request) {
         return command(service.createMaster(contexts.from(request), body, service.repository().products,
                 "inventory.product.create", "inventory.product.create", "Product"));
     }
 
     @PatchMapping("/api/v1/inventory/products/{id}")
     public ResponseEntity<JsonNode> updateProduct(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.updateMaster(contexts.from(request), id, body, service.repository().products,
                 "inventory.product.update", "inventory.product.update", "Product",
@@ -431,9 +419,7 @@ public class FulfillmentController {
 
     @GetMapping("/api/v1/inventory/materials")
     public Map<String, Object> materials(HttpServletRequest request) {
-        var ctx = contexts.from(request);
-        service.repository().transaction(store -> store.materials);
-        return service.masterList(ctx, service.repository().materials,
+        return service.masterList(contexts.from(request), service.repository().materials,
                 "inventory.material.read");
     }
 
@@ -445,14 +431,14 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/inventory/materials")
-    public ResponseEntity<JsonNode> createMaterial(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<JsonNode> createMaterial(@RequestBody JsonNode body, HttpServletRequest request) {
         return command(service.createMaster(contexts.from(request), body, service.repository().materials,
                 "inventory.material.create", "inventory.material.create", "Material"));
     }
 
     @PatchMapping("/api/v1/inventory/materials/{id}")
     public ResponseEntity<JsonNode> updateMaterial(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.updateMaster(contexts.from(request), id, body, service.repository().materials,
                 "inventory.material.update", "inventory.material.update", "Material",
@@ -472,34 +458,34 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/inventory/transfer-orders")
-    public ResponseEntity<JsonNode> createTransferOrder(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<JsonNode> createTransferOrder(@RequestBody JsonNode body, HttpServletRequest request) {
         return command(service.createTransferOrder(contexts.from(request), body));
     }
 
     @PostMapping("/api/v1/inventory/transfer-orders/{id}/approve")
     public ResponseEntity<JsonNode> approveTransferOrder(
-            @PathVariable String id, @RequestBody(required = false) @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody(required = false) JsonNode body, HttpServletRequest request
     ) {
         return command(service.transferAction(contexts.from(request), id, "APPROVE", empty(body)));
     }
 
     @PostMapping("/api/v1/inventory/transfer-orders/{id}/ship")
     public ResponseEntity<JsonNode> shipTransferOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.transferAction(contexts.from(request), id, "SHIP", body));
     }
 
     @PostMapping("/api/v1/inventory/transfer-orders/{id}/receive")
     public ResponseEntity<JsonNode> receiveTransferOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.transferAction(contexts.from(request), id, "RECEIVE", body));
     }
 
     @PostMapping("/api/v1/inventory/transfer-orders/{id}/cancel")
     public ResponseEntity<JsonNode> cancelTransferOrder(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.transferAction(contexts.from(request), id, "CANCEL", body));
     }
@@ -516,34 +502,34 @@ public class FulfillmentController {
     }
 
     @PostMapping("/api/v1/inventory/stocktake-tasks")
-    public ResponseEntity<JsonNode> createStocktakeTask(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<JsonNode> createStocktakeTask(@RequestBody JsonNode body, HttpServletRequest request) {
         return command(service.createStocktakeTask(contexts.from(request), body));
     }
 
     @PostMapping("/api/v1/inventory/stocktake-tasks/{id}/approve")
     public ResponseEntity<JsonNode> approveStocktakeTask(
-            @PathVariable String id, @RequestBody(required = false) @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody(required = false) JsonNode body, HttpServletRequest request
     ) {
         return command(service.stocktakeAction(contexts.from(request), id, "APPROVE", empty(body)));
     }
 
     @PostMapping("/api/v1/inventory/stocktake-tasks/{id}/start")
     public ResponseEntity<JsonNode> startStocktakeTask(
-            @PathVariable String id, @RequestBody(required = false) @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody(required = false) JsonNode body, HttpServletRequest request
     ) {
         return command(service.stocktakeAction(contexts.from(request), id, "START", empty(body)));
     }
 
     @PostMapping("/api/v1/inventory/stocktake-tasks/{id}/count")
     public ResponseEntity<JsonNode> countStocktakeTask(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.stocktakeAction(contexts.from(request), id, "COUNT", body));
     }
 
     @PostMapping("/api/v1/inventory/stocktake-tasks/{id}/adjust")
     public ResponseEntity<JsonNode> adjustStocktakeTask(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request
     ) {
         return command(service.stocktakeAction(contexts.from(request), id, "ADJUST", body));
     }

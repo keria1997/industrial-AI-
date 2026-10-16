@@ -91,7 +91,7 @@ public class PersonnelController {
     }
 
     @PatchMapping("/employees/{id}")
-    public ResponseEntity<?> updateEmployee(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch, HttpServletRequest request) {
+    public ResponseEntity<?> updateEmployee(@PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "hr.employee.update");
         validatePatch(patch, "name", "department", "position", "phone", "email", "status", "hireDate", "leaveDate", "metadata", "remark");
@@ -183,7 +183,7 @@ public class PersonnelController {
     }
 
     @PatchMapping("/attendances/{id}")
-    public ResponseEntity<?> updateAttendance(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch, HttpServletRequest request) {
+    public ResponseEntity<?> updateAttendance(@PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "hr.attendance.update");
         validatePatch(patch, "shift", "clockIn", "clockOut", "status", "remark");
@@ -253,7 +253,7 @@ public class PersonnelController {
     }
 
     @PatchMapping("/skills/{id}")
-    public ResponseEntity<?> updateSkill(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch, HttpServletRequest request) {
+    public ResponseEntity<?> updateSkill(@PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "hr.skill.update");
         validatePatch(patch, "skillName", "level", "issueDate", "expiryDate", "status", "issuer", "metadata", "remark");
@@ -280,7 +280,7 @@ public class PersonnelController {
     }
 
     @PostMapping("/skills/{id}/renew")
-    public ResponseEntity<?> renewSkill(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<?> renewSkill(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "hr.skill.renew");
         validateUuid(id);

@@ -81,7 +81,7 @@ public class SupplyChainController {
     }
 
     @PostMapping("/suppliers")
-    public ResponseEntity<?> createSupplier(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createSupplier(@RequestBody JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "sc.supplier.create");
         validateSupplier(input, false);
         String supplierNo = text(input, "supplierNo");
@@ -107,7 +107,7 @@ public class SupplyChainController {
 
     @PatchMapping("/suppliers/{id}")
     public ResponseEntity<?> updateSupplier(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request
     ) {
         RequestContext context = require(request, "sc.supplier.update");
         validateUuid(id);
@@ -174,7 +174,7 @@ public class SupplyChainController {
     }
 
     @PostMapping("/customers")
-    public ResponseEntity<?> createCustomer(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createCustomer(@RequestBody JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "sc.customer.create");
         validateCustomer(input, false);
         String customerNo = text(input, "customerNo");
@@ -202,7 +202,7 @@ public class SupplyChainController {
 
     @PatchMapping("/customers/{id}")
     public ResponseEntity<?> updateCustomer(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request
     ) {
         RequestContext context = require(request, "sc.customer.update");
         validateUuid(id);
@@ -274,7 +274,7 @@ public class SupplyChainController {
     }
 
     @PostMapping("/risk-events")
-    public ResponseEntity<?> createRisk(@RequestBody @jakarta.validation.Valid JsonNode input, HttpServletRequest request) {
+    public ResponseEntity<?> createRisk(@RequestBody JsonNode input, HttpServletRequest request) {
         RequestContext context = require(request, "sc.risk.create");
         validateRisk(input, false);
         return command(context, "sc.risk.create", input, () -> {
@@ -294,7 +294,7 @@ public class SupplyChainController {
 
     @PatchMapping("/risk-events/{id}")
     public ResponseEntity<?> updateRisk(
-            @PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode patch, HttpServletRequest request
+            @PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request
     ) {
         RequestContext context = require(request, "sc.risk.update");
         validateUuid(id);

@@ -41,11 +41,11 @@ public class PlatformController {
     @GetMapping("/org-units")
     public List<Map<String, Object>> orgUnits(HttpServletRequest request) { return read(request, "orgUnit", "platform.org.view"); }
     @PostMapping("/org-units")
-    public ResponseEntity<Object> createOrgUnit(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createOrgUnit(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "orgUnit", "platform.org.manage", "组织架构", "新增组织架构", body, 201);
     }
     @PutMapping("/org-units/{id}")
-    public ResponseEntity<Object> updateOrgUnit(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateOrgUnit(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "orgUnit", "platform.org.manage", "组织架构", "修改组织架构", withId(body, id), 200);
     }
     @DeleteMapping("/org-units/{id}")
@@ -56,11 +56,11 @@ public class PlatformController {
     @GetMapping("/resources")
     public List<Map<String, Object>> resources(HttpServletRequest request) { return read(request, "resource", "platform.org.view"); }
     @PostMapping("/resources")
-    public ResponseEntity<Object> createResource(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createResource(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "resource", "platform.resource.manage", "企业资源", "新增企业资源", body, 201);
     }
     @PutMapping("/resources/{id}")
-    public ResponseEntity<Object> updateResource(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateResource(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "resource", "platform.resource.manage", "企业资源", "修改企业资源", withId(body, id), 200);
     }
     @DeleteMapping("/resources/{id}")
@@ -71,11 +71,11 @@ public class PlatformController {
     @GetMapping("/positions")
     public List<Map<String, Object>> positions(HttpServletRequest request) { return read(request, "position", "platform.org.view"); }
     @PostMapping("/positions")
-    public ResponseEntity<Object> createPosition(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createPosition(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "position", "platform.position.manage", "岗位", "新增岗位", body, 201);
     }
     @PutMapping("/positions/{id}")
-    public ResponseEntity<Object> updatePosition(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updatePosition(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "position", "platform.position.manage", "岗位", "修改岗位", withId(body, id), 200);
     }
     @DeleteMapping("/positions/{id}")
@@ -86,11 +86,11 @@ public class PlatformController {
     @GetMapping("/employees")
     public List<Map<String, Object>> employees(HttpServletRequest request) { return read(request, "employee", "platform.org.view"); }
     @PostMapping("/employees")
-    public ResponseEntity<Object> createEmployee(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createEmployee(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "employee", "platform.employee.manage", "员工", "新增员工", body, 201);
     }
     @PutMapping("/employees/{id}")
-    public ResponseEntity<Object> updateEmployee(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateEmployee(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "employee", "platform.employee.manage", "员工", "修改员工", withId(body, id), 200);
     }
     @DeleteMapping("/employees/{id}")
@@ -105,11 +105,11 @@ public class PlatformController {
         return values;
     }
     @PostMapping("/accounts")
-    public ResponseEntity<Object> createAccount(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createAccount(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "account", "platform.account.manage", "账号", "新增账号", body, 201);
     }
     @PutMapping("/accounts/{id}")
-    public ResponseEntity<Object> updateAccount(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateAccount(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "account", "platform.account.manage", "账号", "修改账号", withId(body, id), 200);
     }
     @DeleteMapping("/accounts/{id}")
@@ -120,11 +120,11 @@ public class PlatformController {
     @GetMapping("/roles")
     public List<Map<String, Object>> roles(HttpServletRequest request) { return read(request, "role", "platform.org.view"); }
     @PostMapping("/roles")
-    public ResponseEntity<Object> createRole(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createRole(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "role", "platform.role.manage", "角色", "新增角色", body, 201);
     }
     @PutMapping("/roles/{id}")
-    public ResponseEntity<Object> updateRole(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateRole(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "role", "platform.role.manage", "角色", "修改角色", withId(body, id), 200);
     }
     @DeleteMapping("/roles/{id}")
@@ -136,7 +136,7 @@ public class PlatformController {
         return service.roleGrants(context(request), id);
     }
     @PutMapping("/roles/{id}/grants")
-    public ResponseEntity<Object> saveRoleGrants(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> saveRoleGrants(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = context(request);
         validateGrants(body);
         List<Map<String, Object>> value = service.saveRoleGrants(context, id, list(body.get("grants")));
@@ -146,11 +146,11 @@ public class PlatformController {
     @GetMapping("/adapters")
     public List<Map<String, Object>> adapters(HttpServletRequest request) { return read(request, "adapter", "platform.org.view"); }
     @PostMapping("/adapters")
-    public ResponseEntity<Object> createAdapter(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createAdapter(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "adapter", "platform.adapter.manage", "权限适配器", "新增权限适配器", body, 201);
     }
     @PutMapping("/adapters/{id}")
-    public ResponseEntity<Object> updateAdapter(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateAdapter(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "adapter", "platform.adapter.manage", "权限适配器", "修改权限适配器", withId(body, id), 200);
     }
     @DeleteMapping("/adapters/{id}")
@@ -161,11 +161,11 @@ public class PlatformController {
     @GetMapping("/approval-rules")
     public List<Map<String, Object>> approvalRules(HttpServletRequest request) { return read(request, "approvalRule", "platform.org.view"); }
     @PostMapping("/approval-rules")
-    public ResponseEntity<Object> createApprovalRule(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createApprovalRule(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "approvalRule", "platform.approval.manage", "审批规则", "新增审批规则", body, 201);
     }
     @PutMapping("/approval-rules/{id}")
-    public ResponseEntity<Object> updateApprovalRule(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateApprovalRule(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "approvalRule", "platform.approval.manage", "审批规则", "修改审批规则", withId(body, id), 200);
     }
     @DeleteMapping("/approval-rules/{id}")
@@ -176,11 +176,11 @@ public class PlatformController {
     @GetMapping("/dictionaries")
     public List<Map<String, Object>> dictionaries(HttpServletRequest request) { return read(request, "dictionary", "platform.org.view"); }
     @PostMapping("/dictionaries")
-    public ResponseEntity<Object> createDictionary(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createDictionary(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "dictionary", "platform.dictionary.manage", "字典", "新增字典", body, 201);
     }
     @PutMapping("/dictionaries/{id}")
-    public ResponseEntity<Object> updateDictionary(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateDictionary(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "dictionary", "platform.dictionary.manage", "字典", "修改字典", withId(body, id), 200);
     }
     @DeleteMapping("/dictionaries/{id}")
@@ -191,11 +191,11 @@ public class PlatformController {
     @GetMapping("/parameters")
     public List<Map<String, Object>> parameters(HttpServletRequest request) { return read(request, "parameter", "platform.security.view"); }
     @PostMapping("/parameters")
-    public ResponseEntity<Object> createParameter(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> createParameter(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "parameter", "platform.parameter.manage", "系统参数", "新增系统参数", body, 201);
     }
     @PutMapping("/parameters/{id}")
-    public ResponseEntity<Object> updateParameter(@PathVariable String id, @RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> updateParameter(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "parameter", "platform.parameter.manage", "系统参数", "修改系统参数", withId(body, id), 200);
     }
     @DeleteMapping("/parameters/{id}")
@@ -225,7 +225,7 @@ public class PlatformController {
     @GetMapping("/capabilities")
     public List<Map<String, Object>> capabilities(HttpServletRequest request) { return read(request, "capability", "platform.org.view"); }
     @PostMapping("/capabilities")
-    public ResponseEntity<Object> saveCapability(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> saveCapability(@RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = context(request);
         if (!body.hasNonNull("code") || body.path("code").asText().isBlank() || !body.hasNonNull("enabled")) bad();
         Map<String, Object> value = service.saveCapability(context, map(body));
@@ -233,7 +233,7 @@ public class PlatformController {
     }
 
     @PostMapping("/session-revocation")
-    public ResponseEntity<Object> revokeSession(@RequestBody @jakarta.validation.Valid JsonNode body, HttpServletRequest request) {
+    public ResponseEntity<Object> revokeSession(@RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = context(request);
         for (String field : List.of("account", "jti", "reason")) {
             if (!body.hasNonNull(field) || body.path(field).asText().isBlank()) bad();
