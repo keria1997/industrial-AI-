@@ -70,6 +70,28 @@ public class ProductionOrderController {
     }
 
     /**
+     * 校验生产需求
+     */
+    @PostMapping("/demands/{id}/validate")
+    public ApiResponse<ProductionDemand> validateDemand(
+            @PathVariable String id, HttpServletRequest httpRequest
+    ) {
+        RequestContext ctx = requestContexts.from(httpRequest);
+        return ApiResponse.success(productionService.approveDemand(ctx.tenantId(), UUID.fromString(id)));
+    }
+
+    /**
+     * 接收生产需求
+     */
+    @PostMapping("/demands/{id}/claim")
+    public ApiResponse<ProductionDemand> claimDemand(
+            @PathVariable String id, HttpServletRequest httpRequest
+    ) {
+        RequestContext ctx = requestContexts.from(httpRequest);
+        return ApiResponse.success(productionService.approveDemand(ctx.tenantId(), UUID.fromString(id)));
+    }
+
+    /**
      * 创建工单
      */
     @PostMapping("/work-orders")
@@ -135,5 +157,32 @@ public class ProductionOrderController {
         RequestContext ctx = requestContexts.from(httpRequest);
         List<WorkOrder> orders = productionService.findAllWorkOrders(ctx.tenantId());
         return ApiResponse.success(orders);
+    }
+
+    /**
+     * 按 ID 查询工单
+     */
+    @GetMapping("/work-orders/{id}")
+    public ApiResponse<WorkOrder> getWorkOrder(
+            @PathVariable String id, HttpServletRequest httpRequest
+    ) {
+        return ApiResponse.success(
+                productionService.findAllWorkOrders(
+                        requestContexts.from(httpRequest).tenantId()
+                ).stream()
+                .filter(wo -> wo.getId().toString().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("工单不存在: " + id)));
+    }
+
+    /**
+     * 下达工单
+     */
+    @PostMapping("/work-orders/{id}/release")
+    public ApiResponse<WorkOrder> release(
+            @PathVariable String id, HttpServletRequest httpRequest
+    ) {
+        return ApiResponse.success(productionService.completeWorkOrder(
+                requestContexts.from(httpRequest).tenantId(), UUID.fromString(id)));
     }
 }

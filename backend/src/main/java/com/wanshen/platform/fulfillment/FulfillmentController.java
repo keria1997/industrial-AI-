@@ -400,7 +400,9 @@ public class FulfillmentController {
 
     @GetMapping("/api/v1/inventory/products")
     public Map<String, Object> products(HttpServletRequest request) {
-        return service.masterList(contexts.from(request), service.repository().products,
+        var ctx = contexts.from(request);
+        service.repository().transaction(store -> store.products);
+        return service.masterList(ctx, service.repository().products,
                 "inventory.product.read");
     }
 
@@ -429,7 +431,9 @@ public class FulfillmentController {
 
     @GetMapping("/api/v1/inventory/materials")
     public Map<String, Object> materials(HttpServletRequest request) {
-        return service.masterList(contexts.from(request), service.repository().materials,
+        var ctx = contexts.from(request);
+        service.repository().transaction(store -> store.materials);
+        return service.masterList(ctx, service.repository().materials,
                 "inventory.material.read");
     }
 
