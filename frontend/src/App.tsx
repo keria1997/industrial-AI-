@@ -9158,16 +9158,12 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
-                  metrics={inv_dashboardMetrics.map(metric => ({
-                    id: metric.id,
-                    title: metric.title,
-                    value: metric.value,
-                    unit: metric.suffix,
-                    subtitle: metric.subtitle,
-                    theme: metric.tagColor,
-                    icon: metric.id === 1 ? RefreshCw : metric.id === 2 ? AlertTriangle : metric.id === 3 ? Wallet : ClipboardCheck,
-                    trend: metric.tagColor === 'red' ? 'down' : 'up',
-                  }))}
+                  metrics={[
+                    { title: '总库存周转率', value: '-', suffix: '次/年', subtitle: '待后端统计', theme: 'emerald', icon: RefreshCw, trend: 'flat' },
+                    { title: '低位预警物料', value: String(inv_stockData.filter(item => item.kind === '物料' && item.availQty < 0).length), suffix: '项', subtitle: '低于安全库存', theme: 'amber', icon: AlertTriangle, trend: 'flat' },
+                    { title: '呆滞积压资金', value: '-', suffix: '万元', subtitle: '待后端统计', theme: 'rose', icon: Wallet, trend: 'flat' },
+                    { title: '本月出入库单', value: '-', suffix: '单', subtitle: '待后端统计', theme: 'blue', icon: ClipboardCheck, trend: 'flat' },
+                  ]}
                   aiCards={[
                     ...(() => {
                       // 从库存数据计算呆滞物料（现存>0 且可用量>=安全库存的成品，按现存降序取前1）
@@ -9212,13 +9208,13 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                   ]}
                   trend={{
                     title: '库存周转与安全水位趋势',
-                    metric: '3天',
-                    metricLabel: '预计缺口',
+                    metric: '-',
+                    metricLabel: '待统计',
                     metricColor: '#f43f5e',
                     ringColor: '#ffe4e6',
-                    insightTitle: '库存健康度预测',
-                    insight: '库存周转率稳步提升，但 RM202 安全水位在未来一周快速下探，存在领料中断风险。',
-                    recommendation: '对低位物料提前触发 PR，同时将 FG001 积压成品推送销售去化，释放仓储与资金压力。',
+                    insightTitle: '库存健康度',
+                    insight: '库存数据待后端统计后展示。',
+                    recommendation: '请确认库存可用量数据已同步。',
                     chartTitle: '近半年库存周转与水位趋势',
                     legend: [
                       { label: '库存周转率', color: '#2563eb' },
@@ -9226,9 +9222,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                     ],
                     primary: '#2563eb',
                     secondary: '#f43f5e',
-                    yAxis: [5, 4, 3, 2, 1],
                     gradientId: 'inventoryTrendGradient',
-                    forecastPath: 'M 780 86 C 845 120, 895 175, 950 210',
                   }}
                 />
             )}
