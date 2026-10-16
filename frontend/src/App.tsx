@@ -8717,49 +8717,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           availQty: Math.max(0, item.availQty - ls.shipQty)
         } : item));
       });
-      const salesUpdated = recordSalesOrderShipped(window.localStorage, currentTenant.id, {
-        orderId: row.source,
-        outboundId: row.id,
-        shippedAt: completedAt.toISOString(),
-        operator,
-        shippedQty,
-        lineShipments,
-      });
-      // 如果销售订单不在 localStorage 中（如通过出库管理直接创建的订单），则创建一个简化订单记录
-      if (!salesUpdated) {
-        try {
-          const wsKey = salesWorkspaceStorageKey(currentTenant.id);
-          const ws = JSON.parse(window.localStorage.getItem(wsKey) || '{}');
-          if (!Array.isArray(ws.orders)) ws.orders = [];
-          const existIdx = ws.orders.findIndex(o => o.id === row.source);
-          const simplifiedOrder = {
-            id: row.source,
-            client: '仓库出库同步',
-            salesman: operator,
-            product: (row.lines || []).map(l => `${l.productId} ${l.productName || ''} × ${l.qty} ${l.unit || '件'}`).join('；') || row.item,
-            productName: row.item,
-            qty: row.qty,
-            amount: '待生成',
-            receivable: '待生成',
-            date: new Date().toISOString().slice(0, 10),
-            deliveryDate: row.dueDate || '按订单交期',
-            outStatus: allFullyShipped ? '全部发货' : '部分发货',
-            status: allFullyShipped ? '已发货' : '部分发货',
-            shippedQty: shippedQty,
-            lines: updatedLines,
-            createdAt: completedAt.toISOString(),
-            updatedAt: completedAt.toISOString(),
-          };
-          if (existIdx >= 0) {
-            ws.orders[existIdx] = { ...ws.orders[existIdx], ...simplifiedOrder };
-          } else {
-            ws.orders.unshift(simplifiedOrder);
-          }
-          window.localStorage.setItem(wsKey, JSON.stringify({ ...ws, schemaVersion: 8 }));
-        } catch (e2) {
-          // 忽略 localStorage 写入异常
-        }
-      }
+      // 销售订单状态由后端出库 API（POST /api/v1/inventory/outbounds/{id}/post）回写，无需前端写 localStorage
       const shipSummary = actualShipLines.map(l => `${l.productId}:${l.shipQty}`).join('、');
       showToast(`出库单 [${row.id}] 已${allFullyShipped ? '全量' : '部分'}发货（${shipSummary}），销售订单已回写`, 'success');
       if (businessFlow?.orderId === row.source) onBusinessFlowAction?.('shipSales');
@@ -8880,50 +8838,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       }
       const completedAt = new Date();
       const operator = currentUser?.name || currentUser?.account || row.operator || '当前用户';
-      const salesUpdated = row.type === '销售发货'
-        ? recordSalesOrderShipped(window.localStorage, currentTenant.id, {
-            orderId: row.source,
-            outboundId: row.id,
-            shippedAt: completedAt.toISOString(),
-            operator,
-            shippedQty: row.qty,
-          })
-        : false;
-      // 如果销售订单不在 localStorage 中，创建简化订单记录
-      if (row.type === '销售发货' && !salesUpdated) {
-        try {
-          const wsKey = salesWorkspaceStorageKey(currentTenant.id);
-          const ws = JSON.parse(window.localStorage.getItem(wsKey) || '{}');
-          if (!Array.isArray(ws.orders)) ws.orders = [];
-          const existIdx = ws.orders.findIndex(o => o.id === row.source);
-          const simplifiedOrder = {
-            id: row.source,
-            client: '仓库出库同步',
-            salesman: operator,
-            product: (row.lines || []).map(l => `${l.productId} ${l.productName || ''} × ${l.qty} ${l.unit || '件'}`).join('；') || row.item,
-            productName: row.item,
-            qty: row.qty,
-            amount: '待生成',
-            receivable: '待生成',
-            date: new Date().toISOString().slice(0, 10),
-            deliveryDate: row.dueDate || '按订单交期',
-            outStatus: '全部发货',
-            status: '已发货',
-            shippedQty: row.qty,
-            lines: (row.lines || []).map(l => ({ ...l, shippedQty: l.qty })),
-            createdAt: completedAt.toISOString(),
-            updatedAt: completedAt.toISOString(),
-          };
-          if (existIdx >= 0) {
-            ws.orders[existIdx] = { ...ws.orders[existIdx], ...simplifiedOrder };
-          } else {
-            ws.orders.unshift(simplifiedOrder);
-          }
-          window.localStorage.setItem(wsKey, JSON.stringify({ ...ws, schemaVersion: 8 }));
-        } catch (e2) {
-          // 忽略 localStorage 写入异常
-        }
-      }
+      // 销售订单状态由后端出库 API 回写，无需前端写 localStorage
       setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '已出库', operator, shippedAt: completedAt.toISOString() } : item));
       // 按产品明细逐行扣减库存（stockQty 和 availQty）；无明细行时回退到单产品匹配
       const shipLines = (row.lines && row.lines.length > 0)
@@ -8942,12 +8857,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       });
       if (row.type === '销售发货') {
         if (businessFlow?.orderId === row.source) onBusinessFlowAction?.('shipSales');
-        showToast(
-          salesUpdated
-            ? `出库单 [${row.id}] 已完成，销售订单已同步为已发货`
-            : `出库单 [${row.id}] 已完成；来源订单不在当前租户工作区，请在正式订单列表核对事件回写`,
-          salesUpdated ? 'success' : 'warning',
-        );
+        showToast(`出库单 [${row.id}] 已完成，销售订单状态由后端同步`, 'success');
       } else {
         showToast(`出库单 [${row.id}] 已完成拣货并扣减库存`, 'success');
       }
