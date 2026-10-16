@@ -3625,7 +3625,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const [activeTab, setActiveTab] = useState(() => resolveSalesTab(window.location.search));
   const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(false);
   const [orderCreationRevision, setOrderCreationRevision] = useState(0);
-  const [quotes, setQuotes] = useState(() => persistedWorkspace?.quotes || sales_quotesData);
+  const [quotes, setQuotes] = useState([]);
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [levels, setLevels] = useState(() => persistedWorkspace?.levels || sales_baseDataLevels);
@@ -3911,7 +3911,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
 
   useEffect(() => {
       try {
-          localStorage.setItem(salesWorkspaceStorageKey(currentTenant?.id), JSON.stringify({ schemaVersion: 8, quotes, levels, industries, outreachSettings, audits, reminderAt }));
+          localStorage.setItem(salesWorkspaceStorageKey(currentTenant?.id), JSON.stringify({ schemaVersion: 8, levels, industries, outreachSettings, audits, reminderAt }));
           syncShippedSalesOutbounds(window.localStorage, currentTenant?.id, orders);
       } catch {
           // The page remains usable when browser storage is unavailable.
