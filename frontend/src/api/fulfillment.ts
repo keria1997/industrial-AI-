@@ -75,38 +75,34 @@ export type FulfillmentPostResult = {
 const key = (scope: string) => `${scope}:${crypto.randomUUID()}`;
 
 export const createFulfillmentOrder = (context: ApiContext, input: Record<string, unknown>, idempotencyKey?: string) =>
-  apiRequest<FulfillmentOrder>('/api/v2/sales/orders', context, { method: 'POST', idempotencyKey: idempotencyKey || key('sales-order'), body: JSON.stringify(input) });
+  apiRequest<FulfillmentOrder>('/api/v1/sales/sales-orders', context, { method: 'POST', idempotencyKey: idempotencyKey || key('sales-order'), body: JSON.stringify(input) });
 
-export const listFulfillmentOrders = async (context: ApiContext): Promise<{ items: FulfillmentOrder[]; total: number }> => {
-  const res = await apiRequest<{ code: number; data: FulfillmentOrder[] }>('/api/v2/sales/orders?page=1&pageSize=200', context);
-  if (Array.isArray(res)) return { items: res, total: res.length };
-  if (res.data) return { items: res.data, total: res.data.length };
-  return { items: [], total: 0 };
-};
+export const listFulfillmentOrders = (context: ApiContext) =>
+  apiRequest<{ items: FulfillmentOrder[]; total: number }>('/api/v1/sales/sales-orders?page=1&pageSize=200', context);
 
 export const getFulfillmentOrder = (context: ApiContext, id: string) =>
-  apiRequest<FulfillmentOrder>(`/api/v2/sales/orders/${id}`, context);
+  apiRequest<FulfillmentOrder>(`/api/v1/sales/sales-orders/${id}`, context);
 
 export const approveFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder) =>
-  apiRequest<FulfillmentOrder>(`/api/v2/sales/orders/${order.id}/review-decisions`, context, {
+  apiRequest<FulfillmentOrder>(`/api/v1/sales/sales-orders/${order.id}/review-decisions`, context, {
     method: 'POST', idempotencyKey: key(`review:${order.id}`), expectedVersion: order.version,
     body: JSON.stringify({ decision: 'APPROVE' }),
   });
 
 export const confirmFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder, requestedDeliveryDate: string) =>
-  apiRequest<FulfillmentOrder>(`/api/v2/sales/orders/${order.id}/confirm`, context, {
+  apiRequest<FulfillmentOrder>(`/api/v1/sales/sales-orders/${order.id}/confirm`, context, {
     method: 'POST', idempotencyKey: key(`confirm:${order.id}`), expectedVersion: order.version,
     body: JSON.stringify({ requestedDeliveryDate }),
   });
 
 export const cancelFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder, reason: string) =>
-  apiRequest<FulfillmentOrder>(`/api/v2/sales/orders/${order.id}/cancel`, context, {
+  apiRequest<FulfillmentOrder>(`/api/v1/sales/sales-orders/${order.id}/cancel`, context, {
     method: 'POST', idempotencyKey: key(`cancel:${order.id}`), expectedVersion: order.version,
     body: JSON.stringify({ reason }),
   });
 
 export const createFulfillmentShipmentRequest = (context: ApiContext, order: FulfillmentOrder) =>
-  apiRequest<Record<string, unknown>>(`/api/v2/sales/orders/${order.id}/shipment-requests`, context, {
+  apiRequest<Record<string, unknown>>(`/api/v1/sales/sales-orders/${order.id}/shipment-requests`, context, {
     method: 'POST', idempotencyKey: `shipment:${order.id}:${order.version}`, expectedVersion: order.version,
     body: JSON.stringify({
       warehouseId: order.fulfillmentWarehouseId,

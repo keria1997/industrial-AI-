@@ -310,15 +310,10 @@ export const settlePayable = (context: ApiContext, id: string, input: Settlement
 
 // Payments
 export const listPayments = (context: ApiContext, filter?: FinanceListFilter) =>
-  (async () => {
-    const res = await apiRequest<any>(`/api/v2/finance/payments${buildQuery(filter)}`, context, { method: "GET" });
-    if (Array.isArray(res)) return { items: res, total: res.length };
-    if (res.data) return { items: res.data, total: res.data.length };
-    return { items: [], total: 0 };
-  })()
+  apiRequest<{ items: Payment[]; total: number }>(`/api/v1/finance/payments${buildQuery(filter)}`, context, { method: "GET" });
 
 export const registerPayment = (context: ApiContext, input: RegisterPaymentInput) =>
-  apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>("/api/v2/finance/payments", context, {
+  apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>("/api/v1/finance/payments", context, {
     method: "POST",
     headers: { "X-Idempotency-Key": key() },
     body: JSON.stringify(input),
@@ -326,7 +321,7 @@ export const registerPayment = (context: ApiContext, input: RegisterPaymentInput
 
 export const confirmPayment = (context: ApiContext, id: string, version: number) =>
   apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>(
-    `/api/v2/finance/payments/${encodeURIComponent(id)}/confirm`,
+    `/api/v1/finance/payments/${encodeURIComponent(id)}/confirm`,
     context,
     {
       method: "POST",
