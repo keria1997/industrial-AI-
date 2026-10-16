@@ -3500,8 +3500,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(false);
   const [orderCreationRevision, setOrderCreationRevision] = useState(0);
   const [quotes, setQuotes] = useState(() => persistedWorkspace?.quotes || sales_quotesData);
-  const [orders, setOrders] = useState(() => persistedWorkspace?.orders || sales_ordersData);
-  const [customers, setCustomers] = useState(() => persistedWorkspace?.customers || sales_customersListData);
+  const [orders, setOrders] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [levels, setLevels] = useState(() => persistedWorkspace?.levels || sales_baseDataLevels);
   const [industries, setIndustries] = useState(() => persistedWorkspace?.industries || sales_industriesData);
   const [outreachSettings, setOutreachSettings] = useState(() => persistedWorkspace?.outreachSettings || sales_defaultOutreachSettings);
@@ -3521,6 +3521,32 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
     inventoryApi.listWarehouses(formalContext)
       .then((response) => setSalesWarehouseList((response.items || []).filter((warehouse) => warehouse.status === 'active')))
       .catch(() => setSalesWarehouseList([]));
+  }, [formalContext?.tenantId, formalContext?.accessToken]);
+
+  // 从后端 API 加载客户数据（替代 localStorage 硬编码数据）
+  useEffect(() => {
+    if (!formalContext) return;
+    import('./api/supply-chain').then(({ supplyChainApi }) => {
+      supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 100 })
+        .then(res => {
+          if (res.items && res.items.length > 0) {
+            setCustomers(res.items.map((c: any) => ({
+              id: c.customerNo || c.id,
+              name: c.name,
+              code: c.code || '-',
+              contact: c.contactPerson || '-',
+              phone: c.phone || '-',
+              level: c.level || 'D',
+              status: c.status || '合作中',
+              address: c.address || '-',
+              owner: c.owner || '-',
+              industry: c.industry || '-',
+              lastInteractionAt: c.lastInteractionAt || '-',
+            })));
+          }
+        })
+        .catch(() => {/* API 失败时保留空数据 */});
+    });
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
   // 从后端 API 加载销售订单（替代 localStorage 硬编码数据）
@@ -3716,7 +3742,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
 
   useEffect(() => {
       try {
-          localStorage.setItem(salesWorkspaceStorageKey(currentTenant?.id), JSON.stringify({ schemaVersion: 8, quotes, orders, customers, levels, industries, outreachSettings, audits, reminderAt }));
+          localStorage.setItem(salesWorkspaceStorageKey(currentTenant?.id), JSON.stringify({ schemaVersion: 8, quotes, levels, industries, outreachSettings, audits, reminderAt }));
           syncShippedSalesOutbounds(window.localStorage, currentTenant?.id, orders);
       } catch {
           // The page remains usable when browser storage is unavailable.
