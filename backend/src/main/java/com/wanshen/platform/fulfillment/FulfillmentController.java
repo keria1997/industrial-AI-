@@ -21,15 +21,13 @@ public class FulfillmentController {
     private final FulfillmentService service;
     private final RequestContextService contexts;
     private final ObjectMapper mapper;
-    private final javax.sql.DataSource dataSource;
-
+    
     public FulfillmentController(
-            FulfillmentService service, RequestContextService contexts, ObjectMapper mapper, javax.sql.DataSource dataSource
+            FulfillmentService service, RequestContextService contexts, ObjectMapper mapper
     ) {
         this.service = service;
         this.contexts = contexts;
         this.mapper = mapper;
-        this.dataSource = dataSource;
     }
 
     @PostMapping("/api/v1/sales/sales-orders")
@@ -551,123 +549,5 @@ public class FulfillmentController {
         }
     }
 
-    /**
-     * 销售监控舱 AI 洞察数据
-     *
-     * 基于真实数据计算：报价到期预警、沉睡客户、停滞订单、交付风险。
-     * 调用链路: 前端 Sales_DashboardView → FulfillmentController.aiInsights → FulfillmentStore
-     */
-    @GetMapping("/api/v1/sales/ai-insights")
-    public Map<String, Object> aiInsights(HttpServletRequest request) {
-        RequestContext context = contexts.from(request);
-        require(context, "sales.order.read");
-        var store = service.repository();
-        String tenantId = context.tenantId();
-
-        // 查询所有未取消订单
-        List<JsonNode> orders = store.orders(tenantId).values().stream()
-                .filter(order -> !"CANCELED".equals(text(order, "overallStatus")))
-                .collect(java.util.stream.Collectors.toList());
-
-        // 计算异常停滞订单（待发货超3天）
-        var threeDaysAgo = java.time.Instant.now().minusSeconds(3 * 86400);
-        List<Map<String, Object>> stalledOrders = orders.stream()
-                .filter(order -> "PENDING_CONFIRMATION".equals(text(order, "overallStatus")))
-                .filter(order -> {
-                    var created = text(order, "createdAt");
-                    if (created.isBlank()) return false;
-                    try {
-                        return java.time.Instant.parse(created).isBefore(threeDaysAgo);
-                    } catch (RuntimeException e) { return false; }
-                })
-                .map(order -> Map.<String, Object>of(
-                        "orderId", text(order, "orderNo"),
-                        "customerId", text(order, "customerId"),
-                        "customerName", text(order, "customerName"),
-                        "status", "待发货超过3天",
-                        "totalAmount", text(order, "totalAmount")))
-                .collect(java.util.stream.Collectors.toList());
-
-        // 计算交付风险订单（交期在3天内且未完成）
-        var threeDaysLater = java.time.LocalDate.now().plusDays(3);
-        List<Map<String, Object>> deliveryRisk = orders.stream()
-                .filter(order -> {
-                    var status = text(order, "overallStatus");
-                    if (Set.of("SHIPPED", "COMPLETED", "CANCELED").contains(status)) return false;
-                    var delivery = text(order, "requestedDeliveryDate");
-                    if (delivery.isBlank()) return false;
-                    try { return java.time.LocalDate.parse(delivery.substring(0, 10)).isBefore(threeDaysLater); }
-                    catch (RuntimeException e) { return false; }
-                })
-                .map(order -> Map.<String, Object>of(
-                        "orderId", text(order, "orderNo"),
-                        "customerName", text(order, "customerName"),
-                        "deliveryDate", text(order, "requestedDeliveryDate"),
-                        "totalAmount", text(order, "totalAmount")))
-                .collect(java.util.stream.Collectors.toList());
-
-        // 计算订单总销售额
-        var totalSales = orders.stream()
-                .map(order -> {
-                    try { return new java.math.BigDecimal(text(order, "totalAmount", "0")); }
-                    catch (RuntimeException e) { return java.math.BigDecimal.ZERO; }
-                })
-                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-
-        // 计算本月新增订单数
-        var monthStart = java.time.LocalDate.now().withDayOfMonth(1);
-        long monthlyOrderCount = orders.stream()
-                .filter(order -> {
-                    var created = text(order, "createdAt");
-                    if (created.isBlank()) return false;
-                    try { return java.time.LocalDate.parse(created.substring(0, 10)).isAfter(monthStart.minusDays(1)); }
-                    catch (RuntimeException e) { return false; }
-                }).count();
-
-        Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("stalledOrders", stalledOrders);
-        result.put("deliveryRiskOrders", deliveryRisk);
-        result.put("totalSalesAmount", totalSales.toPlainString());
-        result.put("monthlyOrderCount", monthlyOrderCount);
-        result.put("stalledCount", stalledOrders.size());
-        result.put("deliveryRiskCount", deliveryRisk.size());
-        // 报价到期预警（AI 订单转化延期预警 & 智能挽回）
-        List<Map<String, Object>> riskyQuotes = new java.util.ArrayList<>();
-        try {
-            var conn = dataSource.getConnection();
-            try (var ps = conn.prepareStatement(
-                    "SELECT quote_no, customer_name, valid_until, total_amount, status FROM sales_quote " +
-                    "WHERE tenant_id = ? AND status IN ('ACTIVE','EXPIRING','EXPIRED') " +
-                    "AND converted_order_id IS NULL " +
-                    "AND valid_until <= CURRENT_DATE + 7 " +
-                    "ORDER BY valid_until ASC LIMIT 5")) {
-                ps.setString(1, tenantId);
-                try (var rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        var validUntil = rs.getDate("valid_until").toLocalDate();
-                        var daysLeft = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), validUntil);
-                        var risk = daysLeft < 0 ? "极高流失风险" : daysLeft <= 3 ? "高流失风险" : "中等流失风险";
-                        var row = new java.util.LinkedHashMap<String, Object>();
-                        row.put("quoteNo", rs.getString("quote_no"));
-                        row.put("customerName", rs.getString("customer_name"));
-                        row.put("validUntil", validUntil.toString());
-                        row.put("daysLeft", daysLeft);
-                        row.put("totalAmount", rs.getBigDecimal("total_amount").toPlainString());
-                        row.put("status", rs.getString("status"));
-                        row.put("riskLevel", risk);
-                        riskyQuotes.add(row);
-                    }
-                }
-            } finally {
-                conn.close();
-            }
-        } catch (java.sql.SQLException e) {
-            log.warn("AI洞察查询报价到期失败: {}", e.getMessage());
-        }
-
-        result.put("riskyQuotes", riskyQuotes);
-        result.put("generatedAt", java.time.Instant.now().toString());
-        return result;
-    }
 
 }

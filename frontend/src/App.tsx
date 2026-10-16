@@ -3719,6 +3719,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   // 从后端 API 加载销售订单（替代 localStorage 硬编码数据）
   useEffect(() => {
     if (!formalContext) return;
+    // 后端会话建立后清除 localStorage 原型数据，确保 API 数据不被覆盖
+    localStorage.removeItem(salesWorkspaceStorageKey(currentTenant?.id));
     import('./api/fulfillment').then(({ listFulfillmentOrders }) => {
       listFulfillmentOrders(formalContext)
         .then(res => {
@@ -7778,6 +7780,12 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   const [inboundData, setInboundData] = useState(inv_inboundData);
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const formalInventory = useFormalInventory(formalContext);
+  // 后端会话建立后清除库存主数据 localStorage 原型数据
+  useEffect(() => {
+    if (formalContext?.accessToken) {
+      localStorage.removeItem(`industrial-ai-inventory-master:v1:${currentTenant?.id}`);
+    }
+  }, [formalContext?.accessToken, currentTenant?.id]);
   const stockData = formalInventory.stockData;
   const warehouseList = formalInventory.warehouses.filter(warehouse => warehouse.status === 'active');
   const warehouseLoadError = formalInventory.error;
