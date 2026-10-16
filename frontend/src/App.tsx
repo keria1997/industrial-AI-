@@ -9088,34 +9088,46 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                     trend: metric.tagColor === 'red' ? 'down' : 'up',
                   }))}
                   aiCards={[
-                    {
-                      title: 'AI 呆滞物料分析与调拨建议',
-                      icon: Clock,
-                      tone: 'amber',
-                      subject: '成品：工业控制器顶配版 (FG001)',
-                      badge: '积压风险',
-                      lines: [
-                        <><span className="font-bold text-slate-800">AI 归因：</span>该成品在成品主仓已连续 90 天出库率低于 5%。测算占用资金约 38.5 万元，仓储成本逐日增加。</>,
-                      ],
-                      actions: (
-                        <>
-                          <button onClick={handleProcessDeadStock} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">一键生成降价调拨单</button>
-                          <button onClick={handlePushSalesTask} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">推送销售部去化任务</button>
-                        </>
-                      )
-                    },
-                    {
-                      title: 'AI 动态安全库存水位预警',
-                      icon: AlertTriangle,
-                      tone: 'rose',
-                      subject: '原材料：12层空PCB板 (RM202)',
-                      badge: '低于水位',
-                      lines: [
-                        <><span className="font-bold text-slate-800">库存预警：</span>当前可用量 80 PCS。结合未来一周 MPS 生产计划，预计 3 天后出现 150 PCS 缺口。</>,
-                        <><span className="font-bold text-slate-800">AI 建议：</span>系统已计算经济订货批量，建议立即向采购部推送 500 PCS 的 PR 采购申请。</>,
-                      ],
-                      actions: <button onClick={handleCreatePurchaseRequest} className="ml-auto bg-rose-500 hover:bg-rose-600 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm flex items-center gap-1.5"><FilePlus size={14}/> 生成PR采购申请</button>
-                    }
+                    ...(() => {
+                      // 从库存数据计算呆滞物料（现存>0 且可用量>=安全库存的成品，按现存降序取前1）
+                      const deadStock = inv_stockData
+                        .filter(item => item.kind === '产品' && item.stockQty > 0 && item.availQty >= item.lockQty)
+                        .sort((a, b) => b.stockQty - a.stockQty).slice(0, 1);
+                      return deadStock.map(item => ({
+                        title: 'AI 呆滞物料分析与调拨建议',
+                        icon: Clock,
+                        tone: 'amber',
+                        subject: `成品：${item.name} (${item.id})`,
+                        badge: '积压风险',
+                        lines: [
+                          <><span className="font-bold text-slate-800">AI 归因：</span>该成品在${item.warehouse || '默认仓库'}现存 ${item.stockQty} 件，可用量 ${item.availQty} 件，已超过安全库存 ${item.lockQty} 件，存在积压风险。</>,
+                        ],
+                        actions: (
+                          <>
+                            <button onClick={handleProcessDeadStock} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">一键生成降价调拨单</button>
+                            <button onClick={handlePushSalesTask} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">推送销售部去化任务</button>
+                          </>
+                        )
+                      }));
+                    })(),
+                    ...(() => {
+                      // 从物料数据计算低于安全库存的物料（按缺口降序取前1）
+                      const lowStock = inv_stockData
+                        .filter(item => item.kind === '物料' && item.availQty < item.lockQty)
+                        .sort((a, b) => a.availQty - b.availQty).slice(0, 1);
+                      return lowStock.map(item => ({
+                        title: 'AI 动态安全库存水位预警',
+                        icon: AlertTriangle,
+                        tone: 'rose',
+                        subject: `物料：${item.name} (${item.id})`,
+                        badge: item.availQty < 0 ? '缺货' : '低于水位',
+                        lines: [
+                          <><span className="font-bold text-slate-800">库存预警：</span>当前可用量 ${item.availQty} ${item.unit || 'PCS'}，安全库存 ${item.lockQty} ${item.unit || 'PCS'}。${item.availQty < 0 ? '已出现缺口，需紧急补货。' : '低于安全水位，建议尽快补货。'}</>,
+                          <><span className="font-bold text-slate-800">AI 建议：</span>建议立即向采购部推送 PR 采购申请，建议采购数量 ${Math.max(item.lockQty * 2 - item.availQty, 100)} ${item.unit || 'PCS'}。</>,
+                        ],
+                        actions: <button onClick={handleCreatePurchaseRequest} className="ml-auto bg-rose-500 hover:bg-rose-600 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm flex items-center gap-1.5"><FilePlus size={14}/> 生成PR采购申请</button>
+                      }));
+                    })(),
                   ]}
                   trend={{
                     title: '库存周转与安全水位趋势',
