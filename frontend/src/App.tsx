@@ -546,7 +546,7 @@ const RegisterPage = ({ onBack, onRegistered }) => {
         tenantName: form.tenantName.trim(),
         industry: form.industry,
       });
-      onRegistered(session);
+      onRegistered();
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败，请稍后重试');
     } finally {
@@ -13535,7 +13535,7 @@ export default function App() {
       return <ResetPasswordPage token={passwordResetToken} onBack={() => setLoginPageView('login')} onSuccess={() => { setLoginPageView('login'); showFlowToast('密码已重置，请使用新密码登录', 'success'); }} />;
     }
     if (loginPageView === 'register') {
-      return <RegisterPage onBack={() => setLoginPageView('login')} onRegistered={(session) => { saveAuthenticatedSession(session); setCurrentUser(session); if (isRoleName(session.role)) setActiveRole(session.role); setActiveModule('工作台'); showFlowToast('注册成功，欢迎进入工业AI平台', 'success'); }} />;
+      return <RegisterPage onBack={() => setLoginPageView('login')} onRegistered={() => { setLoginPageView('login'); showFlowToast('注册成功，请使用注册的账号和密码登录', 'success'); }} />;
     }
     return <LoginPage onLogin={handleLogin} onForgotPassword={() => setLoginPageView('forgot')} onRegister={() => setLoginPageView('register')} />;
   }

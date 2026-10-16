@@ -195,7 +195,10 @@ public class AuthController {
                 baselineProvisioning = "pending";
             }
         }
-        Map<String, Object> body = response(issue(sessionUser, "registered-user-v1"), sessionUser, null);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", "注册成功，请使用注册的账号和密码登录");
+        body.put("account", account);
+        body.put("tenantName", tenantName);
         body.put("baselineProvisioning", baselineProvisioning);
         return ResponseEntity.status(201).body(body);
     }

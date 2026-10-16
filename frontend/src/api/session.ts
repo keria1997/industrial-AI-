@@ -187,19 +187,12 @@ export async function registerTenant(input: {
   email: string;
   tenantName: string;
   industry: string;
-}): Promise<AuthenticatedUser> {
-  const response = await apiRequest<SessionResponse>("/api/v1/session/register", null, {
+}): Promise<{ message: string }> {
+  await apiRequest<{ message: string }>("/api/v1/session/register", null, {
     method: "POST",
     body: JSON.stringify(input),
   });
-  return {
-    ...response.user,
-    accessToken: response.accessToken,
-    expiresAt: response.expiresAt,
-    loginAt: new Date().toISOString(),
-    loginType: "account",
-    permissionSource: "工业 AI 平台签名会话",
-  };
+  return { message: "注册成功，请使用注册的账号和密码登录" };
 }
 
 export function loadAuthenticatedSession(): AuthenticatedUser | null {
