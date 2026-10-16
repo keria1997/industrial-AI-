@@ -4634,40 +4634,42 @@ const Prod_DashboardView = ({ onAutoReschedule, onTransferLine, workOrders = [],
             { title: '财务核算闭环', value: String(workOrders.filter(w => w.status === 'COMPLETED').length), unit: '单完工', subtitle: '实际成本核算无偏差', theme: 'emerald', icon: ShieldCheck, trend: 'up' },
         ]}
         aiCards={[
-            ...(() => {
-                const activeWOs = workOrders.filter(w => ['RELEASED','IN_PROGRESS'].includes(w.status));
-                if (!activeWOs.length) return [];
-                return [{
-                    title: 'AI 生产延期预警 & 智能排产',
-                    icon: Bot,
-                    tone: 'purple',
-                    subject: `工单：${activeWOs[0]?.code || activeWOs[0]?.id}`,
-                    badge: '延期风险',
-                    lines: [
-                        <><span className="font-bold text-slate-800">AI 根因分析：</span>关联【设备管理】和【库存管理】数据，综合评估工单逾期风险。</>,
-                    ],
-                    actions: (
-                        <>
-                            <button onClick={onAutoReschedule} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">AI 自动重新排产</button>
-                            <button onClick={onTransferLine} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">转移至备用产线</button>
-                        </>
-                    )
-                }];
-            })(),
-            ...(() => {
-                const atRiskWOs = workOrders.filter(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status));
-                if (!atRiskWOs.length) return [];
-                return [{
-                    title: 'AI 缺料违约双重预警',
-                    icon: AlertTriangle,
-                    tone: 'rose',
-                    subject: `工单：${atRiskWOs[0]?.code || 'N/A'} 交期违约`,
-                    badge: '极高风险',
-                    lines: [
-                        <><span className="font-bold text-slate-800">风险来源：</span>关键物料供应和物流波动导致工单交期存在违约风险。</>,
-                    ],
-                }];
-            })(),
+            {
+                title: 'AI 生产延期预警 & 智能排产',
+                icon: Bot,
+                tone: 'purple',
+                subject: (() => {
+                    const active = workOrders.filter(w => ['RELEASED','IN_PROGRESS'].includes(w.status));
+                    return active.length ? `工单：${active[0]?.code || active[0]?.id}` : '暂无活跃工单';
+                })(),
+                badge: workOrders.some(w => ['RELEASED','IN_PROGRESS'].includes(w.status)) ? '延期风险' : '-',
+                lines: [
+                    workOrders.some(w => ['RELEASED','IN_PROGRESS'].includes(w.status))
+                        ? <><span className="font-bold text-slate-800">AI 根因分析：</span>关联【设备管理】和【库存管理】数据，综合评估工单逾期风险。</>
+                        : <><span className="font-bold text-slate-800">分析：</span>当前没有处于活跃状态的工单。</>
+                ],
+                actions: workOrders.some(w => ['RELEASED','IN_PROGRESS'].includes(w.status)) ? (
+                    <>
+                        <button onClick={onAutoReschedule} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">AI 自动重新排产</button>
+                        <button onClick={onTransferLine} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">转移至备用产线</button>
+                    </>
+                ) : undefined
+            },
+            {
+                title: 'AI 缺料违约双重预警',
+                icon: AlertTriangle,
+                tone: 'rose',
+                subject: (() => {
+                    const atRisk = workOrders.filter(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status));
+                    return atRisk.length ? `工单：${atRisk[0]?.code || 'N/A'} 交期违约` : '暂无风险工单';
+                })(),
+                badge: workOrders.some(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status)) ? '极高风险' : '-',
+                lines: [
+                    workOrders.some(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status))
+                        ? <><span className="font-bold text-slate-800">风险来源：</span>关键物料供应和物流波动导致工单交期存在违约风险。</>
+                        : <><span className="font-bold text-slate-800">分析：</span>当前没有逾期或即将逾期的工单。</>
+                ],
+            },
         ]}
         trend={{
             title: '生产计划达成率与延期风险趋势',
