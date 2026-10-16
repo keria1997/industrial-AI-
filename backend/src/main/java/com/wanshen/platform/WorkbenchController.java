@@ -270,8 +270,38 @@ public class WorkbenchController {
         response.put("todoTotal", todos.size());
         response.put("alertTotal", alerts.size());
         response.put("generatedAt", Instant.now().toString());
+        response.put("dataAsOf", Instant.now().minusSeconds(30).toString());
+        response.put("sourceVersion", "wb-v1");
         response.put("dataScope", Map.of("tenantId", tenantId));
         return response;
+    }
+
+    /**
+     * 近 6 个月订单趋势（销售监控舱趋势图）
+     */
+    @GetMapping("/api/v1/workbench/trend")
+    public Map<String, Object> trend(HttpServletRequest request) {
+        RequestContext context = contexts.from(request);
+        String tenantId = context.tenantId();
+        var now = java.time.LocalDate.now(ZONE);
+        var months = new java.util.ArrayList<Map<String, Object>>();
+        for (int i = 5; i >= 0; i--) {
+            var month = now.minusMonths(i);
+            var start = month.withDayOfMonth(1);
+            var end = month.withDayOfMonth(month.lengthOfMonth());
+            long count = store.orders(context.tenantId()).values().stream()
+                    .filter(order -> {
+                        var created = date(order, "createdAt");
+                        return !created.isBefore(start) && !created.isAfter(end)
+                                && !text(order, "overallStatus").equals("CANCELED");
+                    })
+                    .mapToLong(order -> {
+                        try { return Long.parseLong(text(order, "totalAmount").split("\\.")[0]); }
+                        catch (RuntimeException e) { return 0L; }
+                    }).sum() / 10000;
+            months.add(Map.of("month", month.getMonthValue() + "月", "amount", count));
+        }
+        return Map.of("tenantId", tenantId, "months", months, "generatedAt", Instant.now().toString());
     }
 
     private Metric metric(String key, String title, Object value, String unit, String definition) {
