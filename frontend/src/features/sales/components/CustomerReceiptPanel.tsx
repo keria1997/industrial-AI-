@@ -20,10 +20,7 @@ interface ReceiptRecord {
   signedAt: string;
 }
 
-const SAMPLE_RECEIPTS: ReceiptRecord[] = [
-  { receiptNo: 'CR-001', orderNo: 'SO-2026-003', customer: '比亚迪', signedQty: '15', rejectedQty: '0', damagedQty: '0', status: 'SIGNED', signedAt: '2026-10-11 14:00' },
-  { receiptNo: 'CR-002', orderNo: 'SO-2026-005', customer: '华为技术', signedQty: '10', rejectedQty: '1', damagedQty: '1', status: 'DISPUTED', signedAt: '2026-10-13 09:30' },
-];
+const receipts: ReceiptRecord[] = [];
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: '待签收', color: 'amber' },
@@ -45,5 +42,5 @@ export function CustomerReceiptPanel() {
     { key: 'signedAt', label: '签收时间' },
   ];
 
-  return <DataTable columns={cols} data={SAMPLE_RECEIPTS} emptyText="暂无签收记录" />;
+  return <DataTable columns={cols} data={receipts} emptyText="暂无签收记录" />;
 }
