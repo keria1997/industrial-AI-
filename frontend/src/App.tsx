@@ -15,7 +15,7 @@ import { useFormalProduction } from './features/production/model/useFormalProduc
 import { ProductionReportModal } from './features/production/components/ProductionReportModal';
 import { FormalBomPanel } from './features/production/components/FormalBomPanel';
 import { procurementApi } from './api/procurement';
-import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, registerTenant, requestLoginCaptcha, requestPasswordReset, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
+import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, registerTenant, requestLoginCaptcha, requestPasswordReset, resetPasswordByEmail, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
 import * as financeApi from './api/finance';
 import { messagesApi } from "./api/messages";
 import { personnelApi } from "./api/personnel";
@@ -377,24 +377,43 @@ const LoginShell = ({ children }) => (
 );
 
 const ForgotPasswordPage = ({ onBack, onSuccess }) => {
+  const [step, setStep] = useState<'email' | 'reset'>('email');
   const [email, setEmail] = useState('');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const { count, start } = { count: 0, start: () => {} };
+  const [cooldown, setCooldown] = useState(0);
 
-  const submit = async () => {
+  const sendCode = async () => {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setError('请输入有效邮箱地址'); return; }
     setError('');
-    setSuccess('');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('请输入有效邮箱地址');
-      return;
-    }
     setLoading(true);
     try {
       const result = await requestPasswordReset(email);
-      setSuccess(result.message || '如果该邮箱已注册，重置链接已发送');
+      setSuccess(result.message || '验证码已发送');
+      setStep('reset');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '请求失败，请稍后重试');
+      setError(err instanceof Error ? err.message : '发送失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitReset = async () => {
+    if (!verifyCode || verifyCode.length !== 6) { setError('请输入6位验证码'); return; }
+    if (newPassword.length < 8) { setError('密码至少8位'); return; }
+    if (newPassword !== confirmPassword) { setError('两次密码不一致'); return; }
+    setError('');
+    setLoading(true);
+    try {
+      await resetPasswordByEmail(email, verifyCode, newPassword);
+      setSuccess('密码重置成功，请使用新密码登录');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '重置失败');
     } finally {
       setLoading(false);
     }
@@ -408,19 +427,46 @@ const ForgotPasswordPage = ({ onBack, onSuccess }) => {
         </button>
         <h2 className="text-[22px] font-bold text-center mb-2">忘记密码</h2>
         <p className="text-[13px] text-slate-400 text-center mb-8">请输入您注册时填写的邮箱地址</p>
-        <label className="block mb-5">
-          <span className="block text-[12px] text-slate-300 font-bold mb-2">邮箱 (Email)</span>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder="请输入注册邮箱" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
-        </label>
-        {error && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-rose-400/10 border-rose-400/30 text-rose-200">{error}</div>}
+
         {success && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-emerald-400/10 border-emerald-400/30 text-emerald-200">{success}</div>}
-        <button onClick={submit} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
-          {loading ? '发送中...' : '发送重置链接'}
-        </button>
+        {error && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-rose-400/10 border-rose-400/30 text-rose-200">{error}</div>}
+
+        {step === 'email' && (
+          <div>
+            <label className="block mb-5">
+              <span className="block text-[12px] text-slate-300 font-bold mb-2">邮箱 (Email)</span>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入注册邮箱" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+            </label>
+            <button onClick={sendCode} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
+              {loading ? '发送中...' : '获取验证码'}
+            </button>
+          </div>
+        )}
+
+        {step === 'reset' && (
+          <div className="space-y-4">
+            <label className="block">
+              <span className="block text-[12px] text-slate-300 font-bold mb-2">验证码</span>
+              <input value={verifyCode} onChange={(e) => setVerifyCode(e.target.value)} placeholder="请输入邮箱验证码" maxLength={6} className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+            </label>
+            <label className="block">
+              <span className="block text-[12px] text-slate-300 font-bold mb-2">新密码</span>
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少8位，含大小写和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+            </label>
+            <label className="block">
+              <span className="block text-[12px] text-slate-300 font-bold mb-2">确认新密码</span>
+              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="请再次输入密码" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+            </label>
+            <button onClick={submitReset} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
+              {loading ? '重置中...' : '重置密码'}
+            </button>
+          </div>
+        )}
       </div>
     </LoginShell>
   );
 };
+
 
 const FirstLoginPage = ({ account, tempPassword, onComplete, onLogout }) => {
   const [newPassword, setNewPassword] = useState('');

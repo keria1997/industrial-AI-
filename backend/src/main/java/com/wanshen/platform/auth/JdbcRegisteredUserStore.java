@@ -304,4 +304,15 @@ public class JdbcRegisteredUserStore implements RegisteredUserStore {
         statement.setString(index, value == null ? "" : value);
     }
     private interface SqlBinder { Void bind(PreparedStatement statement) throws SQLException; }
+
+    @Override
+    public void resetPasswordByEmail(String email, String passwordHash) {
+        var userOpt = findByEmail(email);
+        if (userOpt.isEmpty()) throw new RuntimeException('User not found: ' + email);
+        var user = userOpt.get();
+        var updated = new RegisteredUser(user.id(), user.account(), user.name(), user.phone(),
+                user.email(), user.tenantId(), user.tenantName(), user.industry(), user.status(),
+                user.isTenantAdmin(), user.firstLogin(), passwordHash, user.createdAt());
+        save(updated);
+    }
 }

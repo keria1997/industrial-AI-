@@ -141,6 +141,13 @@ export async function loginWithSms(phone: string, code: string): Promise<Authent
 
 export type PasswordResetResult = { message: string };
 
+export async function resetPasswordByEmail(email: string, code: string, newPassword: string): Promise<void> {
+  await apiRequest<void>("/api/v1/session/password/reset", null, {
+    method: "POST",
+    body: JSON.stringify({ email, code, newPassword }),
+  });
+}
+
 export async function requestPasswordReset(email: string): Promise<PasswordResetResult> {
   return apiRequest<PasswordResetResult>("/api/v1/session/password/forgot", null, {
     method: "POST",

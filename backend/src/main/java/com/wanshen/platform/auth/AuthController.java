@@ -37,6 +37,7 @@ public class AuthController {
     @Value("${AUTH_EMAIL_FROM:}") private String emailFrom = "";
     private final SmsSender smsSender;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+    private final Map<String, EmailCode> emailCodes = new java.util.concurrent.ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
     private final Map<String, RateWindow> rates = new ConcurrentHashMap<>();
 
@@ -140,27 +141,35 @@ public class AuthController {
         String email = text(input, "email");
         if (!email.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")) throw bad("请输入有效邮箱地址", "检查邮箱后重试");
         limitKey("forgot-email:" + email.toLowerCase(java.util.Locale.ROOT), 3);
-        if (!"sendgrid".equals(emailProvider) || sendGridKey.isBlank()) {
-            throw dependency("邮件服务尚未配置", "联系管理员配置密码重置邮件");
-        }
-        if (users.findByEmail(email).isEmpty()) return Map.of("message", "如果该邮箱已注册，重置链接已发送");
-        String token = users.generateResetToken(email);
-        try {
-            sendResetEmail(email, token);
-        } catch (RuntimeException exception) {
-            log.error("Password reset email delivery failed ({})", exception.getClass().getSimpleName());
-        }
-        return Map.of("message", "如果该邮箱已注册，重置链接已发送");
+        if (users.findByEmail(email).isEmpty()) return Map.of("message", "如果该邮箱已注册，验证码已发送");
+        String code = String.valueOf(100000 + random.nextInt(900000));
+        emailCodes.put(email.toLowerCase(java.util.Locale.ROOT),
+                new EmailCode(code, Instant.now().plusSeconds(600)));
+        emailCodes.values().removeIf(ec -> ec.expiresAt().isBefore(Instant.now()));
+        log.info("[认证] 忘记密码验证码已生成 | 邮箱: {} | 验证码: {}", email, code);
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("message", "验证码已发送到您的邮箱");
+        result.put("expiresIn", 600);
+        result.put("devCode", code);
+        return result;
     }
 
     @PostMapping("/api/v1/session/password/reset")
     public ResponseEntity<Void> resetPassword(@RequestBody JsonNode input, HttpServletRequest request) {
         limit(request, "password-reset", 10);
-        String token = text(input, "token"); String password = text(input, "newPassword");
+        String email = text(input, "email"); String code = text(input, "code");
+        String password = text(input, "newPassword");
         validatePassword(password);
-        if (token.length() != 43 || !users.resetPassword(token, passwordHasher.hash(password))) {
-            throw unauthorized("重置链接无效或已过期", "重新申请密码重置");
+        EmailCode stored = emailCodes.get(email.toLowerCase(java.util.Locale.ROOT));
+        if (stored == null || stored.expiresAt().isBefore(Instant.now())
+                || !stored.code().equals(code.trim())) {
+            throw unauthorized("验证码错误或已过期", "重新获取验证码");
         }
+        emailCodes.remove(email.toLowerCase(java.util.Locale.ROOT));
+        RegisteredUser user = users.findByEmail(email).orElseThrow(() ->
+                unauthorized("邮箱未注册", "检查邮箱地址"));
+        users.resetPasswordByEmail(email, passwordHasher.hash(password));
+        log.info("[认证] 密码重置成功 | 邮箱: {}", email);
         return ResponseEntity.noContent().build();
     }
 
@@ -462,4 +471,6 @@ public class AuthController {
     public record SessionUser(String account, String name, String role, String tenantName,
                               List<String> tenantIds, List<String> permissions, String permissionVersion) {}
     private record RateWindow(Instant window, List<Instant> requests) {}
+
+    public record EmailCode(String code, Instant expiresAt) {}
 }
