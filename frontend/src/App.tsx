@@ -2134,6 +2134,60 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
           }
         ]}
         trend={{
+          points: (() => {
+            const now = new Date();
+            const months = [];
+            for (let i = 5; i >= 0; i--) {
+              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+              months.push({ key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label: `${d.getMonth()+1}月` });
+            }
+            const monthlyTotals = months.map(m => {
+              const monthOrders = orders.filter(o => {
+                const d = o.createdAt || o.date || '';
+                return d.startsWith(m.key) && o.status !== '已取消';
+              });
+              const total = monthOrders.reduce((s, o) => s + (Number(o.qty) || 0) * (Number(o.unitPrice) || 500), 0);
+              return { ...m, total: Math.round(total / 10000 * 10) / 10 };
+            });
+            const maxVal = Math.max(...monthlyTotals.map(m => m.total), 1);
+            return monthlyTotals.map((m, i) => ({
+              x: i * 18 + 5,
+              y: 90 - (m.total / maxVal) * 70,
+              color: i === monthlyTotals.length - 1 ? '#8b5cf6' : undefined
+            }));
+          })(),
+          labels: (() => {
+            const now = new Date();
+            const labels = [];
+            for (let i = 5; i >= 0; i--) {
+              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+              labels.push(i === 0 ? `${d.getMonth()+1}月(预测)` : `${d.getMonth()+1}月`);
+            }
+            return labels;
+          })(),
+          yAxis: (() => {
+            const totals = orders.filter(o => o.status !== '已取消').map(o => (Number(o.qty) || 0) * (Number(o.unitPrice) || 500) / 10000);
+            const max = Math.max(...totals, 10);
+            return [Math.ceil(max), Math.ceil(max*0.75), Math.ceil(max*0.5), Math.ceil(max*0.25), 0];
+          })(),
+          path: (() => {
+            const now = new Date();
+            const months = [];
+            for (let i = 5; i >= 0; i--) {
+              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+              months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+            }
+            const totals = months.map(m => {
+              const monthOrders = orders.filter(o => {
+                const d = o.createdAt || o.date || '';
+                return d.startsWith(m) && o.status !== '已取消';
+              });
+              return monthOrders.reduce((s, o) => s + (Number(o.qty) || 0) * (Number(o.unitPrice) || 500) / 10000, 0);
+            });
+            const max = Math.max(...totals, 1);
+            const pts = totals.map((t, i) => `${i === 0 ? 'M' : 'C'} ${i * 180 + 50} ${300 - (t / max) * 250}`);
+            return pts.join(', ').replace(/C /g, 'C ').replace(/, C/g, ', C');
+          })(),
           title: 'AI 报价-订单转化趋势与归因分析',
           metric: `${stalledOrders.length}单`,
           metricLabel: '确认滞留',
@@ -2149,9 +2203,7 @@ const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCr
           ],
           primary: '#3b82f6',
           secondary: '#8b5cf6',
-          yAxis: [100, 75, 50, 25, 0],
           gradientId: 'salesTrendGradient',
-          forecastPath: 'M 780 72 C 850 72, 890 114, 950 114',
         }}
       />
       {showQuoteModal && <Sales_QuoteEditModal onClose={() => setShowQuoteModal(false)} onConfirm={handleQuoteGenerated} />}
