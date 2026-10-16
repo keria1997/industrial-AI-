@@ -168,7 +168,8 @@ public class AuthController {
         emailCodes.remove(email.toLowerCase(java.util.Locale.ROOT));
         RegisteredUser user = users.findByEmail(email).orElseThrow(() ->
                 unauthorized("邮箱未注册", "检查邮箱地址"));
-        users.resetPasswordByEmail(email, passwordHasher.hash(password));
+        String resetToken = users.generateResetToken(email);
+        users.resetPassword(resetToken, passwordHasher.hash(password));
         log.info("[认证] 密码重置成功 | 邮箱: {}", email);
         return ResponseEntity.noContent().build();
     }

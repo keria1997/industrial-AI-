@@ -30,5 +30,4 @@ public interface RegisteredUserStore {
     class DuplicatePhoneException extends RuntimeException {}
     class DuplicateEmailException extends RuntimeException {}
 
-    void resetPasswordByEmail(String email, String passwordHash);
 }
