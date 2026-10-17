@@ -195,7 +195,7 @@ export const loadInventoryMasterData = (
 ): InventoryMasterData => {
   try {
     const raw = storage.getItem(inventoryMasterDataStorageKey(tenantId));
-    if (!raw) return createInventoryMasterDataSeed();
+    if (!raw) return { schemaVersion: 1, warehouses: [], products: [], materials: [] };
     const parsed = JSON.parse(raw) as Partial<InventoryMasterData>;
     if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.warehouses)
       || !Array.isArray(parsed.products) || !Array.isArray(parsed.materials)) {
