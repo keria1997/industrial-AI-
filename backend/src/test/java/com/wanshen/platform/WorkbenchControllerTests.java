@@ -68,9 +68,9 @@ class WorkbenchControllerTests {
                 new SupplyChainStore(), new AiStore(), new MessageStore(), contexts, mapper
         );
 
-        Map<String, Object> response = controller.dashboard(request, "老板");
+        Map<String, Object> response = controller.dashboard(request, "老板", null, null);
         assertEquals("老板", response.get("role"));
-        assertEquals(0, response.get("todoTotal"));
+        assertEquals(1, response.get("todoTotal"));
         assertEquals(1, response.get("alertTotal"));
 
         @SuppressWarnings("unchecked")
@@ -80,11 +80,16 @@ class WorkbenchControllerTests {
         assertEquals("1", metric(metrics, "lowStockItems").value());
         assertEquals("50.00", metric(metrics, "attendanceRate").value());
 
-        Map<String, Object> adminResponse = controller.dashboard(request, "管理员");
+        Map<String, Object> adminResponse = controller.dashboard(request, "管理员", null, null);
         assertEquals("管理员", adminResponse.get("role"));
         assertEquals(response.get("metrics"), adminResponse.get("metrics"));
         assertEquals(response.get("todoTotal"), adminResponse.get("todoTotal"));
         assertEquals(response.get("alertTotal"), adminResponse.get("alertTotal"));
+
+        Map<String, Object> unmatchedSearch = controller.dashboard(request, "老板", "NO-MATCH", null);
+        assertEquals(0, unmatchedSearch.get("todoTotal"));
+        Map<String, Object> matchedSearch = controller.dashboard(request, "老板", "AR-2", null);
+        assertEquals(1, matchedSearch.get("todoTotal"));
     }
 
     @Test
@@ -99,7 +104,7 @@ class WorkbenchControllerTests {
                 new SupplyChainStore(), new AiStore(), new MessageStore(), contexts, mapper
         );
 
-        assertThrows(com.wanshen.platform.web.ApiException.class, () -> controller.dashboard(request, "访客"));
+        assertThrows(com.wanshen.platform.web.ApiException.class, () -> controller.dashboard(request, "访客", null, null));
     }
 
     private WorkbenchController.Metric metric(List<WorkbenchController.Metric> values, String key) {
@@ -108,7 +113,7 @@ class WorkbenchControllerTests {
 
     private Receivable receivable(String id, String createdAt, String amount, String status) {
         return new Receivable(id, "TENANT-SHWS", id, "客户", "C-1", "客户一", "AR", "order",
-                "SO-1", "SO-1", "CNY", amount, "0", amount, status, null, null, null,
+                "SO-1", "SO-1", "CNY", amount, "0", amount, status, createdAt, null, null,
                 "", 1, createdAt + "T00:00:00Z", createdAt + "T00:00:00Z", "admin");
     }
 

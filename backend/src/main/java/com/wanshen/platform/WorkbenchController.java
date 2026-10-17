@@ -23,11 +23,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 public class WorkbenchController {
@@ -82,7 +85,9 @@ public class WorkbenchController {
                            String sourceType, String sourceId, String sourceNo, String occurredAt) {}
 
     @GetMapping("/api/v1/workbench/dashboard")
-    public Map<String, Object> dashboard(HttpServletRequest request, @RequestParam String role) {
+    public Map<String, Object> dashboard(HttpServletRequest request, @RequestParam String role,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String sections) {
         RequestContext context = contexts.from(request);
         require(context, "workbench.dashboard.read");
         if (!ROLES.contains(role)) {
@@ -261,14 +266,33 @@ public class WorkbenchController {
                 item.sentAt() == null ? item.createdAt() : item.sentAt()
         )).toList();
 
+        // B-08: 搜索过滤 + sections 分区
+        String keyword = (search != null && !search.isBlank()) ? search.trim().toLowerCase(Locale.ROOT) : null;
+        List<String> sectionList = (sections != null && !sections.isBlank())
+                ? Arrays.asList(sections.split(","))
+                : List.of("todos", "alerts", "activities");
+
+        List<Todo> filteredTodos = keyword == null ? todos : todos.stream().filter(item -> matchesSearch(keyword,
+                item.title(), item.module(), item.sourceType(), item.sourceId(), item.sourceNo(), item.dueDate()))
+                .collect(Collectors.toList());
+        List<Alert> filteredAlerts = keyword == null ? alerts : alerts.stream().filter(item -> matchesSearch(keyword,
+                item.title(), item.detail(), item.module(), item.severity(), item.sourceId(), item.sourceNo()))
+                .collect(Collectors.toList());
+        List<Activity> filteredActivities = keyword == null ? activities : activities.stream().filter(item ->
+                matchesSearch(keyword, item.title(), item.detail(), item.module(), item.sourceType(), item.sourceId(),
+                        item.sourceNo(), item.occurredAt())).collect(Collectors.toList());
+
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("role", role);
         response.put("metrics", metrics);
-        response.put("todos", todos.size() > 20 ? todos.subList(0, 20) : todos);
-        response.put("alerts", alerts.size() > 9 ? alerts.subList(0, 9) : alerts);
-        response.put("activities", activities);
-        response.put("todoTotal", todos.size());
-        response.put("alertTotal", alerts.size());
+        if (sectionList.contains("todos"))
+            response.put("todos", filteredTodos.size() > 20 ? filteredTodos.subList(0, 20) : filteredTodos);
+        if (sectionList.contains("alerts"))
+            response.put("alerts", filteredAlerts.size() > 9 ? filteredAlerts.subList(0, 9) : filteredAlerts);
+        if (sectionList.contains("activities"))
+            response.put("activities", filteredActivities);
+        response.put("todoTotal", filteredTodos.size());
+        response.put("alertTotal", filteredAlerts.size());
         response.put("generatedAt", Instant.now().toString());
         response.put("dataAsOf", Instant.now().minusSeconds(30).toString());
         response.put("sourceVersion", "wb-v1");
@@ -284,6 +308,11 @@ public class WorkbenchController {
 
     private Metric metric(String key, String title, long value, String unit, String definition) {
         return metric(key, title, BigDecimal.valueOf(value), unit, definition);
+    }
+
+    private boolean matchesSearch(String keyword, String... searchableValues) {
+        return Arrays.stream(searchableValues)
+                .anyMatch(value -> value != null && value.toLowerCase(Locale.ROOT).contains(keyword));
     }
 
     private Metric metric(String key, String title, int value, String unit, String definition) {
