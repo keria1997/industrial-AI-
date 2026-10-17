@@ -31,6 +31,7 @@ import {
 } from '../model/inventoryMasterData';
 import { inventoryApi, type ApiContext, type ProductDto, type WarehouseDto } from '../../../api/fulfillment';
 import { normalizeNumericDraft, parseNumericDraft } from '../../../shared/numericDraft';
+import { warehouseAssociation } from '../model/warehouseAssociation';
 
 type MasterTab = 'warehouses' | 'products' | 'materials';
 type MasterEntity = 'warehouse' | 'product' | 'material';
@@ -162,7 +163,7 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
     label: `${item.name} (${item.code || item.id})${item.status === '启用' ? '' : '（已停用）'}`,
     disabled: item.status !== '启用',
   }));
-  if (state.entity === 'product' && draft.defaultWarehouseId
+  if (draft.defaultWarehouseId
     && !productWarehouseOptions.some(item => item.value === draft.defaultWarehouseId)) {
     productWarehouseOptions.push({
       value: String(draft.defaultWarehouseId), label: `当前关联仓库（不可用）：${draft.defaultWarehouseId}`, disabled: true,
@@ -187,11 +188,10 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
       if (!String(draft.specification || '').trim() || !String(draft.unit || '').trim()) return '请填写规格型号和基本单位';
       if (parseNumericDraft(draft.unitPrice, { fractionDigits: 6 }) === null) return '请输入非负价格（可填写 0），最多保留 6 位小数';
       if (parseNumericDraft(draft.safetyStock, { fractionDigits: 6 }) === null) return '请输入非负安全库存（可填写 0），最多保留 6 位小数';
-      if (state.entity === 'product' && draft.defaultWarehouseId
-        && draft.defaultWarehouseId !== state.record.defaultWarehouseId
-        && !data.warehouses.some(item => item.id === draft.defaultWarehouseId && item.status === '启用')) {
-        return '请选择可用的库存仓库';
-      }
+      try {
+        warehouseAssociation(data.warehouses, String(draft.defaultWarehouseId || ''), String(state.record.defaultWarehouseId || ''),
+          state.entity, state.mode === 'create');
+      } catch (cause) { return cause instanceof Error ? cause.message : '请选择可用的库存仓库'; }
     }
     return '';
   };
@@ -244,16 +244,13 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
             <MasterEditorField {...controlProps} label="基本单位" name="unit" />
             <MasterEditorField {...controlProps} label="价格 (元)" name="unitPrice" type="number" />
             <div>
-              {state.entity === 'product' ? <>
+              <>
                 <MasterEditorSelect {...controlProps} label="库存仓库" name="defaultWarehouseId"
-                  options={productWarehouseOptions} placeholder="暂不关联"
-                  placeholderDisabled={state.mode !== 'create' && !!state.record.defaultWarehouseId} />
+                  options={productWarehouseOptions} placeholder={state.entity === 'material' ? '请选择库存仓库（必填）' : '暂不关联'}
+                  placeholderDisabled={state.entity === 'material' || (state.mode !== 'create' && !!state.record.defaultWarehouseId)} />
                 {!warehouses.some(item => item.status === '启用') && !readOnly
-                  && <p className="mt-1.5 text-[12px] leading-5 text-slate-500">暂无可选仓库，{state.record.defaultWarehouseId ? '保留当前关联。' : '可暂不关联。'}</p>}
-              </> : <>
-                <MasterEditorSelect {...controlProps} label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
-                <p className="mt-1.5 text-[12px] leading-5 text-amber-700">默认仓库设置暂不可用，保存物料资料不会修改仓库归属。</p>
-              </>}
+                  && <p className="mt-1.5 text-[12px] leading-5 text-slate-500">暂无可选仓库，{state.record.defaultWarehouseId ? '保留当前关联。' : state.entity === 'material' ? '请先配置授权仓库后再保存。' : '可暂不关联。'}</p>}
+              </>
             </div>
             <MasterEditorField {...controlProps} label="安全库存" name="safetyStock" type="number" />
             {state.entity === 'product'
@@ -410,15 +407,11 @@ export const InventoryMasterDataPanel = ({
       uom: String(draft.unit), unitPrice: String(draft.unitPrice), safetyStockQty: String(draft.safetyStock),
     };
     // UI warehouse code -> server warehouse ID -> inventory API; no stock mutation.
+    const association = warehouseAssociation(data.warehouses, String(draft.defaultWarehouseId || ''),
+      String(editor.record.defaultWarehouseId || ''), editor.entity, editor.mode === 'create');
     if (editor.entity === 'product') {
-      const warehouseChanged = draft.defaultWarehouseId !== editor.record.defaultWarehouseId;
-      const warehouse = data.warehouses.find(item => item.id === draft.defaultWarehouseId);
-      if (draft.defaultWarehouseId && (editor.mode === 'create' || warehouseChanged)
-        && (!warehouse || warehouse.status !== '启用')) throw new Error('请选择可用的库存仓库');
       const values = {
-        ...input, category: String(draft.category || ''),
-        ...(draft.defaultWarehouseId && (editor.mode === 'create' || warehouseChanged)
-          ? { defaultWarehouseId: warehouse!.serverId || warehouse!.id } : {}),
+        ...input, category: String(draft.category || ''), ...association,
       };
       let saved: { product: ProductDto };
       if (editor.mode === 'create') saved = await inventoryApi.createProduct(apiContext, { code: String(draft.id), ...values });
@@ -435,12 +428,18 @@ export const InventoryMasterDataPanel = ({
         return;
       }
     } else {
-      const values = { ...input, materialType: String(draft.materialType || '') };
-      if (editor.mode === 'create') await inventoryApi.createMaterial(apiContext, { code: String(draft.id), ...values });
-      else {
+      const values = { ...input, materialType: String(draft.materialType || ''), ...association };
+      const saved = editor.mode === 'create'
+        ? await inventoryApi.createMaterial(apiContext, { code: String(draft.id), ...values })
+        : await (async () => {
         const current = data.materials.find(item => item.id === editor.record.id);
         if (!current?.serverVersion) throw new Error('物料版本未加载，请刷新后重试');
-        await inventoryApi.updateMaterial(apiContext, current.id, current.serverVersion, { ...values, status: warehouseStatusToServer(String(draft.status)) });
+        return inventoryApi.updateMaterial(apiContext, current.id, current.serverVersion, { ...values, status: warehouseStatusToServer(String(draft.status)) });
+      })();
+      if (values.defaultWarehouseId && saved.material?.defaultWarehouseId !== values.defaultWarehouseId) {
+        commit(data); setEditor(null);
+        onToast('物料资料已提交，但库存仓库关联未确认，请刷新后检查', 'warning');
+        return;
       }
     }
     commit(data);

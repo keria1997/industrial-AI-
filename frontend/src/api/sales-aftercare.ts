@@ -12,11 +12,23 @@ export type RmaReadDto = {
   receivedQty?: string | null;
   qualifiedQty?: string | null;
   status?: string | null;
-  creditArId?: string | null;
-  creditArAmount?: string | null;
+  creditNoteFinanceId?: string | null;
+  creditNoteAmount?: string | null;
   currency?: string | null;
   createdAt?: string | null;
   version?: number | null;
+};
+
+export type CustomerReceiptLineReadDto = {
+  orderLineId?: string | null;
+  outboundId?: string | null;
+  outboundLineId?: string | null;
+  productId?: string | null;
+  productName?: string | null;
+  uom?: string | null;
+  signedQty?: string | null;
+  rejectedQty?: string | null;
+  damagedQty?: string | null;
 };
 
 export type CustomerReceiptReadDto = {
@@ -25,9 +37,7 @@ export type CustomerReceiptReadDto = {
   orderId?: string | null;
   orderNo?: string | null;
   customerName?: string | null;
-  signedQty?: string | null;
-  rejectedQty?: string | null;
-  damagedQty?: string | null;
+  lines?: CustomerReceiptLineReadDto[] | null;
   receiptStatus?: string | null;
   status?: string | null;
   signedAt?: string | null;

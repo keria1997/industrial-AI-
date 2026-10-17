@@ -15,7 +15,7 @@ export type SupplierDto = {
   type: string; category: string; qualification: string;
   rating: SupplierRating; riskLevel: SupplierRiskLevel;
   owner: string; cooperationCount: number; totalAmount: string;
-  admittance: string; status: SupplierStatus;
+  admittance: boolean; status: SupplierStatus;
   metadata: Record<string, unknown>; remark: string;
   version: number; createdAt: string; updatedAt: string; createdBy: string;
 };
@@ -77,9 +77,9 @@ export const supplyChainApi = {
   },
   getSupplier: (context: ApiContext, id: string) =>
     apiRequest<SupplierDto>(`/api/v1/supply-chain/suppliers/${id}`, context),
-  createSupplier: (context: ApiContext, input: { supplierNo: string; name: string; creditCode?: string; type?: string; category?: string; qualification?: string; rating?: string; riskLevel?: string; owner?: string; admittance?: string; remark?: string }) =>
+  createSupplier: (context: ApiContext, input: { supplierNo: string; name: string; creditCode?: string; type?: string; category?: string; qualification?: string; rating?: string; riskLevel?: string; owner?: string; admittance?: boolean; remark?: string }) =>
     apiRequest<{ supplier: SupplierDto }>('/api/v1/supply-chain/suppliers', context, { method: 'POST', idempotencyKey: key(`sc-sup-create:${input.supplierNo}`), body: JSON.stringify(input) }),
-  updateSupplier: (context: ApiContext, supplier: SupplierDto, input: Partial<{ name: string; creditCode: string; type: string; category: string; qualification: string; rating: string; riskLevel: string; owner: string; status: string; admittance: string; remark: string }>) =>
+  updateSupplier: (context: ApiContext, supplier: SupplierDto, input: Partial<{ name: string; creditCode: string; type: string; category: string; qualification: string; rating: string; riskLevel: string; owner: string; status: string; admittance: boolean; remark: string }>) =>
     apiRequest<{ supplier: SupplierDto }>(`/api/v1/supply-chain/suppliers/${supplier.id}`, context, { method: 'PATCH', expectedVersion: supplier.version, idempotencyKey: key(`sc-sup-update:${supplier.id}`), body: JSON.stringify(input) }),
   deleteSupplier: (context: ApiContext, supplier: SupplierDto) =>
     apiRequest<{ deleted: boolean }>(`/api/v1/supply-chain/suppliers/${supplier.id}`, context, { method: 'DELETE', expectedVersion: supplier.version, idempotencyKey: key(`sc-sup-delete:${supplier.id}`) }),

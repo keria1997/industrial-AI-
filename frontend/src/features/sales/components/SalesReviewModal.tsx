@@ -3,16 +3,17 @@ import { useBusinessCommand } from '../../../hooks/useBusinessCommand';
 
 type Props = {
   orderNo: string;
+  commandScope: string;
   onClose: () => void;
   onDecision: (decision: 'APPROVE' | 'RETURN' | 'REJECT', comment: string, key: string) => Promise<unknown>;
   onSaved: () => void;
 };
 
-export function SalesReviewModal({ orderNo, onClose, onDecision, onSaved }: Props) {
+export function SalesReviewModal({ orderNo, commandScope, onClose, onDecision, onSaved }: Props) {
   const [decision, setDecision] = useState<'APPROVE' | 'RETURN' | 'REJECT'>('APPROVE');
   const [comment, setComment] = useState('');
   const [validation, setValidation] = useState('');
-  const command = useBusinessCommand();
+  const command = useBusinessCommand(commandScope);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (decision !== 'APPROVE' && !comment.trim()) { setValidation('退回或拒绝必须填写原因'); return; }

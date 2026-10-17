@@ -1,7 +1,12 @@
 export type ApiContext = {
   tenantId: string;
   accessToken: string;
+  permissionVersion?: string;
+  scopeVersion?: string;
 };
+
+export const apiContextScope = (context: ApiContext | null | undefined): string =>
+  context ? JSON.stringify([context.tenantId, context.accessToken, context.permissionVersion, context.scopeVersion]) : '';
 
 export type ApiFieldError = { field: string; message: string };
 
@@ -38,11 +43,11 @@ export async function apiRequest<T>(path: string, context: ApiContext | null, op
   };
   const response = await fetch(path, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
-  const value = contentType.includes("application/json") ? await response.json() : null;
+  const value = response.status !== 204 && contentType.includes("application/json") ? await response.json() : null;
   if (!response.ok) {
     const error = value?.error ?? {};
-    if (response.status === 401 && typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("industrial-ai-session-expired"));
+    if (response.status === 401 && context && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("industrial-ai-session-expired", { detail: context }));
     }
     if (response.status === 403 && context && typeof window !== "undefined" && !path.startsWith('/api/v1/production/readiness')) {
       window.dispatchEvent(new CustomEvent("industrial-ai-permissions-invalid", { detail: context }));

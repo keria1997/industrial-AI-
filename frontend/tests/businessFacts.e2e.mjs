@@ -69,7 +69,8 @@ try {
       if (path.endsWith('/ai/action-plans')) return page(data ? [{ id: 'P1', title: '接口审计记录', status: 'rejected', submittedBy: '接口提交人', approvalPath: '接口审批路径' }] : []);
       if (path.endsWith('/ai/insights')) return page(data ? [{ id: 'I1', title: '接口聚合预警', summary: 'API 风险摘要', severity: 'warning', sourceType: '接口来源', sourceId: 'API-SOURCE' }] : []);
       if (path.endsWith('/sales/ai-insights')) return route.fulfill({ json: {
-        availability: data ? 'AVAILABLE' : 'EMPTY', dataAsOf: new Date().toISOString(), sourceVersion: 'controlled-1', currency: 'CNY',
+        availability: data ? 'AVAILABLE' : 'EMPTY', metricCompleteness: 'COMPLETE',
+        dataAsOf: new Date().toISOString(), sourceVersion: 'controlled-1', currency: 'CNY',
         monthlyOrderCount: data ? 5 : 0, totalSalesAmount: data ? '123450' : '0', stalledCount: data ? 2 : 0,
         deliveryRiskCount: data ? 1 : 0, deliveryRiskOrders: data ? [{ orderId: 'API-ORDER-RISK' }] : [], stalledOrders: [],
       } });
@@ -209,9 +210,10 @@ try {
     console.log(`PASS ${mode}: schedule frame and formal work-order cost selection`);
 
     await go('finance');
-    await metric('未结应收 (AR)', mode === 'missing' || mode === 'unavailable' ? '-' : known ? '12.3' : '0.0');
-    await metric('未结应付 (AP)', mode === 'missing' || mode === 'unavailable' ? '-' : '0.0');
-    console.log(`PASS ${mode}: financial missing values are distinct from confirmed zero`);
+    // The aggregate contract has no currency provenance, so even numeric sums stay unavailable.
+    await metric('未结应收 (AR)', '-');
+    await metric('未结应付 (AP)', '-');
+    console.log(`PASS ${mode}: unqualified financial aggregates stay unavailable instead of assuming CNY`);
 
     await go('sales');
     await metric('生效报价数', '-');

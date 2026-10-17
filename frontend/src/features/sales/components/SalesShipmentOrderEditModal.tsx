@@ -31,6 +31,7 @@ type Props = {
   mode?: 'confirm' | 'shipment';
   pending?: boolean;
   products?: Array<{ id: string; name?: string; warehouseId?: string; availQty?: number }>;
+  warehouses?: Array<{ id: string; code?: string; name: string }>;
   apiContext?: ApiContext | null;
   onClose: () => void;
   onSubmit: (order: SalesShipmentOrderDraft) => void | Promise<void>;
@@ -44,56 +45,38 @@ const formatMoney = (value: number | string | undefined) =>
 
 const parseMoney = (value: string) => Number(value.replace(/[^\d.-]/g, '')) || 0;
 
-const WAREHOUSE_NAMES: Record<string, string> = {
-  'WH-FG-01': '成品主仓',
-  'WH-FG-02': '成品副仓',
-  'WH-RM-01': '一号原材料仓',
-  'WH-RM-02': '二号原材料仓',
-  'WH-WIP-01': '线边暂存仓',
-  'WH-WIP-02': '组装线边仓',
-  'WH-TR-01': '去化中转仓',
-};
-
 const normalizedDate = (value?: string) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : '';
 
-export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending = false, products = [], apiContext, onClose, onSubmit }: Props) => {
+export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending = false, warehouses = [], apiContext, onClose, onSubmit }: Props) => {
   const [deliveryDate, setDeliveryDate] = useState(() => normalizedDate(order.deliveryDate));
   const [error, setError] = useState('');
   const deliveryDateRef = useRef<HTMLInputElement>(null);
   const quantity = Number(order.qty || 0);
   const unitPrice = Number(order.unitPrice || parseMoney(order.amount) / Math.max(1, quantity));
-  const availableStock = (() => {
-    const pn = (order.lines?.[0]?.productName || order.productName || '');
-    const pid = (order.lines?.[0]?.productId || order.productId || '');
-    const ext = !pid && pn ? (pn.split(/\s+/)[0] || '').trim() : '';
-    const eff = pid || ext;
-    let m = eff ? products.find(p => p.id === eff) : undefined;
-    if (!m && pn) m = products.find(p => pn.indexOf(p.name || '') >= 0);
-    return m ? Number(m.availQty ?? 0) : Number(order.availableStock || 0);
-  })();
-  const shortage = Math.max(0, quantity - availableStock);
   const productLines = order.lines && order.lines.length > 0
     ? order.lines
     : order.productName ? [{ productName: order.productName, spec: order.spec, unit: order.unit, qty: order.qty, unitPrice: order.unitPrice }] : [];
-  const [formalStock, setFormalStock] = useState<Record<number, string>>({});
-  const stockRequests = JSON.stringify(productLines.map(line => ({
-    warehouseId: line.warehouseId || order.fulfillmentWarehouseId || order.warehouse || 'WH-FG-01',
-    productId: line.productId || order.productId || products.find(product => product.name && line.productName?.includes(product.name))?.id
-      || line.productName?.split(/\s+/)[0] || '',
-  })));
+  const [formalStock, setFormalStock] = useState<{ identity: string; values: Record<number, string> }>({ identity: '', values: {} });
+  const stockRequests = JSON.stringify(productLines.map(line => {
+    const reference = line.warehouseId || order.fulfillmentWarehouseId || order.warehouse;
+    const warehouse = warehouses.find(item => item.id === reference || item.code === reference);
+    return { warehouseId: warehouse?.id || '', productId: line.productId || order.productId || '' };
+  }));
+  const stockIdentity = JSON.stringify([apiContext?.tenantId, apiContext?.accessToken, stockRequests]);
   useEffect(() => {
     let cancelled = false;
-    setFormalStock({});
+    setFormalStock({ identity: stockIdentity, values: {} });
     if (!apiContext) return;
     const requests: { warehouseId: string; productId: string }[] = JSON.parse(stockRequests);
     void Promise.all(requests.map(async ({ warehouseId, productId }, index) => {
+      if (!warehouseId || !productId) return [index, '来源资料缺失或无权限'] as const;
       try {
         const facts = await inventoryApi.getAvailability(apiContext, warehouseId, [productId]);
         return [index, facts.find(fact => fact.productId === productId)?.fulfillableQty ?? '未提供'] as const;
       } catch { return [index, '读取失败'] as const; }
-    })).then(entries => { if (!cancelled) setFormalStock(Object.fromEntries(entries)); });
+    })).then(entries => { if (!cancelled) setFormalStock({ identity: stockIdentity, values: Object.fromEntries(entries) }); });
     return () => { cancelled = true; };
-  }, [apiContext?.tenantId, apiContext?.accessToken, stockRequests]);
+  }, [stockIdentity]);
   const originalAmount = useMemo(
     () => formatMoney(order.originalAmount ?? (productLines.length > 0 ? productLines.reduce((sum, l) => sum + Number(l.qty || (l as any).quantity || 0) * Number(l.unitPrice || 0), 0) : quantity * unitPrice)),
     [order.originalAmount, quantity, unitPrice, productLines],
@@ -202,22 +185,16 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
                     const linePrice = Number(line.unitPrice || 0);
                     const lineAmount = lineQty * linePrice;
                     const lineWarehouseId = (line as any).warehouseId || (order as any).warehouse || (order as any).fulfillmentWarehouseId || '';
-                    const lineWarehouseName = WAREHOUSE_NAMES[lineWarehouseId] || lineWarehouseId || '成品主仓';
-                    const lineProductName = line.productName || (order as any).productName || '';
-                    const rawProductId = (line as any).productId || (order as any).productId || '';
-                    const extractedProductId = !rawProductId && lineProductName ? (lineProductName.split(/\s+/)[0] || '').trim() : '';
-                    const effectiveProductId = rawProductId || (extractedProductId && products.find((p) => p.id === extractedProductId) ? extractedProductId : '');
-                    let matchedStock = effectiveProductId ? products.find((p) => p.id === effectiveProductId && (!lineWarehouseId || p.warehouseId === lineWarehouseId)) : undefined;
-                    if (!matchedStock && effectiveProductId) matchedStock = products.find((p) => p.id === effectiveProductId);
-                    if (!matchedStock && lineProductName) matchedStock = products.find((p) => lineProductName.indexOf(p.name || '') >= 0 || p.name === lineProductName);
-                    const lineAvail = matchedStock ? Number(matchedStock.availQty ?? 0) : ((line as any).available != null ? Number((line as any).available) : (idx === 0 ? availableStock : ((line as any).availableStock != null ? Number((line as any).availableStock) : null)));
+                    const warehouse = warehouses.find(item => item.id === lineWarehouseId || item.code === lineWarehouseId);
+                    const lineWarehouseName = warehouse ? `${warehouse.name} (${warehouse.code || warehouse.id})`
+                      : lineWarehouseId ? `仓库不可用 (${lineWarehouseId})` : '仓库未提供';
                     return (
                       <tr key={idx}>
                         <td className="px-4 py-4 text-slate-600">{lineWarehouseName}</td>
                         <td className="px-4 py-4 font-bold text-slate-800">{line.productName || '-'}</td>
                         <td className="px-4 py-4 text-slate-600">{line.spec || '-'}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{line.unit || '件'}</td>
-                        <td className={`px-4 py-4 text-center font-mono font-bold ${apiContext ? 'text-slate-700' : idx === 0 && shortage > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{apiContext ? formalStock[idx] ?? '读取中' : lineAvail != null ? lineAvail : '-'}</td>
+                        <td className="px-4 py-4 text-center text-slate-600">{line.unit || '单位未提供'}</td>
+                        <td className="px-4 py-4 text-center font-mono font-bold text-slate-700">{apiContext ? (formalStock.identity === stockIdentity ? formalStock.values[idx] : undefined) ?? '读取中' : '尚未获取'}</td>
                         <td className="px-4 py-4 text-center font-mono font-bold text-slate-700">{lineQty}</td>
                         <td className="px-4 py-4 text-right font-mono text-slate-700">{formatMoney(linePrice)}</td>
                         <td className="px-4 py-4 text-right font-mono font-bold text-slate-800">{formatMoney(lineAmount)}</td>

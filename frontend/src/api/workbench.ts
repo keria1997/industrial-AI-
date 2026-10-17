@@ -59,6 +59,7 @@ export type WorkbenchDashboardDto = {
 };
 
 export type WorkbenchQuery = {
+  date?: string;
   sections?: 'metrics' | 'todos,alerts,activities';
   search?: string;
   eventScope?: 'KEY' | 'ALL';

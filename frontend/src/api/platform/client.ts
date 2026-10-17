@@ -298,8 +298,8 @@ export type AuditQuery = {
   module?: string;
   result?: AuditResult;
   operator?: string;
-  startDate?: string;
-  endDate?: string;
+  startTime?: string;
+  endTime?: string;
   page?: number;
   pageSize?: number;
 };
@@ -581,8 +581,8 @@ export const platformApi = {
     if (query?.module) params.set("module", query.module);
     if (query?.result) params.set("result", query.result);
     if (query?.operator) params.set("operator", query.operator);
-    if (query?.startDate) params.set("startDate", query.startDate);
-    if (query?.endDate) params.set("endDate", query.endDate);
+    if (query?.startTime) params.set("startTime", query.startTime);
+    if (query?.endTime) params.set("endTime", query.endTime);
     params.set("page", String(query?.page ?? 1));
     params.set("pageSize", String(query?.pageSize ?? 50));
     const search = params.toString();

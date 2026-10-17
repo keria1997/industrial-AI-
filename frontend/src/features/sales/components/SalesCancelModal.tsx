@@ -3,16 +3,17 @@ import { useBusinessCommand } from '../../../hooks/useBusinessCommand';
 
 type Props = {
   orderNo: string;
+  commandScope: string;
   onClose: () => void;
   onCancel: (reason: string, key: string) => Promise<unknown>;
   onSaved: () => void;
 };
 
 // All order-cancellation entry points use the same reason and retry contract.
-export function SalesCancelModal({ orderNo, onClose, onCancel, onSaved }: Props) {
+export function SalesCancelModal({ orderNo, commandScope, onClose, onCancel, onSaved }: Props) {
   const [reason, setReason] = useState('');
   const [validation, setValidation] = useState('');
-  const command = useBusinessCommand();
+  const command = useBusinessCommand(commandScope);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!reason.trim()) { setValidation('请填写取消原因'); return; }

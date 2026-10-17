@@ -7,7 +7,7 @@ import { ApiDataState } from '../../../components/ApiDataState';
 import { DataTable, type Column } from '../../../components/DataTable';
 import { PageNavigation } from '../../../components/PageNavigation';
 import { useApiResource } from '../../../hooks/useApiResource';
-import { useBusinessCommand } from '../../../hooks/useBusinessCommand';
+import { businessCommandScope, useBusinessCommand } from '../../../hooks/useBusinessCommand';
 import { requireApiPage } from '../../../shared/apiCollection';
 import { validatePositiveAmount } from '../../../shared/commandValidation';
 
@@ -59,7 +59,8 @@ function ExecutionAction({ action, context, onClose, onSaved }: { action: Action
   const [reference, setReference] = useState('');
   const [result, setResult] = useState<'ACCEPTED' | 'REJECTED'>('ACCEPTED');
   const [validation, setValidation] = useState('');
-  const command = useBusinessCommand();
+  const command = useBusinessCommand(businessCommandScope(context,
+    action.kind === 'process' ? action.ret.id : action.receipt.id, `procurement-${action.kind}`));
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (action.kind === 'return') {

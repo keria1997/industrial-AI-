@@ -169,10 +169,10 @@ export const aiApi = {
     if (filter) for (const [k, v] of Object.entries(filter)) if (v !== undefined && v !== null) params.append(k, String(v));
     return apiRequest<{ items: ActionPlanDto[]; total: number }>(`/api/v1/ai/action-plans?${params.toString()}`, context);
   },
-  submitActionPlan: (context: ApiContext, input: { messageId: string; conversationId: string; actionPlan: ActionPlanData }) =>
-    apiRequest<{ actionPlan: ActionPlanDto }>('/api/v1/ai/action-plans/submit', context, { method: 'POST', idempotencyKey: key('ai-action-submit'), body: JSON.stringify(input) }),
-  reviewActionPlan: (context: ApiContext, actionPlanId: string, decision: 'approve' | 'reject', reason?: string) =>
-    apiRequest<{ actionPlanId: string; status: string }>(`/api/v1/ai/action-plans/${actionPlanId}/review`, context, { method: 'POST', idempotencyKey: key(`ai-action-review:${actionPlanId}`), body: JSON.stringify({ decision, reason }) }),
+  submitActionPlan: (context: ApiContext, input: { messageId: string; conversationId: string; actionPlan: ActionPlanData }, idempotencyKey?: string) =>
+    apiRequest<{ actionPlan: ActionPlanDto }>('/api/v1/ai/action-plans/submit', context, { method: 'POST', idempotencyKey: idempotencyKey ?? key('ai-action-submit'), body: JSON.stringify(input) }),
+  reviewActionPlan: (context: ApiContext, actionPlanId: string, version: number, decision: 'approve' | 'reject', reason?: string, idempotencyKey?: string) =>
+    apiRequest<{ actionPlanId: string; status: string }>(`/api/v1/ai/action-plans/${encodeURIComponent(actionPlanId)}/review`, context, { method: 'POST', expectedVersion: version, idempotencyKey: idempotencyKey ?? key(`ai-action-review:${actionPlanId}`), body: JSON.stringify({ decision, reason }) }),
 
   // ===== Dashboard =====
   getDashboard: (context: ApiContext) =>

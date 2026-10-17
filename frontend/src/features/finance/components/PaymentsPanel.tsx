@@ -7,7 +7,7 @@ import { ApiDataState } from '../../../components/ApiDataState';
 import { DataTable, type Column } from '../../../components/DataTable';
 import { PageNavigation } from '../../../components/PageNavigation';
 import { useApiResource } from '../../../hooks/useApiResource';
-import { useBusinessCommand } from '../../../hooks/useBusinessCommand';
+import { businessCommandScope, useBusinessCommand } from '../../../hooks/useBusinessCommand';
 import { formatAmount } from '../../../shared/format';
 
 type Props = { apiContext: ApiContext | null; permissions?: string[]; actorId?: string; onChanged: () => void };
@@ -17,7 +17,7 @@ export function PaymentsPanel({ apiContext, permissions, actorId, onChanged }: P
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
   const [selected, setSelected] = useState<Payment | null>(null);
-  const command = useBusinessCommand(selected?.id || '');
+  const command = useBusinessCommand(businessCommandScope(apiContext, selected?.id || '', 'payment-confirm'));
   const load = useCallback((context: ApiContext) => listPayments(context, { page, pageSize: 20, search }), [page, search]);
   const records = useApiResource<{ items: Payment[]; total: number }>(apiContext, load);
   const confirm = async () => {
@@ -35,7 +35,7 @@ export function PaymentsPanel({ apiContext, permissions, actorId, onChanged }: P
     { key: 'counterpartyName', label: '往来单位' },
     { key: 'amount', label: '金额', align: 'right', render: row => `${formatAmount(row.amount)} ${row.currency}` },
     { key: 'paymentDate', label: '日期' },
-    { key: 'status', label: '状态', render: row => ({ pending: '待确认', PENDING_CONFIRM: '待确认', done: '已确认', CONFIRMED: '已确认', void: '已作废' }[row.status] || row.status) },
+    { key: 'status', label: '状态', render: row => ({ pending: '待确认', PENDING_CONFIRM: '待确认', done: '已确认', CONFIRMED: '已确认', void: '已作废', REVERSED: '已冲销', reversed: '已冲销' }[row.status] || row.status) },
     { key: 'createdBy', label: '登记人' },
     { key: 'actions', label: '操作', render: row => {
       const allowed = hasPermission(permissions, 'finance.payment.confirm');

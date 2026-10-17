@@ -20,7 +20,8 @@ export function SalesMonitorFacts({ apiContext, Cabin }: { apiContext: ApiContex
   const source = insights.data;
   const verifiedSource = ['AVAILABLE', 'EMPTY'].includes(source?.availability || '')
     && !!source?.dataAsOf && Number.isFinite(Date.parse(source.dataAsOf)) && !!source?.sourceVersion?.trim();
-  const facts = verifiedSource ? source : null;
+  const incomplete = source?.metricCompleteness === 'INCOMPLETE';
+  const facts = verifiedSource && source?.metricCompleteness === 'COMPLETE' ? source : null;
   const unverified = !!source && !verifiedSource;
   const risks = Array.isArray(facts?.deliveryRiskOrders) ? facts.deliveryRiskOrders : [];
   const customerProfilesComplete = customers.data != null && customers.data.every(customer => {
@@ -35,12 +36,13 @@ export function SalesMonitorFacts({ apiContext, Cabin }: { apiContext: ApiContex
   });
   const customerState = customers.loading ? '加载中' : customers.error ? '数据加载失败'
     : !customerProfilesComplete ? '数据不完整' : dormant.length ? '建议跟进' : '暂未发现';
-  const riskState = insights.loading ? '加载中' : insights.error ? '数据加载失败' : unverified ? '数据待核实'
+  const riskState = insights.loading ? '加载中' : insights.error ? '数据加载失败' : incomplete ? '数据不完整' : unverified || (source && !facts) ? '数据待核实'
     : facts?.deliveryRiskCount === 0 ? '暂无 AI 预警'
       : facts?.deliveryRiskCount > 0 ? '交期预警' : '尚未获取预警结果';
   return <>
     {(insights.loading || insights.error) && <ApiDataState loading={insights.loading} error={insights.error} onRetry={insights.reload} />}
     {unverified && <div role="status" className="flex items-center justify-between gap-3 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><span>销售统计数据待核实：来源尚未提供有效的可用状态、事实时间或版本，暂不展示金额、数量和无风险结论。</span><button type="button" onClick={() => void insights.reload()} className="shrink-0 underline">重新加载</button></div>}
+    {incomplete && <div role="status" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">销售来源数据不完整，暂不展示全量统计或无风险结论，请补齐来源事实后重新查询。</div>}
     {(customers.loading || customers.error) && <ApiDataState loading={customers.loading} error={customers.error} onRetry={customers.reload} />}
     <Cabin
       metrics={[

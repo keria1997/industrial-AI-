@@ -20,8 +20,8 @@ let salesDecision = null;
 let salesCanceled = false;
 let cancelFails = true;
 let aftercareMode = 'data';
-const rma = { id: 'rma-db', rmaNo: 'RMA-API-001', orderId: 'stable-so', orderNo: 'SO-API-001', productName: '接口产品', requestedQty: '3', approvedQty: '0', qualifiedQty: null, status: 'REQUESTED', creditArId: 'credit-reference', creditArAmount: '-99.00', createdAt: '2026-10-17T00:00:00Z' };
-const customerReceipt = { id: 'receipt-db', receiptNo: 'CR-API-001', orderId: 'stable-so', orderNo: 'SO-API-001', customerName: '接口签收客户', signedQty: '0', rejectedQty: '2', damagedQty: null, receiptStatus: 'DISPUTED' };
+const rma = { id: 'rma-db', rmaNo: 'RMA-API-001', orderId: 'stable-so', orderNo: 'SO-API-001', productName: '接口产品', requestedQty: '3', approvedQty: '0', qualifiedQty: null, status: 'REQUESTED', creditNoteFinanceId: 'credit-reference', creditNoteAmount: '-99.00', createdAt: '2026-10-17T00:00:00Z' };
+const customerReceipt = { id: 'receipt-db', receiptNo: 'CR-API-001', orderId: 'stable-so', orderNo: 'SO-API-001', customerName: '接口签收客户', lines: [{ outboundLineId: 'OUT-L1', signedQty: '0', rejectedQty: '2', damagedQty: null, uom: 'PCS' }], receiptStatus: 'DISPUTED' };
 const platform = {
   tenant: { id: 'TENANT-SHWS', code: 'SHWS', name: '接口企业', status: 'running' },
   roles: [{ id: 'role1', name: '接口角色', code: 'API_ROLE', description: '接口权限测试', status: 'enabled', dataScope: 'tenant', scopeValues: [], version: 7 }],
@@ -354,10 +354,11 @@ try {
       const cells = region.getByRole('row').nth(1).getByRole('cell');
       assert.equal(await cells.nth(4).innerText(), '0');
       assert.equal(await cells.nth(6).innerText(), '-');
+      assert.equal(await cells.nth(8).innerText(), 'credit-reference');
       assert.equal(await cells.nth(9).innerText(), '-');
     } else {
       await region.getByText('争议中', { exact: true }).waitFor();
-      assert.equal(await region.getByRole('row').nth(1).getByRole('cell').nth(3).innerText(), '0');
+      assert.equal(await region.getByRole('row').nth(1).getByRole('cell').nth(3).innerText(), 'OUT-L1：0 PCS');
     }
     await page.screenshot({ path: `/tmp/erp-remediation/${tab}-desktop.png`, fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });

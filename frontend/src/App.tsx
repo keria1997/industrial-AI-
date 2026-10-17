@@ -17,10 +17,15 @@ import { ProductionReportModal } from './features/production/components/Producti
 import { FormalBomPanel } from './features/production/components/FormalBomPanel';
 import { procurementApi } from './api/procurement';
 import { purchaseOrderReadOnlyReason, purchaseRequestReadOnlyReason } from './features/procurement/procurementContract';
-import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, registerTenant, requestLoginCaptcha, requestPasswordReset, resetPasswordByEmail, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
+import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, logoutSession, registerTenant, requestLoginCaptcha, requestPasswordReset, resetPasswordByEmail, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
+import { leavePasswordResetRoute, readPasswordResetRoute } from './app/passwordResetRoute';
 import * as financeApi from './api/finance';
+import { FinanceClosurePanel } from './features/finance/components/FinanceClosurePanel';
+import { financeAmount, financeDocumentStatus, positiveFinanceAmount } from './features/finance/financePresentation';
+import { formatAmount } from './shared/format';
 import { messagesApi } from "./api/messages";
 import { useApiResource } from './hooks/useApiResource';
+import { businessCommandScope, useBusinessCommand } from './hooks/useBusinessCommand';
 import { loadApiCollection, requireApiPage } from './shared/apiCollection';
 import { SalesMonitorFacts } from './features/sales/components/SalesMonitorFacts';
 import { ProductionScheduleView } from './features/production/components/ProductionScheduleView';
@@ -77,7 +82,8 @@ import { confirmSalesOrderContents, mergeFormalSalesOrders, requestSalesShipment
 import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
 import { salesNumericDraft, salesLineDraftAmount } from './features/sales/model/salesNumericDraft';
 import { normalizeNumericDraft, parseNumericDraft } from './shared/numericDraft';
-import { createQuickSalesOrder } from './features/sales/model/quickSalesOrder';
+import { quickSalesOrderInput } from './features/sales/model/quickSalesOrder';
+import { ProductionWorkCenterModal } from './features/production/components/ProductionWorkCenterModal';
 import { mapSalesCustomer, saveSalesCustomer } from './features/sales/model/formalCustomer';
 import {
   createInventoryTabUrl,
@@ -164,7 +170,7 @@ const monitorToneMap = {
   slate: { shell: 'bg-slate-50 text-slate-600 border-slate-100', button: 'bg-slate-800 hover:bg-slate-900 text-white', soft: '#f8fafc', stroke: '#64748b' },
 };
 
-const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
+const LoginPage = ({ onLogin, onForgotPassword, onRegister, notice = '' }) => {
   const [mode, setMode] = useState('account');
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
@@ -180,17 +186,28 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
   const [smsSending, setSmsSending] = useState(false);
   const [smsNotice, setSmsNotice] = useState('');
   const [smsCountdown, setSmsCountdown] = useState(0);
+  const loginPending = useRef(false);
+  const smsPending = useRef(false);
+  const captchaRevision = useRef(0);
+  const loginActive = useRef(true);
+  useEffect(() => {
+    loginActive.current = true;
+    return () => { loginActive.current = false; captchaRevision.current += 1; };
+  }, []);
 
   const refreshCaptcha = async (reportError = true) => {
+    const revision = ++captchaRevision.current;
     setCaptchaCode('');
     setCaptchaLoading(true);
     try {
-      setCaptcha(await requestLoginCaptcha());
+      const result = await requestLoginCaptcha();
+      if (loginActive.current && revision === captchaRevision.current) setCaptcha(result);
     } catch (captchaError) {
+      if (!loginActive.current || revision !== captchaRevision.current) return;
       setCaptcha(null);
       if (reportError) setError(captchaError instanceof Error ? captchaError.message : '验证码加载失败，请刷新重试');
     } finally {
-      setCaptchaLoading(false);
+      if (loginActive.current && revision === captchaRevision.current) setCaptchaLoading(false);
     }
   };
 
@@ -205,7 +222,7 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
   }, [smsCountdown]);
 
   const handleSendSmsCode = async () => {
-    if (smsSending || smsCountdown > 0) return;
+    if (smsPending.current || smsCountdown > 0) return;
     if (!/^1[3-9]\d{9}$/.test(phone.trim())) {
       setError('请输入有效手机号');
       return;
@@ -213,19 +230,23 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
     setError('');
     setSmsNotice('');
     setSmsSending(true);
+    smsPending.current = true;
     try {
       const result = await sendSmsCode(phone.trim());
+      if (!loginActive.current) return;
       setSmsSent(true);
       setSmsCountdown(60);
-      setSmsNotice(result.devCode ? `开发验证码：${result.devCode}` : result.message);
+      setSmsNotice(result.message || '验证码申请已受理，请查看手机短信');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '验证码发送失败，请稍后重试');
+      if (loginActive.current) setError(err instanceof Error ? err.message : '验证码发送失败，请稍后重试');
     } finally {
-      setSmsSending(false);
+      smsPending.current = false;
+      if (loginActive.current) setSmsSending(false);
     }
   };
 
   const submitLogin = async () => {
+    if (loginPending.current) return;
     setError('');
     if (mode === 'account') {
       if (!account.trim() || !password.trim()) {
@@ -250,6 +271,7 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
         return;
       }
     }
+    loginPending.current = true;
     setLoading(true);
     try {
       if (mode === 'account') {
@@ -258,11 +280,13 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
         await onLogin({ phone: phone.trim(), smsCode: smsCode.trim() });
       }
     } catch (loginError) {
+      if (!loginActive.current) return;
       setError(loginError instanceof Error ? loginError.message : '登录失败，请稍后重试');
       setPassword('');
       if (mode === 'account') await refreshCaptcha(false);
     } finally {
-      setLoading(false);
+      loginPending.current = false;
+      if (loginActive.current) setLoading(false);
     }
   };
 
@@ -291,6 +315,7 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
         </section>
 
         <section className="w-full max-w-[430px] ml-auto bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
+          {notice && <p role="status" className="mb-4 rounded-md border border-blue-300/30 bg-blue-300/10 p-3 text-[13px] text-blue-100">{notice}</p>}
           <div className="grid grid-cols-2 bg-white/6 rounded-lg p-1 mb-6">
             <button onClick={() => { setMode('account'); setError(''); }} className={`h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 transition-colors ${mode === 'account' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}><User size={14} />账号登录</button>
             <button onClick={() => { setMode('phone'); setError(''); }} className={`h-9 rounded-md text-[13px] font-bold flex items-center justify-center gap-1.5 transition-colors ${mode === 'phone' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}><Phone size={14} />手机号登录</button>
@@ -325,7 +350,7 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister }) => {
                 <span className="block text-[12px] text-slate-300 font-bold mb-2">手机号 (Phone)</span>
                 <div className="flex h-10 rounded-md bg-[#273353] border border-slate-500/40 focus-within:border-blue-400 overflow-hidden">
                   <span className="w-16 flex items-center justify-center border-r border-slate-500/30 text-[13px] text-slate-400">+86</span>
-                  <input value={phone} disabled={smsSending} onChange={(e) => { setPhone(e.target.value); setSmsCode(''); setSmsNotice(''); }} placeholder="请输入手机号" className="flex-1 bg-transparent px-3 text-[13px] outline-none text-white placeholder:text-slate-500" />
+                  <input value={phone} disabled={smsSending || loading} onChange={(e) => { setPhone(e.target.value); setSmsCode(''); setSmsNotice(''); setSmsSent(false); }} placeholder="请输入手机号" className="flex-1 bg-transparent px-3 text-[13px] outline-none text-white placeholder:text-slate-500" />
                 </div>
               </label>
               <label className="block">
@@ -378,45 +403,50 @@ const ForgotPasswordPage = ({ onBack, onSuccess }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const { count, start } = { count: 0, start: () => {} };
-  const [cooldown, setCooldown] = useState(0);
+  const pending = useRef(false);
 
   const sendCode = async () => {
+    if (pending.current) return;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setError('请输入有效邮箱地址'); return; }
     setError('');
+    pending.current = true;
     setLoading(true);
     try {
-      const result = await requestPasswordReset(email);
-      setSuccess(result.message || '验证码已发送');
+      await requestPasswordReset(email.trim());
+      setSuccess('申请已受理。如果邮箱已注册且邮件服务可用，您将收到重置邮件；请按邮件内容填写验证码。');
       setStep('reset');
     } catch (err) {
       setError(err instanceof Error ? err.message : '发送失败');
     } finally {
       setLoading(false);
+      pending.current = false;
     }
   };
 
   const submitReset = async () => {
+    if (pending.current) return;
     if (!verifyCode || verifyCode.length !== 6) { setError('请输入6位验证码'); return; }
     const passwordError = validateNewPassword(newPassword);
     if (passwordError) { setError(passwordError); return; }
     if (newPassword !== confirmPassword) { setError('两次密码不一致'); return; }
     setError('');
+    pending.current = true;
     setLoading(true);
     try {
-      await resetPasswordByEmail(email, verifyCode, newPassword);
-      setSuccess('密码重置成功，请使用新密码登录');
+      await resetPasswordByEmail(email.trim(), verifyCode.trim(), newPassword);
+      onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : '重置失败');
     } finally {
       setLoading(false);
+      pending.current = false;
     }
   };
 
   return (
     <LoginShell>
       <div className="w-full max-w-[420px] bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-[13px] text-blue-300 hover:text-white mb-6 transition-colors">
+        <button onClick={onBack} disabled={loading} className="flex items-center gap-1.5 text-[13px] text-blue-300 hover:text-white mb-6 transition-colors">
           <ArrowLeft size={15} />返回登录
         </button>
         <h2 className="text-[22px] font-bold text-center mb-2">忘记密码</h2>
@@ -439,6 +469,7 @@ const ForgotPasswordPage = ({ onBack, onSuccess }) => {
 
         {step === 'reset' && (
           <div className="space-y-4">
+            <p className="break-all text-[13px] text-slate-300">重置邮箱：{email}</p>
             <label className="block">
               <span className="block text-[12px] text-slate-300 font-bold mb-2">验证码</span>
               <input value={verifyCode} onChange={(e) => setVerifyCode(e.target.value)} placeholder="请输入邮箱验证码" maxLength={6} className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
@@ -454,6 +485,7 @@ const ForgotPasswordPage = ({ onBack, onSuccess }) => {
             <button onClick={submitReset} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
               {loading ? '重置中...' : '重置密码'}
             </button>
+            <button disabled={loading} onClick={() => { setStep('email'); setSuccess(''); setError(''); setVerifyCode(''); setNewPassword(''); setConfirmPassword(''); }} className="w-full text-[13px] text-blue-300">重新申请重置邮件</button>
           </div>
         )}
       </div>
@@ -508,36 +540,47 @@ const FirstLoginPage = ({ account, tempPassword, onComplete, onLogout }) => {
 };
 
 const ResetPasswordPage = ({ token, onBack, onSuccess }) => {
+  const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const pending = useRef(false);
 
   const submit = async () => {
+    if (pending.current || !token) return;
     setError('');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setError('请输入注册邮箱'); return; }
     const passwordError = validateNewPassword(newPassword);
     if (passwordError) { setError(passwordError); return; }
     if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
+    pending.current = true;
     setLoading(true);
     try {
-      const { resetPassword } = await import('./api/session');
-      await resetPassword(token, newPassword);
+      // Current business API consumes email/code; do not send an unsupported opaque token.
+      await resetPasswordByEmail(email.trim(), token, newPassword);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : '重置失败，请稍后重试');
     } finally {
       setLoading(false);
+      pending.current = false;
     }
   };
 
   return (
     <LoginShell>
       <div className="w-full max-w-[420px] bg-[#1d2743]/88 border border-white/10 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-[13px] text-blue-300 hover:text-white mb-6 transition-colors">
+        <button onClick={onBack} disabled={loading} className="flex items-center gap-1.5 text-[13px] text-blue-300 hover:text-white mb-6 transition-colors">
           <ArrowLeft size={15} />返回登录
         </button>
         <h2 className="text-[22px] font-bold text-center mb-2">重置密码</h2>
         <p className="text-[13px] text-slate-400 text-center mb-8">请设置新密码</p>
+        {!token && <p role="alert" className="mb-4 text-[13px] text-rose-200">重置链接无效或缺少验证码，请返回登录重新申请。</p>}
+        <label className="block mb-5">
+          <span className="block text-[12px] text-slate-300 font-bold mb-2">注册邮箱</span>
+          <input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="请输入注册邮箱" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white" />
+        </label>
         <label className="block mb-5">
           <span className="block text-[12px] text-slate-300 font-bold mb-2">新密码</span>
           <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少10位，含大小写字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
@@ -547,7 +590,7 @@ const ResetPasswordPage = ({ token, onBack, onSuccess }) => {
           <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder="请再次输入新密码" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
         </label>
         {error && <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] font-bold bg-rose-400/10 border-rose-400/30 text-rose-200">{error}</div>}
-        <button onClick={submit} disabled={loading} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
+        <button onClick={submit} disabled={loading || !token} className="w-full h-11 rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-[14px] font-bold transition-colors">
           {loading ? '重置中...' : '确认重置'}
         </button>
       </div>
@@ -1290,8 +1333,8 @@ const BusinessFlowDock = ({ moduleName, flow, onAction }: any) => {
     },
     settlement: {
       title: '财务待办：收付款与凭证',
-      desc: '完成客户回款、供应商付款、发票、流水和凭证，销售订单形成业务闭环。',
-      output: '输出：订单闭环完成'
+      desc: '核对客户回款、供应商付款及凭证。销售订单仍需客户签收、退货争议处理和独立完成检查。',
+      output: '输出：财务办理事实；订单完成状态以正式订单为准'
     }
   };
   const copy = currentStep.key === 'stockCheck' && flow.stockEnough ? {
@@ -1710,13 +1753,25 @@ const Sales_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
 
 // --- 子组件区 ---
 
+const loadSalesOrderResources = async (context) => {
+  const [employees, organizations] = await Promise.all([platformApi.listEmployees(context), platformApi.listOrgUnits(context)]);
+  return { employees: employees.filter(employee => employee.status === 'active'),
+    factories: organizations.filter(organization => organization.type === 'factory' && organization.status === 'enabled') };
+};
+
 const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], warehouses = [], products = [], onClose, onCreate, documentType = 'quote', apiContext = null }) => {
   const editing = mode === 'edit';
   const creatingOrder = documentType === 'order';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const documentIdRef = useRef(record?.id || sales_makeDocumentId(creatingOrder ? 'SO' : 'QT'));
+  const command = useBusinessCommand(businessCommandScope(apiContext, documentIdRef.current, 'create-sales-document'));
   const [client, setClient] = useState(record?.client || '');
+  const resources = useApiResource(creatingOrder ? apiContext : null, loadSalesOrderResources);
+  const [ownerEmployeeId, setOwnerEmployeeId] = useState(record?.ownerEmployeeId || '');
+  const [factoryResourceId, setFactoryResourceId] = useState(record?.factoryResourceId || '');
+  const [recipient, setRecipient] = useState(record?.recipient || { name: '', phone: '', country: '', province: '', city: '', address: '' });
+  const [allowPartialShipment, setAllowPartialShipment] = useState(record?.allowPartialShipment ?? true);
   const [quoteDate, setQuoteDate] = useState(record?.date || new Date().toISOString().slice(0, 10));
   const [validUntil, setValidUntil] = useState(record?.validUntil || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
   const [lines, setLines] = useState(() => {
@@ -1774,6 +1829,13 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
 
   const handleCreate = async () => {
       if (submittingRef.current) return;
+      if (command.uncertain) {
+          submittingRef.current = true;
+          setIsSubmitting(true);
+          try { await command.retry(); }
+          finally { submittingRef.current = false; setIsSubmitting(false); }
+          return;
+      }
       if (!client.trim() || !quoteDate || !validUntil) {
           setError('请完整填写客户和有效期');
           return;
@@ -1792,6 +1854,11 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           return;
       }
       if (pricing.error) { setError(pricing.error); return; }
+      if (creatingOrder && (!resources.data?.employees.some(employee => employee.id === ownerEmployeeId)
+        || !resources.data?.factories.some(factory => factory.code === factoryResourceId))) {
+        setError('请选择当前授权的销售负责人和履约工厂');
+        return;
+      }
       const productSummary = lines.length === 1
           ? `${lines[0].productName.trim()} / ${lines[0].spec.trim()} × ${lines[0].quantity} ${lines[0].unit}`
           : `${lines[0].productName.trim()} 等 ${lines.length} 项产品`;
@@ -1801,6 +1868,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           id: documentIdRef.current,
           version: editing ? Number(record?.version || 1) + 1 : 1,
           client: client.trim(),
+          ...(creatingOrder ? { ownerEmployeeId, factoryResourceId, recipient: { ...recipient }, allowPartialShipment } : {}),
           date: quoteDate,
           validUntil,
           status: '正常',
@@ -1819,11 +1887,20 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           createdAt: record?.createdAt || savedAt,
           updatedAt: savedAt,
       };
+      let commandInput;
+      if (creatingOrder) {
+        try {
+          commandInput = quickSalesOrderInput(draft, { warehouses, customers, idempotencyKey: '' });
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : '请检查订单资料');
+          return;
+        }
+      }
       submittingRef.current = true;
       setIsSubmitting(true);
       setError('');
       try {
-          await onCreate(draft);
+          await command.execute(key => onCreate({ ...draft, commandInput, idempotencyKey: key }));
       } catch (failure) {
           setError(failure instanceof Error ? failure.message : '创建失败，请稍后重试');
       } finally {
@@ -1845,7 +1922,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
               </div>
               
               <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-              <fieldset disabled={isSubmitting} className="min-w-0 p-8 space-y-8">
+              <fieldset disabled={isSubmitting || command.uncertain} className="min-w-0 p-8 space-y-8">
                   <div>
                       <div className="flex items-center mb-5">
                           <div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div>
@@ -1856,7 +1933,16 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                               <div>
                                   <label className="block text-[13px] text-slate-600 mb-2">客户 <span className="text-rose-500">*</span></label>
                                   <div className="relative">
-                                      <input aria-label="客户" type="text" list="sales-quote-customers" value={client} onChange={(e) => setClient(e.target.value)} placeholder="搜索选择客户" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors" />
+                                      <input aria-label="客户" type="text" list="sales-quote-customers" value={client} onChange={(e) => {
+                                        const value = e.target.value; setClient(value);
+                                        const matches = customers.filter(customer => customer.name === value);
+                                        const customer = matches.length === 1 ? matches[0] : null;
+                                        if (creatingOrder) setRecipient(previous => ({ ...previous,
+                                          name: customer?.contact && customer.contact !== '-' ? customer.contact : '',
+                                          phone: customer?.phone && customer.phone !== '-' ? customer.phone : '',
+                                          country: '', province: '', city: '', address: customer?.address && customer.address !== '-' ? customer.address : '',
+                                        }));
+                                      }} placeholder="搜索选择客户" className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors" />
                                       <datalist id="sales-quote-customers">{customers.map((customer) => <option key={customer.id} value={customer.name} />)}</datalist>
                                       <Search size={14} className="absolute right-3 top-3 text-slate-400" />
                                   </div>
@@ -1873,6 +1959,31 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                                       <input aria-label="有效至" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500 transition-colors text-slate-700" />
                                   </div>
                               </div>
+                              {creatingOrder && <>
+                                <label className="block text-[13px] text-slate-600">销售负责人 *
+                                  <select aria-label="销售负责人" value={ownerEmployeeId} onChange={event => setOwnerEmployeeId(event.target.value)} className="mt-2 w-full rounded-lg border p-2.5">
+                                    <option value="">请选择销售负责人</option>
+                                    {(resources.data?.employees ?? []).map(employee => <option key={employee.id} value={employee.id}>{employee.name} ({employee.employeeNo})</option>)}
+                                  </select>
+                                </label>
+                                <label className="block text-[13px] text-slate-600">履约工厂 *
+                                  <select aria-label="履约工厂" value={factoryResourceId} onChange={event => setFactoryResourceId(event.target.value)} className="mt-2 w-full rounded-lg border p-2.5">
+                                    <option value="">请选择履约工厂</option>
+                                    {(resources.data?.factories ?? []).map(factory => <option key={factory.id} value={factory.code}>{factory.name} ({factory.code})</option>)}
+                                  </select>
+                                </label>
+                                {(resources.loading || resources.error) && <div className="sm:col-span-2"><ApiDataState loading={resources.loading} error={resources.error} onRetry={resources.reload} /></div>}
+                                {resources.data && (!resources.data.employees.length || !resources.data.factories.length) && <p role="status" className="text-sm text-amber-700 sm:col-span-2">暂无可选销售负责人或履约工厂，请先维护授权资料。</p>}
+                                {[
+                                  ['name', '收货人', 100], ['phone', '收货联系电话', 40],
+                                  ['country', '国家/地区', 80], ['province', '省份', 80], ['city', '城市', 80], ['address', '详细地址', 500],
+                                ].map(([field, label, maximum]) => <label key={field} className="block text-[13px] text-slate-600">{label} *
+                                  <input aria-label={String(label)} value={recipient[field]} maxLength={Number(maximum)}
+                                    onChange={event => setRecipient(previous => ({ ...previous, [field]: event.target.value }))}
+                                    className="mt-2 w-full rounded-lg border border-slate-200 p-2.5 outline-none focus:border-blue-500" />
+                                </label>)}
+                                <label className="flex items-center gap-2 text-[13px] text-slate-600"><input type="checkbox" checked={allowPartialShipment} onChange={event => setAllowPartialShipment(event.target.checked)} />允许分批发货</label>
+                              </>}
                           </div>
                       </div>
                   </div>
@@ -1918,13 +2029,13 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                                               </select>
                                           </td>
                                           <td className="px-3 py-3">
-                                              <select value={line.productId} disabled={!line.warehouseId} onChange={(e) => { const pid = e.target.value; const matched = products.find((p) => p.id === pid); if (matched) { setLines(prev => prev.map(l => l.key === line.key ? { ...l, productId: matched.id, productName: matched.name, spec: matched.spec || '', unit: matched.unit === 'PCS' ? '件' : matched.unit, available: Number(matched.availQty ?? 0), quantity: '1', unitPrice: String(matched.unitPrice ?? 0) } : l)); } }} className="w-44 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400">
+                                              <select value={line.productId} disabled={!line.warehouseId} onChange={(e) => { const pid = e.target.value; const matched = products.find((p) => p.id === pid && p.warehouseId === line.warehouseId); if (matched) { setLines(prev => prev.map(l => l.key === line.key ? { ...l, productId: matched.id, productName: matched.name, spec: matched.spec || '', unit: matched.unit || '', available: matched.availQty ?? null, quantity: '1', unitPrice: String(matched.unitPrice ?? 0) } : l)); } }} className="w-44 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400">
                                                   <option value="">{line.warehouseId ? '选择产品' : '先选仓库'}</option>
                                                   {warehouseProducts.map((p) => <option key={p.id} value={p.id}>{p.id} {p.name}</option>)}
                                               </select>
                                           </td>
                                           <td className="px-3 py-3 text-center"><input value={line.spec} onChange={(e) => updateLine(line.key, 'spec', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-center"><select value={line.unit} onChange={(e) => updateLine(line.key, 'unit', e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
+                                          <td className="px-3 py-3 text-center">{creatingOrder ? line.unit || '单位未提供' : <select value={line.unit} onChange={(e) => updateLine(line.key, 'unit', e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select>}</td>
                                           <td className={`px-3 py-3 text-center font-mono font-bold ${isShort ? 'text-rose-600' : 'text-emerald-600'}`}>{available != null ? available : creatingOrder && line.productId ? available === null ? '查询失败' : '读取中' : '-'}</td>
                                           <td className="px-3 py-3 text-center"><input inputMode="decimal" aria-label="数量" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', e.target.value)} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
                                           <td className="px-3 py-3 text-center"><input inputMode="decimal" aria-label="单价" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
@@ -1983,9 +2094,10 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
               </div>
 
               <div className="p-5 border-t border-slate-100 flex flex-wrap justify-end gap-4 shrink-0 bg-white rounded-b-xl">
-                  {error && <div role="alert" className="mr-auto flex items-center text-[12px] text-rose-600"><AlertCircle size={14} className="mr-1.5 shrink-0" />{error}</div>}
+                  {(error || command.error) && <div role="alert" className="mr-auto flex items-center text-[12px] text-rose-600"><AlertCircle size={14} className="mr-1.5 shrink-0" />{error || command.error}</div>}
+                  {command.uncertain && !command.pending && <p role="status" className="w-full text-sm text-amber-700">提交结果待核对，重试将沿用原始资料和幂等键；关闭后请先查询订单，避免重复开单。</p>}
                   <button disabled={isSubmitting} onClick={onClose} className="px-6 py-2.5 text-[14px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50">取消</button>
-                  <button disabled={isSubmitting} onClick={handleCreate} className="px-6 py-2.5 text-[14px] font-medium text-white bg-[#2563EB] hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:opacity-50">{isSubmitting ? '保存中...' : creatingOrder ? '创建订单' : editing ? '保存修改' : '创建报价单'}</button>
+                  <button disabled={isSubmitting} onClick={handleCreate} className="px-6 py-2.5 text-[14px] font-medium text-white bg-[#2563EB] hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:opacity-50">{isSubmitting ? '保存中...' : command.uncertain ? '按原请求重试' : creatingOrder ? '创建订单' : editing ? '保存修改' : '创建报价单'}</button>
               </div>
           </div>
       </div>
@@ -2231,7 +2343,7 @@ const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel
   );
 };
 
-const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit, onRequestOutbound, onReviewFormalOrder, onConfirmFormalOrder, onCancelFormalOrder, onCancelOrderOutbound, onNavigateProduction, customers = [], products = [], orderCreationRevision = 0, apiContext = null, permissions = [] }) => {
+const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit, onRequestOutbound, onReviewFormalOrder, onConfirmFormalOrder, onCancelFormalOrder, onCancelOrderOutbound, onNavigateProduction, customers = [], products = [], warehouses = [], orderCreationRevision = 0, apiContext = null, permissions = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [customerFilter, setCustomerFilter] = useState('全部客户');
@@ -2454,15 +2566,15 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
           </div>
       )}
       {recordModal?.mode === 'edit' && <Sales_OrderEditModal mode="edit" record={recordModal.record} customers={customers} products={products} onClose={() => setRecordModal(null)} onSubmit={updateOrder} />}
-      {recordModal?.mode === 'shipment' && <SalesShipmentOrderEditModal mode="confirm" order={recordModal.record} pending={isSubmitting} apiContext={apiContext} products={products} onClose={() => setRecordModal(null)} onSubmit={submitShipmentOrderEdit} />}
+      {recordModal?.mode === 'shipment' && <SalesShipmentOrderEditModal mode="confirm" order={recordModal.record} pending={isSubmitting} apiContext={apiContext} warehouses={warehouses} onClose={() => setRecordModal(null)} onSubmit={submitShipmentOrderEdit} />}
       {recordModal?.mode === 'detail' && <Sales_OrderDetailModal order={recordModal.record} businessFlow={businessFlow} audits={audits} permissions={permissions} onClose={() => setRecordModal(null)} onCancel={() => { setConfirmAction({ action: 'cancel', row: recordModal.record }); setRecordModal(null); }} onOutbound={() => { setRecordModal(null); navigateToOutbound(recordModal.record); }} />}
-      {confirmAction?.action === 'review' && <SalesReviewModal orderNo={confirmAction.row.id} onClose={() => setConfirmAction(null)} onDecision={async (decision, comment, key) => {
+      {confirmAction?.action === 'review' && <SalesReviewModal orderNo={confirmAction.row.id} commandScope={businessCommandScope(apiContext, confirmAction.row.aggregateId, 'sales-review')} onClose={() => setConfirmAction(null)} onDecision={async (decision, comment, key) => {
         const updated = await onReviewFormalOrder(confirmAction.row, decision, comment, key);
         if (!updated) throw new Error('未取得复核结果');
         setOrders(prev => prev.map(item => item.aggregateId === confirmAction.row.aggregateId ? updated : item));
         return updated;
       }} onSaved={() => { setConfirmAction(null); onToast('复核结果已保存', '订单状态以服务端返回为准'); }} />}
-      {confirmAction?.action === 'cancel' && <SalesCancelModal orderNo={confirmAction.row.id} onClose={() => setConfirmAction(null)} onCancel={async (reason, key) => {
+      {confirmAction?.action === 'cancel' && <SalesCancelModal orderNo={confirmAction.row.id} commandScope={businessCommandScope(apiContext, confirmAction.row.aggregateId, 'sales-cancel')} onClose={() => setConfirmAction(null)} onCancel={async (reason, key) => {
         const updated = await onCancelFormalOrder(confirmAction.row, reason, key);
         if (!updated) throw new Error('尚未取得取消结果，请核对订单状态');
         setOrders(prev => prev.map(item => item.aggregateId === confirmAction.row.aggregateId ? updated : item));
@@ -2944,7 +3056,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const [toast, setToast] = useState(null);
   const [outboundRequestModal, setOutboundRequestModal] = useState(null);
   const [salesWarehouseList, setSalesWarehouseList] = useState([]);
-  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken, permissionVersion: currentUser.permissionVersion, scopeVersion: currentUser.scopeVersion }) : null, [currentTenant?.id, currentUser?.accessToken, currentUser?.permissionVersion, currentUser?.scopeVersion]);
   const salesInventory = useFormalInventory(formalContext);
   const inventoryMasterData = salesInventory.masterData || { warehouses: [], products: [], materials: [] };
   const salesIdentity = useRef(formalContext);
@@ -3157,13 +3269,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
           throw new Error('请先登录正式会话后重试');
       }
       try {
-          const created = await createQuickSalesOrder(formalContext, order, {
-              warehouses: salesWarehouseList,
-              customers,
-              ownerEmployeeId: currentUser?.account || 'sales-owner',
-              factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
-              idempotencyKey: `quick-sales-order:${currentTenant.id}:${order.id}`,
-          });
+          if (!order.commandInput) throw new Error('订单提交资料未完成校验，请重新打开开单表单');
+          const created = await createFulfillmentOrder(formalContext, order.commandInput, order.idempotencyKey);
           const mapped = {
               ...mapFormalOrder(created),
               date: order.date,
@@ -3181,7 +3288,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
           setIsQuickOrderModalOpen(false);
           setOrderCreationRevision(revision => revision + 1);
           addAudit('创建销售订单', mapped.id);
-          showToast('订单创建成功', `${mapped.id} 已进入待发货`);
+          showToast('订单创建成功', `${mapped.id} 已创建，请核对审批与确认状态`);
           navigateSalesTab('orders', false, true);
       } catch (error) {
           showToast('订单创建失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
@@ -3294,7 +3401,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                   {['quotes', 'basic-data'].includes(activeTab) && <div role="status" className="mb-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{activeTab === 'quotes' ? '报价单持久化接口尚未接入，当前不能保存或转单。' : '完整销售基础数据与触达配置尚未接入，当前不能保存配置。'}</div>}
                   {activeTab === 'dashboard' && <SalesMonitorFacts apiContext={formalContext} Cabin={UnifiedMonitorCabin} />}
                   {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
-                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={quoteOptions.products} orderCreationRevision={orderCreationRevision} apiContext={formalContext} permissions={currentUser?.permissions} />}
+                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={quoteOptions.products} warehouses={salesWarehouseList} orderCreationRevision={orderCreationRevision} apiContext={formalContext} permissions={currentUser?.permissions} />}
                   {activeTab === 'customers' && <Sales_CustomersView apiContext={formalContext} customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
                   {activeTab === 'rma' && <div key={`${formalContext?.tenantId}:${formalContext?.accessToken}`}><RmaManagementPanel apiContext={formalContext} permissions={currentUser?.permissions} onOpenOrder={openSalesOrder} /></div>}
                   {activeTab === 'receipts' && <div key={`${formalContext?.tenantId}:${formalContext?.accessToken}`}><CustomerReceiptPanel apiContext={formalContext} permissions={currentUser?.permissions} onOpenOrder={hasPermission(currentUser?.permissions, 'sales.order.read') ? openSalesOrder : undefined} /></div>}
@@ -4055,7 +4162,7 @@ const Prod_MrpView = ({ mrp, onIssueMrp, onRunGlobalMrp, onCreatePurchase, showT
                             </td>
                             <td className="px-6 py-4">
                                 <div className="text-[12px] text-slate-600 bg-[#f8fafc] p-2.5 rounded-lg border border-slate-200 font-mono">
-                                    {r.grossReq}(需求) - [{r.stock}(存) + {r.onWay}(途)] = <span className={`${r.netReq > 0 ? 'text-rose-500' : 'text-slate-500'} font-bold`}>净缺口 {r.netReq}</span><br/>
+                                    需求 {r.grossReq} · 可用 {r.stock} · 在途 {r.onWay ?? '未提供'} · <span className={`${r.netReq > 0 ? 'text-rose-500' : 'text-slate-500'} font-bold`}>服务端净缺口 {r.netReq}</span><br/>
                                     <div className="mt-1.5 pt-1.5 border-t border-slate-200/60 flex items-center gap-1.5 text-slate-700">
                                         <Layers size={14} className="text-slate-400"/> {r.lotRule} ➔ 建议单据量: 
                                         <span className={`font-bold ml-1 ${r.plannedQty > r.netReq ? 'text-amber-600 flex items-center gap-1' : 'text-indigo-600'}`}>{r.plannedQty > r.netReq && <ArrowUpCircle size={14}/>} {r.plannedQty}</span>
@@ -4611,6 +4718,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   }, [formalCtx]);
   const { snapshot: formalSnapshot, refresh: refreshFormalProduction, error: formalError } = useFormalProduction(formalCtx);
   const [reportOrder, setReportOrder] = useState(null);
+  const [workCenterMpsId, setWorkCenterMpsId] = useState<string | null>(null);
 
   const mapFormalWorkOrder = (wo) => {
     return formalProductionOrder(wo);
@@ -4687,10 +4795,10 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
                   type: '采购件',
                   grossReq: Number(shortage.grossRequiredQty),
                   stock: Number(shortage.availableQty),
-                  onWay: 0,
+                  onWay: null,
                   netReq: Number(shortage.shortageQty),
                   plannedQty: Number(shortage.shortageQty),
-                  lotRule: '按需(L4L)',
+                  lotRule: '批量规则未提供',
                   status: '待转采购',
                   pegging: [],
               }))));
@@ -4836,23 +4944,23 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
                   type: '采购件',
                   grossReq: Number(shortage.grossRequiredQty),
                   stock: Number(shortage.availableQty),
-                  onWay: 0,
+                  onWay: null,
                   netReq: Number(shortage.shortageQty),
                   plannedQty: Number(shortage.shortageQty),
-                  lotRule: '按需(L4L)',
+                  lotRule: '批量规则未提供',
                   status: '待转采购',
                   pegging: [],
               }));
               setMrp(prev => [...rows, ...prev.filter(item => item.mrpTaskId !== result.taskId)]);
               setActiveTab('mrp');
           }
-          setProductionDemands(prev => prev.map(item => item.id === demandId ? {
-              ...item,
-              apiStatus: 'PLANNED',
-              status: '已展算',
-              reason: `计划任务 ${result.taskId} · ${result.result?.solver || 'Reference MRP'}`,
-              formalDemand: { ...item.formalDemand, status: 'PLANNED', version: item.formalDemand.version + 1 },
-          } : item));
+          try {
+              const latest = await productionOperationsApi.listDemands(formalCtx);
+              setProductionDemands(latest.items.map(mapFormalDemandRow));
+          } catch (refreshError) {
+              showToast(`计划任务 ${result.taskId} 已完成，需求刷新失败，请刷新后核对版本：${refreshError instanceof Error ? refreshError.message : '读取失败'}`, 'warning');
+              return;
+          }
           onBusinessFlowAction?.('formalMrpCompleted', { mrpTaskId: result.taskId, demandId: targetDemand.apiId, materialShortages: shortages });
           showToast(shortages.length ? `MPS/MRP 任务 [${result.taskId}] 已完成，发现 ${shortages.length} 项采购缺料` : `MPS/MRP 任务 [${result.taskId}] 已完成且物料齐套`, shortages.length ? 'warning' : 'success');
       } catch (error) {
@@ -4894,7 +5002,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       }
   };
 
-  const handleCreateFormalOrderFromMps = async (mpsId) => {
+  const handleCreateFormalOrderFromMps = (mpsId) => {
       const targetMps = mps.find(item => item.id === mpsId);
       const targetDemand = productionDemands.find(item => item.apiId === targetMps?.demandId);
       if (!targetMps?.scheduleCandidateId || targetMps.status !== '已排程' || targetDemand?.apiStatus !== 'PLANNED') {
@@ -4905,14 +5013,17 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           showToast('请先登录正式会话后再创建工单', 'warning');
           return;
       }
-      const seed = `${currentTenant?.id || ''}:${targetMps.demandId}:${targetMps.scheduleCandidateId}`;
-      setMps(prev => prev.map(item => item.id === mpsId ? { ...item, status: '创建工单中' } : item));
-      try {
-          const order = await productionOperationsApi.createWorkOrder(formalCtx, {
+      setWorkCenterMpsId(mpsId);
+  };
+  const createOrderWithWorkCenter = async (mpsId, workCenterResourceId, key) => {
+      const targetMps = mps.find(item => item.id === mpsId);
+      const targetDemand = productionDemands.find(item => item.apiId === targetMps?.demandId);
+      if (!formalCtx || !targetMps?.scheduleCandidateId || !targetDemand?.formalDemand) throw new Error('正式计划或需求未加载，请刷新后重试');
+      return productionOperationsApi.createWorkOrder(formalCtx, {
               productId: targetDemand.formalDemand.productId,
               productName: targetDemand.formalDemand.productName,
               factoryResourceId: targetDemand.formalDemand.factoryResourceId,
-              workCenterResourceId: targetDemand.formalDemand.factoryResourceId === 'FAC-SZ-01' ? 'WC-SZ-ASSY-01' : 'WC-SH-ASSY-01',
+              workCenterResourceId,
               plannedQty: targetDemand.formalDemand.qty,
               inputQty: targetDemand.formalDemand.qty,
               uom: targetDemand.formalDemand.uom,
@@ -4925,7 +5036,9 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
                   allocatedQty: targetDemand.formalDemand.qty,
                   promisedDate: targetDemand.formalDemand.dueDate,
               }],
-          }, `work-order-create:${seed}`);
+          }, key);
+  };
+  const onWorkOrderCreated = (mpsId, order) => {
           const mapped = mapFormalWorkOrder(order);
           setOrders(prev => [mapped, ...prev.filter(item => item.apiId !== order.id)]);
           setMps(prev => prev.map(item => item.id === mpsId ? {
@@ -4935,11 +5048,8 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               workOrderCode: order.code,
           } : item));
           setActiveTab('orders');
+          setWorkCenterMpsId(null);
           showToast(`正式工单 [${order.code}] 已创建并关联生产需求`, 'success');
-      } catch (error) {
-          setMps(prev => prev.map(item => item.id === mpsId ? { ...item, status: '已排程', reason: error instanceof Error ? error.message : '创建工单失败' } : item));
-          showToast(error instanceof Error ? `创建正式工单失败：${error.message}` : '创建正式工单失败', 'error');
-      }
   };
 
   const handleProductionFlowAction = async (action) => {
@@ -5065,8 +5175,8 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               id: `MRP-${result.taskId.slice(0, 8)}-${line.demandId}-${line.materialId}`,
               mrpTaskId: result.taskId, demandId: line.demandId, source: `MPS-${line.demandId.slice(0, 8)}`,
               itemCode: line.materialId, itemName: line.materialName || line.materialId, type: '采购件',
-              grossReq: Number(line.grossRequiredQty), stock: Number(line.availableQty), onWay: 0,
-              netReq: Number(line.shortageQty), plannedQty: Number(line.shortageQty), lotRule: '按需(L4L)',
+              grossReq: Number(line.grossRequiredQty), stock: Number(line.availableQty), onWay: null,
+              netReq: Number(line.shortageQty), plannedQty: Number(line.shortageQty), lotRule: '批量规则未提供',
               status: '待转采购', pegging: [],
           }));
           setMrp(prev => [...shortages, ...prev.filter(item => !eligible.some(demand => demand.apiId === item.demandId))]);
@@ -5283,6 +5393,12 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
           <BusinessActionModal action={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmProdAction} />
           {reportOrder && <ProductionReportModal order={reportOrder} onClose={() => setReportOrder(null)} onSubmit={handleSubmitReport} />}
+          {workCenterMpsId && <ProductionWorkCenterModal context={formalCtx}
+            demandId={mps.find(item => item.id === workCenterMpsId)?.demandId || ''}
+            factoryResourceId={productionDemands.find(item => item.apiId === mps.find(row => row.id === workCenterMpsId)?.demandId)?.formalDemand?.factoryResourceId || ''}
+            onClose={() => setWorkCenterMpsId(null)}
+            onSubmit={(workCenter, key) => createOrderWithWorkCenter(workCenterMpsId, workCenter, key)}
+            onCreated={order => onWorkOrderCreated(workCenterMpsId, order)} />}
 
 	          <div className="relative mx-auto flex w-full max-w-[1600px] shrink-0 flex-col gap-6 px-8 pb-4 pt-8">
               <div className="flex justify-between items-start">
@@ -8031,7 +8147,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant, refreshSignal = 0 }) => {
     const [activeTab, setActiveTab] = useState(() => {
       const tab = new URLSearchParams(window.location.search).get('finance');
-      return ['receivable', 'payable', 'cost', 'payments'].includes(tab || '') ? tab : 'dashboard';
+      return ['receivable', 'payable', 'cost', 'payments', 'ledger', 'allocations'].includes(tab || '') ? tab : 'dashboard';
     });
     const [actionModal, setActionModal] = useState(null);
     const [paymentModal, setPaymentModal] = useState(null);
@@ -8055,36 +8171,35 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const [apPage, setApPage] = useState(1);
     const [costPage, setCostPage] = useState(1);
     const [financeTotals, setFinanceTotals] = useState({ ar: 0, ap: 0, cost: 0 });
-    const formatCurrency = (val) => val == null || val === '' || !Number.isFinite(Number(val))
-      ? '-' : new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(Number(val));
+    const formatCurrency = financeAmount;
 
     const finCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || '', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
 
     const mapApiAr = (item) => ({
       id: item.docNo, customer: item.customerName, soId: item.sourceDocNo || item.sourceId,
       sourceType: item.sourceType, sourceId: item.sourceId, _backend: item,
-      amount: parseFloat(item.totalAmount), received: parseFloat(item.receivedAmount),
-      unreceived: parseFloat(item.outstandingAmount), dueDate: item.dueDate || '',
-      status: item.status === 'done' ? '已结清' : item.status === 'processing' ? '部分收款' : item.status === 'void' ? '已作废' : '待收款'
+      currency: item.currency, amount: item.totalAmount, received: item.receivedAmount,
+      unreceived: item.outstandingAmount, dueDate: item.dueDate || '',
+      status: financeDocumentStatus(item.status, 'AR')
     });
     const mapApiAp = (item) => ({
       id: item.docNo, supplier: item.supplierName, poId: item.sourceDocNo || item.sourceId,
       sourceType: item.sourceType, sourceId: item.sourceId, _backend: item,
-      amount: parseFloat(item.totalAmount), paid: parseFloat(item.paidAmount),
-      unpaid: parseFloat(item.outstandingAmount), dueDate: item.dueDate || '',
-      status: item.status === 'done' ? '已结清' : item.status === 'processing' ? '部分付款' : item.status === 'void' ? '已作废' : '待付款'
+      currency: item.currency, amount: item.totalAmount, paid: item.paidAmount,
+      unpaid: item.outstandingAmount, dueDate: item.dueDate || '',
+      status: financeDocumentStatus(item.status, 'AP')
     });
     const mapApiCost = (item) => ({
       id: item.docNo, woId: item.workOrderNo || item.workOrderId || '', product: item.productName,
-      materialCost: parseFloat(item.materialCost), mfgCost: parseFloat(item.manufacturingCost),
-      laborCost: parseFloat(item.laborCost), totalCost: parseFloat(item.totalCost),
-      unitCost: parseFloat(item.unitCost), standardUnitCost: parseFloat(item.standardUnitCost),
-      variance: (parseFloat(item.variancePct) >= 0 ? '+' : '') + parseFloat(item.variancePct).toFixed(1) + '%',
-      status: item.status === 'done' ? '已核算' : item.status === 'void' ? '已作废' : '核算中'
+      materialCost: item.materialCost, mfgCost: item.manufacturingCost,
+      laborCost: item.laborCost, totalCost: item.totalCost,
+      unitCost: item.unitCost, standardUnitCost: item.standardUnitCost,
+      variance: formatAmount(item.variancePct) === '-' ? '-' : `${formatAmount(item.variancePct)}%`,
+      status: financeDocumentStatus(item.status, 'COST')
     });
 
-    const toWan = (value?: string) => value == null || value === '' || !Number.isFinite(Number(value))
-      ? '-' : (Number(value) / 10000).toFixed(1);
+    // The current dashboard contract has no currency/grouping provenance. Do not label its sum as CNY.
+    const aggregateAmount = () => '-';
 
     useEffect(() => {
       if (!finCtx) return;
@@ -8099,6 +8214,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     }, [apSourceOrderInput]);
 
     useEffect(() => {
+      if (['ledger', 'allocations'].includes(activeTab)) { setFinanceLoadError(''); setFinanceLoading(false); return; }
       if (!finCtx) {
         setApiArData([]); setApiApData([]); setApiCostData([]); setApiDashboard(null);
         setFinanceLoadError('请使用正式登录会话查看财务数据');
@@ -8134,7 +8250,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       };
       void load();
       return () => { active = false; };
-    }, [finCtx?.tenantId, finCtx?.accessToken, arSourceOrder, apSourceOrder, refreshSignal, financeRevision, arPage, apPage, costPage, financeFocus]);
+    }, [finCtx?.tenantId, finCtx?.accessToken, activeTab, arSourceOrder, apSourceOrder, refreshSignal, financeRevision, arPage, apPage, costPage, financeFocus]);
 
     const showCenterToast = (msg, type = 'success') => {
       setToast({ show: true, msg, type });
@@ -8147,17 +8263,17 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const visibleArRows = arRows;
     const visibleApRows = apRows;
     const priorityArRows = apiArData
-      .filter(row => row.unreceived > 0)
+      .filter(row => positiveFinanceAmount(row.unreceived))
       .sort((left, right) => (left.dueDate || '9999-12-31').localeCompare(right.dueDate || '9999-12-31'))
       .slice(0, 5);
     const financeCalendarRows = [
-      ...apiArData.filter(row => row.unreceived > 0).map(row => ({
-        date: row.dueDate || '未设置', title: '应收回款', desc: row.soId,
-        amount: formatCurrency(row.unreceived), tone: 'emerald',
+      ...apiArData.filter(row => positiveFinanceAmount(row.unreceived)).map(row => ({
+        id: `AR:${row._backend.id}`, date: row.dueDate || '未设置', title: '应收回款', desc: row.soId,
+        amount: formatCurrency(row.unreceived, row.currency), tone: 'emerald',
       })),
-      ...apiApData.filter(row => row.unpaid > 0).map(row => ({
-        date: row.dueDate || '未设置', title: '供应商付款', desc: row.poId,
-        amount: formatCurrency(row.unpaid), tone: 'rose',
+      ...apiApData.filter(row => positiveFinanceAmount(row.unpaid)).map(row => ({
+        id: `AP:${row._backend.id}`, date: row.dueDate || '未设置', title: '供应商付款', desc: row.poId,
+        amount: formatCurrency(row.unpaid, row.currency), tone: 'rose',
       })),
     ].sort((left, right) => left.date.localeCompare(right.date)).slice(0, 6);
 
@@ -8171,7 +8287,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           tone: 'blue',
           confirmText: '打开应收账款',
           details: [
-            { label: '当前未结应收', value: formatCurrency(apiDashboard?.totalReceivable) },
+            { label: '当前未结应收', value: aggregateAmount() },
             { label: '待结算笔数', value: String(apiDashboard?.pendingSettlementCount ?? '-') }
           ],
           steps: ['筛选源销售订单', '核对未结余额', '登记并确认收款']
@@ -8184,7 +8300,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           tone: 'amber',
           confirmText: '打开应付账款',
           details: [
-            { label: '当前未结应付', value: formatCurrency(apiDashboard?.totalPayable) },
+            { label: '当前未结应付', value: aggregateAmount() },
             { label: '待结算笔数', value: String(apiDashboard?.pendingSettlementCount ?? '-') }
           ]
         },
@@ -8206,6 +8322,11 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 
     const openFinanceRowAction = (kind, row) => {
       if (kind === 'arCollect' || kind === 'apPay') {
+        if (!positiveFinanceAmount(kind === 'arCollect' ? row.unreceived : row.unpaid)
+          || !['待收款', '部分收款', '待付款', '部分付款'].includes(row.status)) {
+          showCenterToast('该单据状态或未结余额不满足登记条件，请重新查询核对', 'warning');
+          return;
+        }
         if (!hasPermission(currentUser?.permissions, 'finance.payment.create')) {
           showCenterToast('无登记收付款权限', 'warning');
           return;
@@ -8299,6 +8420,8 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             <button onClick={() => setActiveTab('receivable')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'receivable' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Receipt size={14} className="mr-1.5" /> 应收账款(AR)</button>
             <button onClick={() => setActiveTab('payable')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'payable' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><CreditCard size={14} className="mr-1.5" /> 应付账款(AP)</button>
             <button onClick={() => setActiveTab('payments')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold ${activeTab === 'payments' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}><Landmark size={14} className="mr-1.5" />收付款记录</button>
+            <button onClick={() => setActiveTab('ledger')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold ${activeTab === 'ledger' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}><BookOpen size={14} className="mr-1.5" />合并台账</button>
+            <button onClick={() => setActiveTab('allocations')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold ${activeTab === 'allocations' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}><ListChecks size={14} className="mr-1.5" />核销事实</button>
             <div className="w-px h-5 bg-slate-200 mx-1 self-center"></div>
             <button onClick={() => setActiveTab('cost')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'cost' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><PieChart size={14} className="mr-1.5" /> 生产成本核算</button>
           </div>
@@ -8315,10 +8438,10 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
               {activeTab === 'dashboard' && (
                   <div className="space-y-6 animate-in fade-in duration-300">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                          <StatCard title="未结应收 (AR)" value={toWan(apiDashboard?.totalReceivable)} unit="万元" icon={Receipt} trend="flat" trendValue="当前未结余额" theme="blue" />
-                          <StatCard title="未结应付 (AP)" value={toWan(apiDashboard?.totalPayable)} unit="万元" icon={CreditCard} trend="flat" trendValue="当前未付余额" theme="purple" />
-                          <StatCard title="累计已收款" value={toWan(apiDashboard?.totalReceived)} unit="万元" icon={Landmark} trend="flat" trendValue="收款流水合计" theme="emerald" />
-                          <StatCard title="累计已付款" value={toWan(apiDashboard?.totalPaid)} unit="万元" icon={Coins} trend="flat" trendValue="付款流水合计" theme="amber" />
+                          <StatCard title="未结应收 (AR)" value={aggregateAmount()} icon={Receipt} trend="flat" trendValue="币种与汇总口径待确认" theme="blue" />
+                          <StatCard title="未结应付 (AP)" value={aggregateAmount()} icon={CreditCard} trend="flat" trendValue="币种与汇总口径待确认" theme="purple" />
+                          <StatCard title="累计已收款" value={aggregateAmount()} icon={Landmark} trend="flat" trendValue="币种与汇总口径待确认" theme="emerald" />
+                          <StatCard title="累计已付款" value={aggregateAmount()} icon={Coins} trend="flat" trendValue="币种与汇总口径待确认" theme="amber" />
                       </div>
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
@@ -8326,8 +8449,9 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                               <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 relative">
                                   <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-800 text-[14px]">当前资金义务</h3><span className="px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-600 text-[11px] font-bold rounded-lg">实时看板</span></div>
                                   <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
-                                      <p><span className="font-bold text-slate-800">未结应收：</span> {formatCurrency(apiDashboard?.totalReceivable)}</p>
-                                      <p><span className="font-bold text-slate-800">未结应付：</span> {formatCurrency(apiDashboard?.totalPayable)}</p>
+                                      <p><span className="font-bold text-slate-800">未结应收：</span> {aggregateAmount()}</p>
+                                      <p><span className="font-bold text-slate-800">未结应付：</span> {aggregateAmount()}</p>
+                                      <p className="text-amber-700">汇总金额暂不可用：尚未提供币种及汇总口径。请按单据币种核对明细。</p>
                                       <p><span className="font-bold text-slate-800">待结算单据：</span> {apiDashboard?.pendingSettlementCount ?? '-'} 笔</p>
                                   </div>
                                   <div className="flex gap-3">
@@ -8371,7 +8495,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                               <div className="text-[12px] text-slate-500">源销售订单 {row.soId}</div>
                                           </div>
                                           <div className="text-right shrink-0">
-                                              <div className="font-mono font-bold text-slate-800 text-[14px]">{formatCurrency(row.unreceived)}</div>
+                                              <div className="font-mono font-bold text-slate-800 text-[14px]">{formatCurrency(row.unreceived, row.currency)}</div>
                                               <button onClick={() => openFinanceRowAction('arCollect', row)} className="mt-1 text-[11px] font-bold text-blue-600 hover:text-blue-700">去结算</button>
                                           </div>
                                       </div>
@@ -8383,7 +8507,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                               <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-emerald-50 p-1.5 rounded-lg text-emerald-600 mr-2.5 border border-emerald-100"><CalendarDays size={18} /></div>当前页资金日历</div>
                               <div className="space-y-4">
                                   {financeCalendarRows.map(item => (
-                                      <div key={`${item.date}-${item.title}`} className="flex gap-3">
+                                      <div key={item.id} className="flex gap-3">
                                           <div className="w-12 shrink-0 text-center"><div className="text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded-lg py-1.5">{item.date}</div></div>
                                           <div className="flex-1 border-b border-slate-100 pb-4">
                                               <div className="flex items-center justify-between mb-1"><span className="font-bold text-slate-800 text-[13px]">{item.title}</span><span className={`font-mono font-bold text-[13px] ${item.tone === 'emerald' ? 'text-emerald-600' : item.tone === 'amber' ? 'text-amber-600' : 'text-rose-600'}`}>{item.amount}</span></div>
@@ -8410,7 +8534,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                               ].map(item => (
                                   <div key={item.label} className="border border-slate-100 bg-slate-50 rounded-xl p-5">
                                       <div className="text-[12px] font-bold text-slate-500 mb-2">{item.label}</div>
-                                      <div className={`text-[22px] font-bold font-mono ${item.tone}`}>{formatCurrency(item.value)}</div>
+                                      <div className={`text-[22px] font-bold font-mono ${item.tone}`}>{aggregateAmount()}</div>
                                   </div>
                               ))}
                           </div>
@@ -8434,7 +8558,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                       <div className="overflow-x-auto">
                           <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">应收单号</th><th className="px-6 py-4 font-bold">客户名称</th><th className="px-6 py-4 font-bold">源销售订单</th><th className="px-6 py-4 font-bold text-right">应收总额</th><th className="px-6 py-4 font-bold text-right text-emerald-600">已收款</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                           <tbody className="divide-y divide-slate-100">{visibleArRows.map(row => (
-                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.customer}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.soId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.received)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'} px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 w-max`}><CheckCircle2 size={12}/>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('arView', row)} /><TableActionButton icon={ArrowDownToLine} label="收款" tone="emerald" onClick={() => openFinanceRowAction('arCollect', row)} disabled={row.status === '已结清'} /></TableActionGroup></td></tr>
+                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.customer}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.soId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount, row.currency)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.received, row.currency)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'} px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 w-max`}><CheckCircle2 size={12}/>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('arView', row)} /><TableActionButton icon={ArrowDownToLine} label="收款" tone="emerald" onClick={() => openFinanceRowAction('arCollect', row)} disabled={!['待收款', '部分收款'].includes(row.status) || !positiveFinanceAmount(row.unreceived)} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
                       </div><Pagination total={financeTotals.ar} page={arPage} limit={10} onPageChange={setArPage} />
                   </div>
@@ -8451,7 +8575,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                       <div className="overflow-x-auto">
                           <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">应付单号</th><th className="px-6 py-4 font-bold">供应商名称</th><th className="px-6 py-4 font-bold">源采购订单</th><th className="px-6 py-4 font-bold text-right">应付总额</th><th className="px-6 py-4 font-bold text-right text-emerald-600">已付款</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                           <tbody className="divide-y divide-slate-100">{visibleApRows.map(row => (
-                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.supplier}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.poId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.paid)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} border px-2.5 py-1 rounded-lg text-[11px] font-bold`}>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('apView', row)} /><TableActionButton icon={ArrowUpFromLine} label="付款" tone="amber" onClick={() => openFinanceRowAction('apPay', row)} disabled={row.status === '已结清'} /></TableActionGroup></td></tr>
+                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.supplier}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.poId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount, row.currency)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.paid, row.currency)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} border px-2.5 py-1 rounded-lg text-[11px] font-bold`}>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('apView', row)} /><TableActionButton icon={ArrowUpFromLine} label="付款" tone="amber" onClick={() => openFinanceRowAction('apPay', row)} disabled={!['待付款', '部分付款'].includes(row.status) || !positiveFinanceAmount(row.unpaid)} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
                       </div><Pagination total={financeTotals.ap} page={apPage} limit={10} onPageChange={setApPage} />
                   </div>
@@ -8468,6 +8592,8 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                   </div>
               )}
               {activeTab === 'payments' && <PaymentsPanel apiContext={finCtx} permissions={currentUser?.permissions} actorId={currentUser?.userId || currentUser?.account} onChanged={() => setFinanceRevision(value => value + 1)} />}
+              {activeTab === 'ledger' && <FinanceClosurePanel context={finCtx} mode="ledger" permissions={currentUser?.permissions} />}
+              {activeTab === 'allocations' && <FinanceClosurePanel context={finCtx} mode="allocations" permissions={currentUser?.permissions} />}
           </div>
         </main>
       {paymentModal && finCtx && (
@@ -8491,13 +8617,10 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 // ==========================================
 // 6. 人员管理模块 (PersonnelManagement)
 // ==========================================
-const loadPersonnelFacts = async (context) => {
-  const [employees, skills] = await Promise.all([
-    loadApiCollection((page, pageSize) => personnelApi.listEmployees(context, { page, pageSize })),
-    loadApiCollection((page, pageSize) => personnelApi.listSkills(context, { page, pageSize })),
-  ]);
-  return { employees, skills };
-};
+const loadPersonnelEmployees = (context) =>
+  loadApiCollection((page, pageSize) => personnelApi.listEmployees(context, { page, pageSize }));
+const loadPersonnelSkills = (context) =>
+  loadApiCollection((page, pageSize) => personnelApi.listSkills(context, { page, pageSize }));
 
 const PersonnelManagement = ({ currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -8506,7 +8629,15 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
 
   // Phase 9: 人员管理 API 集成
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
-  const personnelFacts = useApiResource(formalContext, loadPersonnelFacts);
+  const canReadEmployees = hasPermission(currentUser?.permissions, 'hr.employee.read');
+  const canReadSkills = hasPermission(currentUser?.permissions, 'hr.skill.read');
+  const employeeFacts = useApiResource(canReadEmployees ? formalContext : null, loadPersonnelEmployees);
+  const skillFacts = useApiResource(canReadSkills ? formalContext : null, loadPersonnelSkills);
+  const personnelFacts = {
+    loading: employeeFacts.loading || skillFacts.loading,
+    error: [canReadEmployees ? employeeFacts.error : '无员工档案查看权限', canReadSkills ? skillFacts.error : '无资质技能查看权限'].filter(Boolean).join('；'),
+    reload: () => { employeeFacts.reload(); skillFacts.reload(); },
+  };
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeStatus, setEmployeeStatus] = useState('');
   const [employeeDepartment, setEmployeeDepartment] = useState('');
@@ -8523,14 +8654,14 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
     level: sk.level, status: sk.status, _backend: sk,
   });
 
-  const employees = (personnelFacts.data?.employees ?? []).map(mapBackendEmployee);
-  const skills = (personnelFacts.data?.skills ?? []).map(mapBackendSkill);
+  const employees = (employeeFacts.data ?? []).map(mapBackendEmployee);
+  const skills = (skillFacts.data ?? []).map(mapBackendSkill);
   const filteredEmployees = employees.filter(row =>
     (!employeeStatus || row.status === employeeStatus)
     && (!employeeDepartment || row.dept === employeeDepartment)
     && [row.id, row.name, row.dept].some(value => String(value || '').toLowerCase().includes(employeeSearch.trim().toLowerCase())),
   );
-  const personnelCount = (value) => personnelFacts.data ? String(value) : '-';
+  const personnelCount = (value, source: { data: unknown } = employeeFacts) => source.data !== null ? String(value) : '-';
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -8614,13 +8745,14 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
           <button onClick={() => setActiveTab('skills')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'skills' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Award size={14} className="mr-1.5" /> 资质技能</button>
         </div>
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
-            {(personnelFacts.loading || personnelFacts.error) && <ApiDataState loading={personnelFacts.loading} error={personnelFacts.error} onRetry={personnelFacts.reload} />}
+            {(activeTab === 'dashboard' || activeTab === 'directory') && (employeeFacts.loading || employeeFacts.error || !canReadEmployees) && <ApiDataState loading={employeeFacts.loading} error={canReadEmployees ? employeeFacts.error : '无员工档案查看权限'} onRetry={canReadEmployees ? employeeFacts.reload : undefined} />}
+            {(activeTab === 'dashboard' || activeTab === 'skills') && (skillFacts.loading || skillFacts.error || !canReadSkills) && <ApiDataState loading={skillFacts.loading} error={canReadSkills ? skillFacts.error : '无资质技能查看权限'} onRetry={canReadSkills ? skillFacts.reload : undefined} />}
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
                   metrics={[
                     { title: '在职员工总数', value: personnelCount(employees.filter(e => e.status === '在职').length), unit: '人', icon: Users, trend: 'flat', trendValue: '当前在职', theme: 'blue' },
-                    { title: '在职比例', value: personnelFacts.data && employees.length > 0 ? String(Math.round(employees.filter(e => e.status === '在职').length / employees.length * 100)) : '-', unit: '%', icon: UserCheck, trend: 'flat', trendValue: '在职/总数', theme: 'emerald' },
-                    { title: '资质证书数', value: personnelCount(skills.length), unit: '份', icon: Award, trend: 'flat', trendValue: '已登记证书', theme: 'amber' },
+                    { title: '在职比例', value: employeeFacts.data && employees.length > 0 ? String(Math.round(employees.filter(e => e.status === '在职').length / employees.length * 100)) : '-', unit: '%', icon: UserCheck, trend: 'flat', trendValue: '在职/总数', theme: 'emerald' },
+                    { title: '资质证书数', value: personnelCount(skills.length, skillFacts), unit: '份', icon: Award, trend: 'flat', trendValue: '已登记证书', theme: 'amber' },
                     { title: '涉及部门数', value: personnelCount(new Set(employees.map(e => e.dept).filter(Boolean)).size), unit: '个', icon: Building, trend: 'flat', trendValue: '已登记部门', theme: 'red' },
                   ]}
                   aiCards={[
@@ -8629,7 +8761,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                       icon: ShieldAlert,
                       tone: 'rose',
                       subject: '人员稳定性风险分析',
-                      badge: personnelFacts.error ? '数据加载失败' : personnelFacts.loading ? '加载中' : employees.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
+                      badge: !canReadEmployees ? '无权限' : employeeFacts.error ? '数据加载失败' : employeeFacts.loading ? '加载中' : employees.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
                       lines: ['关注人员稳定性变化与岗位风险。当前暂无可展示的分析结果。'],
                     },
                     {
@@ -8637,7 +8769,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                       icon: Award,
                       tone: 'amber',
                       subject: '岗位证书有效期与资质风险',
-                      badge: personnelFacts.error ? '数据加载失败' : personnelFacts.loading ? '加载中' : skills.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
+                      badge: !canReadSkills ? '无权限' : skillFacts.error ? '数据加载失败' : skillFacts.loading ? '加载中' : skills.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
                       lines: ['展示正式资质风险分析；证书明细可在资质技能中查看。'],
                     },
                   ]}
@@ -8681,7 +8813,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">工号</th><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">部门</th><th className="px-6 py-4 font-bold">岗位</th><th className="px-6 py-4 font-bold">入职日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">{filteredEmployees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept || '-'}</td><td className="px-6 py-4 font-medium text-slate-600">{r.role || '-'}</td><td className="px-6 py-4 text-slate-500 font-mono text-[12px]">{r._backend?.hireDate || '-'}</td><td className="px-6 py-4">{r.status}</td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
                     </div>
-                    {!personnelFacts.loading && !personnelFacts.error && filteredEmployees.length === 0 && <ApiDataState empty="没有符合条件的员工" />}
+                    {employeeFacts.data !== null && filteredEmployees.length === 0 && <ApiDataState empty="没有符合条件的员工" />}
                     <div className="px-6 py-3 text-[12px] text-slate-500">共 {filteredEmployees.length} 条</div>
                 </div>
             )}
@@ -8692,7 +8824,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">证书编号</th><th className="px-6 py-4 font-bold">持证人</th><th className="px-6 py-4 font-bold">资质名称</th><th className="px-6 py-4 font-bold">到期日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">{skills.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 font-bold text-slate-800">{r.skillName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.expiryDate}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="证书" onClick={() => openHrRowAction('skillView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
                     </div>
-                    {!personnelFacts.loading && !personnelFacts.error && skills.length === 0 && <ApiDataState empty="暂无资质证书" />}
+                    {skillFacts.data !== null && skills.length === 0 && <ApiDataState empty="暂无资质证书" />}
                     <div className="px-6 py-3 text-[12px] text-slate-500">共 {skills.length} 条</div>
                 </div>
             )}
@@ -8752,14 +8884,9 @@ const CustomerRiskStrategyCards = ({ items }) => (
   </div>
 );
 
-const loadSupplyChainFacts = async (context) => {
-  const [suppliers, customers, riskEvents] = await Promise.all([
-    loadApiCollection((page, pageSize) => supplyChainApi.listSuppliers(context, { page, pageSize })),
-    loadApiCollection((page, pageSize) => supplyChainApi.listCustomers(context, { page, pageSize })),
-    loadApiCollection((page, pageSize) => supplyChainApi.listRiskEvents(context, { page, pageSize })),
-  ]);
-  return { suppliers, customers, riskEvents };
-};
+const loadSupplySuppliers = context => loadApiCollection((page, pageSize) => supplyChainApi.listSuppliers(context, { page, pageSize }));
+const loadSupplyCustomers = context => loadApiCollection((page, pageSize) => supplyChainApi.listCustomers(context, { page, pageSize }));
+const loadSupplyRisks = context => loadApiCollection((page, pageSize) => supplyChainApi.listRiskEvents(context, { page, pageSize }));
 
 const SupplyChainManagement = ({ currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -8770,7 +8897,18 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
 
   // Phase 9: 产业链管理 API 集成
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
-  const supplyFacts = useApiResource(formalContext, loadSupplyChainFacts);
+  const canReadSuppliers = hasPermission(currentUser?.permissions, 'sc.supplier.read');
+  const canReadCustomers = hasPermission(currentUser?.permissions, 'sc.customer.read');
+  const canReadRisks = hasPermission(currentUser?.permissions, 'sc.risk.read');
+  const supplierFacts = useApiResource(canReadSuppliers ? formalContext : null, loadSupplySuppliers);
+  const customerFacts = useApiResource(canReadCustomers ? formalContext : null, loadSupplyCustomers);
+  const riskFacts = useApiResource(canReadRisks ? formalContext : null, loadSupplyRisks);
+  const supplyFacts = {
+    data: { suppliers: supplierFacts.data, customers: customerFacts.data, riskEvents: riskFacts.data },
+    loading: supplierFacts.loading || customerFacts.loading || riskFacts.loading,
+    error: [canReadSuppliers && supplierFacts.error, canReadCustomers && customerFacts.error, canReadRisks && riskFacts.error].filter(Boolean).join('；'),
+    reload: () => { supplierFacts.reload(); customerFacts.reload(); riskFacts.reload(); },
+  };
   const [verifyingCustomerId, setVerifyingCustomerId] = useState<string | null>(null);
 
   const mapBackendSupplier = (sup) => ({
@@ -8803,10 +8941,12 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
   const customers = (supplyFacts.data?.customers ?? []).map(mapBackendCustomer);
   const riskEvents = (supplyFacts.data?.riskEvents ?? []).map(mapBackendRiskEvent);
   const supplyCount = (rows, field, predicate) =>
-    !supplyFacts.data || rows.some(row => !row._backend?.[field]) ? '-' : String(rows.filter(predicate).length);
+    !customerFacts.data || rows.some(row => !row._backend?.[field]) ? '-' : String(rows.filter(predicate).length);
   const highPressureCount = supplyCount(customers, 'pressureLevel', row => row.pressure === '高');
   const unverifiedCount = supplyCount(customers, 'operationStatus', row => ['待核验', '待确认'].includes(row.operation));
-  const supplyAiBadge = supplyFacts.error ? '数据加载失败' : supplyFacts.loading ? '加载中' : !suppliers.length && !customers.length && !riskEvents.length ? '暂无 AI 预警' : '尚未获取 AI 分析结果';
+  const supplyAiBadge = supplyFacts.error ? '数据加载失败' : supplyFacts.loading ? '加载中'
+    : !supplierFacts.data || !customerFacts.data || !riskFacts.data ? '尚未获取完整分析来源'
+    : !suppliers.length && !customers.length && !riskEvents.length ? '暂无 AI 预警' : '尚未获取 AI 分析结果';
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -9022,7 +9162,10 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
           <button onClick={() => setActiveTab('risk')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 whitespace-nowrap ${activeTab === 'risk' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><ShieldAlert size={14} className="mr-1.5" /> 风险数据中心</button>
         </div>
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
-            {(supplyFacts.loading || supplyFacts.error) && <ApiDataState loading={supplyFacts.loading} error={supplyFacts.error} onRetry={supplyFacts.reload} />}
+            {activeTab === 'dashboard' && (supplyFacts.loading || supplyFacts.error) && <ApiDataState loading={supplyFacts.loading} error={supplyFacts.error} onRetry={supplyFacts.reload} />}
+            {activeTab === 'suppliers' && (supplierFacts.loading || supplierFacts.error || !canReadSuppliers) && <ApiDataState loading={supplierFacts.loading} error={canReadSuppliers ? supplierFacts.error : '无供应商查看权限'} onRetry={canReadSuppliers ? supplierFacts.reload : undefined} />}
+            {activeTab === 'customers' && (customerFacts.loading || customerFacts.error || !canReadCustomers) && <ApiDataState loading={customerFacts.loading} error={canReadCustomers ? customerFacts.error : '无客户查看权限'} onRetry={canReadCustomers ? customerFacts.reload : undefined} />}
+            {activeTab === 'risk' && (riskFacts.loading || riskFacts.error || !canReadRisks) && <ApiDataState loading={riskFacts.loading} error={canReadRisks ? riskFacts.error : '无风险事件查看权限'} onRetry={canReadRisks ? riskFacts.reload : undefined} />}
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
                   metrics={[
@@ -9195,7 +9338,7 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
                         const matchedCustomer = customers.find(item => item.name === r.company);
                         return <tr key={`${r.company}-${r.type}`} className="hover:bg-slate-50/60"><td className="px-6 py-4 font-bold text-blue-600">{r.company}</td><td className="px-6 py-4 text-slate-700">{r.type}</td><td className="px-6 py-4"><SupplyRiskBadge level={r.level} /></td><td className="px-6 py-4 text-slate-600 font-bold">{r.owner}</td><td className="px-6 py-4 text-slate-700">{r.action}</td><td className="px-6 py-4 text-right"><button type="button" onClick={() => openCustomerRiskDetail(matchedCustomer)} disabled={!matchedCustomer} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100"><Eye size={14} />查看</button></td></tr>;
                       })}</tbody></table>
-                      {!supplyFacts.loading && !supplyFacts.error && riskEvents.length === 0 && <ApiDataState empty="暂无风险事件" />}
+                      {canReadRisks && riskFacts.data && !riskFacts.loading && !riskFacts.error && riskEvents.length === 0 && <ApiDataState empty="暂无风险事件" />}
                     </div>
                   </div>
                 </div>
@@ -9774,10 +9917,13 @@ export default function App() {
     permissionRefreshing,
     refreshPermissions,
   } = useAppRuntime();
-  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken, permissionVersion: currentUser.permissionVersion, scopeVersion: currentUser.scopeVersion }) : null, [currentTenant?.id, currentUser?.accessToken, currentUser?.permissionVersion, currentUser?.scopeVersion]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [loginPageView, setLoginPageView] = useState<'login' | 'forgot' | 'reset-password' | 'register' | 'first-login'>('login');
-  const [passwordResetToken, setPasswordResetToken] = useState('');
+  const [resetRoute] = useState(() => readPasswordResetRoute(window.location));
+  const [loginPageView, setLoginPageView] = useState<'login' | 'forgot' | 'reset-password' | 'register' | 'first-login'>(() => resetRoute ? 'reset-password' : 'login');
+  const [passwordResetToken, setPasswordResetToken] = useState(resetRoute?.code || '');
+  const [loginNotice, setLoginNotice] = useState('');
+  const logoutPending = useRef(false);
   const [firstLoginSession, setFirstLoginSession] = useState<{ account: string; tempPassword: string } | null>(null);
   const [messages, setMessages] = useState([]);
   const [messagePage, setMessagePage] = useState(1);
@@ -9841,6 +9987,8 @@ export default function App() {
   }, [messageScope, messagePage, messageQuery, messageCategory, currentUser?.permissions]);
   const [salesResetSignal, setSalesResetSignal] = useState(0);
   const [businessFlow, setBusinessFlow] = useState(null);
+  const businessIdentity = JSON.stringify([currentTenant?.id, currentUser?.accessToken, currentUser?.permissionVersion, currentUser?.scopeVersion]);
+  useEffect(() => { setBusinessFlow(null); }, [businessIdentity]);
   const [financeRefreshTick, setFinanceRefreshTick] = useState(0);
   const [flowToast, setFlowToast] = useState({ show: false, msg: '', type: 'success' });
   const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
@@ -9901,13 +10049,25 @@ export default function App() {
     showFlowToast('登录成功，欢迎进入工业AI平台', 'success');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (logoutPending.current) return;
+    logoutPending.current = true;
+    const session = currentUser;
     clearAuthenticatedSession();
     setCurrentUser(null);
+    setFirstLoginSession(null);
+    setLoginPageView('login');
+    setLoginNotice('正在退出当前会话…');
     setProfileModal(null);
     setActiveModule('工作台');
     setIsGlobalAssistantOpen(false);
     setIsNotificationsOpen(false);
+    try {
+      if (session?.accessToken) await logoutSession({ accessToken: session.accessToken });
+      setLoginNotice('已退出登录');
+    } catch {
+      setLoginNotice('本机已退出；服务端会话撤销未确认，请联系管理员或等待会话到期。');
+    } finally { logoutPending.current = false; }
   };
 
   const openProfileModal = () => {
@@ -10138,7 +10298,7 @@ export default function App() {
 
     if (action === 'formalSalesShipped') {
       setBusinessFlow(prev => ({ ...prev, currentStep: 'delivery', completed: Array.from(new Set([...prev.completed, 'finishedInbound'])), ledger: [...prev.ledger, { module: '库存管理', text: '原销售出库单已正式过账，销售订单更新为已发货' }] }));
-      showFlowToast('销售出库已完成，订单履约闭环');
+      showFlowToast('销售出库已过账，请继续核对客户签收、应收结算和订单完成条件');
       return;
     }
 
@@ -10244,20 +10404,31 @@ export default function App() {
     }
   }, [activeModule, productionAvailable, permissionsReady, currentUser?.permissions]);
 
+  const finishPasswordReset = () => {
+    leavePasswordResetRoute();
+    setPasswordResetToken('');
+    setLoginPageView('login');
+  };
+  if (loginPageView === 'reset-password') {
+    return <ResetPasswordPage token={passwordResetToken} onBack={finishPasswordReset} onSuccess={() => {
+      finishPasswordReset(); clearAuthenticatedSession(); setCurrentUser(null);
+      setLoginNotice('密码已重置，请使用新密码登录');
+    }} />;
+  }
   if (!currentUser) {
     if (loginPageView === 'first-login' && firstLoginSession) {
       return <FirstLoginPage account={firstLoginSession.account} tempPassword={firstLoginSession.tempPassword} onComplete={() => { setFirstLoginSession(null); setLoginPageView('login'); showFlowToast('密码设置成功，请使用新密码登录', 'success'); }} onLogout={() => { setFirstLoginSession(null); setLoginPageView('login'); }} />;
     }
     if (loginPageView === 'forgot') {
-      return <ForgotPasswordPage onBack={() => setLoginPageView('login')} onSuccess={(token) => { setPasswordResetToken(token); setLoginPageView('reset-password'); }} />;
-    }
-    if (loginPageView === 'reset-password') {
-      return <ResetPasswordPage token={passwordResetToken} onBack={() => setLoginPageView('login')} onSuccess={() => { setLoginPageView('login'); showFlowToast('密码已重置，请使用新密码登录', 'success'); }} />;
+      return <ForgotPasswordPage onBack={() => setLoginPageView('login')} onSuccess={() => { setLoginPageView('login'); setLoginNotice('密码已重置，请使用新密码登录'); }} />;
     }
     if (loginPageView === 'register') {
       return <RegisterPage onBack={() => setLoginPageView('login')} onRegistered={() => { setLoginPageView('login'); showFlowToast('注册成功，请使用注册的账号和密码登录', 'success'); }} />;
     }
-    return <LoginPage onLogin={handleLogin} onForgotPassword={() => setLoginPageView('forgot')} onRegister={() => setLoginPageView('register')} />;
+    return <LoginPage notice={loginNotice} onLogin={async input => {
+      if (logoutPending.current) throw new Error('正在撤销上一次会话，请稍后登录');
+      await handleLogin(input);
+    }} onForgotPassword={() => { setLoginNotice(''); setLoginPageView('forgot'); }} onRegister={() => setLoginPageView('register')} />;
   }
 
   if (!permissionsReady || !visibleMenuItems.length || !allowedModules.includes(activeModule)) {
@@ -10612,6 +10783,7 @@ export default function App() {
           </div>
         )}
         
+        <React.Fragment key={JSON.stringify([currentTenant.id, currentUser.accessToken, currentUser.permissionVersion, currentUser.scopeVersion, [...(currentUser.permissions || [])].sort()])}>
         {activeModule === '销售管理' && <SalesManagement resetSignal={salesResetSignal} currentTenant={currentTenant} currentUser={currentUser} canAccessInventory={allowedModules.includes('库存管理')} {...linkedFlowProps} />}
         {activeModule === '生产管理' && <LegacyProductionManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} />}
         {activeModule === '库存管理' && <InventoryManagement {...linkedFlowProps} currentTenant={currentTenant} currentUser={currentUser} />}
@@ -10624,6 +10796,7 @@ export default function App() {
         {activeModule === '消息管理' && <MessageManagement onNavigateModule={setActiveModule} msgs={messages} onReadMessage={markMessageRead} onArchiveMessage={archiveMessage} focusMsgId={focusedMessageId} focusTick={messageFocusTick} query={messageQuery} onQuery={value => { setMessageQuery(value); setMessagePage(1); }} category={messageCategory} onCategory={value => { setMessageCategory(value); setMessagePage(1); }} page={messagePage} total={messageTotal} onPage={setMessagePage} loading={messageLoading} error={messageError} onRetry={() => void refreshMessages()} />}
         {activeModule === '平台管理' && <PlatformManagementV2 currentTenant={currentTenant} currentUser={currentUser} onToast={showFlowToast} />}
         {activeModule === '问题反馈' && <FeedbackManagement currentTenant={currentTenant} currentUser={currentUser} onToast={showFlowToast} />}
+        </React.Fragment>
         
         {/* Placeholder for un-implemented modules */}
         {['未开发模块'].includes(activeModule) && (

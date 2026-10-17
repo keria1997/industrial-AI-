@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, X, Send, UploadCloud, CheckCircle2, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { type ChatMessage, type AIActionPlan, type DomainId, defaultDomainCategories } from './types';
 import { aiApi } from '../../api/ai';
-import type { ApiContext } from '../../api/client';
+import { ApiError, apiContextScope, type ApiContext } from '../../api/client';
 import { DataImportPanel } from './import/DataImportPanel';
 
 type Props = {
@@ -51,11 +51,12 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [requestError, setRequestError] = useState<{ message: string; retryText?: string } | null>(null);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
-  const scope = `${apiContext?.tenantId || ''}:${apiContext?.accessToken || ''}`;
+  const scope = apiContextScope(apiContext);
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const chatPending = useRef(false);
   const actionPending = useRef(false);
+  const actionAttempts = useRef(new Map<string, { key: string; input: Parameters<typeof aiApi.submitActionPlan>[1] }>());
   const [importFile, setImportFile] = useState<File | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -68,8 +69,10 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
     setInput('');
     setIsTyping(false);
     setSubmittingId(null);
+    setImportFile(null);
     chatPending.current = false;
     actionPending.current = false;
+    actionAttempts.current.clear();
   }, [scope]);
 
   // 自动滚动到底部
@@ -158,18 +161,24 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
         const msg = messages.find(m => m.id === messageId);
         if (!apiContext || !conversationId || !msg?.action || !msg.actionData) throw new Error('缺少正式行动方案，未提交');
         if (msg.action.status === 'submitted') return;
-        const response = await aiApi.submitActionPlan(apiContext, {
-            messageId,
-            conversationId,
-            actionPlan: msg.actionData,
-          });
+        let attempt = actionAttempts.current.get(messageId);
+        if (!attempt) {
+          attempt = { key: crypto.randomUUID(), input: { messageId, conversationId, actionPlan: msg.actionData } };
+          actionAttempts.current.set(messageId, attempt);
+        }
+        const response = await aiApi.submitActionPlan(apiContext, attempt.input, attempt.key);
         if (scopeRef.current !== requestScope) return;
         if (!response?.actionPlan?.id || response.actionPlan.status !== 'submitted') throw new Error('未收到审批提交确认');
+        actionAttempts.current.delete(messageId);
         const updatedAction = { ...msg.action, status: 'submitted' as const };
         setMessages(prev => prev.map(item => item.id === messageId ? { ...item, action: updatedAction } : item));
         onActionSubmit?.(updatedAction);
     } catch (error) {
-      if (scopeRef.current === requestScope) setRequestError({ message: error instanceof Error ? error.message : '审批提交失败，草稿已保留' });
+      if (scopeRef.current === requestScope) {
+        const knownFailure = error instanceof ApiError && error.status < 500 && ![408, 429].includes(error.status);
+        if (knownFailure) actionAttempts.current.delete(messageId);
+        setRequestError({ message: `${error instanceof Error ? error.message : '审批提交失败'}${knownFailure ? '；草稿已保留' : '；结果待核实，再次提交会复用原请求'}` });
+      }
     } finally {
       if (scopeRef.current === requestScope) {
         actionPending.current = false;
@@ -418,11 +427,13 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.xlsx,.xls"
+              accept=".csv,text/csv"
               className="hidden"
               onChange={(e) => {
                 const selected = e.target.files?.[0];
-                if (selected) setImportFile(selected);
+                if (selected && !/\.csv$/i.test(selected.name)) {
+                  setRequestError({ message: '当前支持 UTF-8 CSV 文件，请先将表格另存为 CSV' });
+                } else if (selected) setImportFile(selected);
                 e.target.value = '';
               }}
             />

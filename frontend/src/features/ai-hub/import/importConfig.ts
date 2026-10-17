@@ -39,6 +39,7 @@ const productConfig: EntityImportConfig = {
     { field: 'safetyStockQty', label: '安全库存', required: false, aliases: ['安全库存', 'safetyStockQty', '安全库存量'] },
     { field: 'maxStockQty', label: '最大库存', required: false, aliases: ['最大库存', 'maxStockQty', '最大库存量'] },
     { field: 'productType', label: '产品类型', required: false, aliases: ['产品类型', 'productType', '类型'] },
+    { field: 'defaultWarehouseId', label: '库存仓库ID', required: false, aliases: ['库存仓库ID', 'defaultWarehouseId', '仓库ID'] },
     { field: 'remark', label: '备注', required: false, aliases: ['备注', 'remark', '说明'] },
   ],
 };
@@ -55,6 +56,7 @@ const materialConfig: EntityImportConfig = {
     { field: 'safetyStockQty', label: '安全库存', required: false, aliases: ['安全库存', 'safetyStockQty', '安全库存量'] },
     { field: 'maxStockQty', label: '最大库存', required: false, aliases: ['最大库存', 'maxStockQty', '最大库存量'] },
     { field: 'materialType', label: '物料类型', required: false, aliases: ['物料类型', 'materialType', '类型', '采购类型'] },
+    { field: 'defaultWarehouseId', label: '库存仓库ID', required: true, aliases: ['库存仓库ID', 'defaultWarehouseId', '仓库ID'] },
     { field: 'remark', label: '备注', required: false, aliases: ['备注', 'remark', '说明'] },
   ],
 };

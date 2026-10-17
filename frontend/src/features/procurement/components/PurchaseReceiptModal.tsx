@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 import type { ApiContext } from '../../../api/client';
 import { procurementApi, type PurchaseOrderDto } from '../../../api/procurement';
-import { useBusinessCommand } from '../../../hooks/useBusinessCommand';
+import { businessCommandScope, useBusinessCommand } from '../../../hooks/useBusinessCommand';
 import { subtractQuantity } from '../../../shared/decimal';
 import { validatePositiveAmount } from '../../../shared/commandValidation';
 
@@ -14,7 +14,7 @@ export function PurchaseReceiptModal({ context, order, onClose, onSaved }: Props
   const [reference, setReference] = useState('');
   const [receivedAt] = useState(() => new Date().toISOString());
   const [validation, setValidation] = useState('');
-  const command = useBusinessCommand();
+  const command = useBusinessCommand(businessCommandScope(context, order.id, 'purchase-receive'));
   let remaining = '';
   try { remaining = subtractQuantity(order.orderedQty, order.receivedQty); } catch { /* Block inconsistent quantities. */ }
   const close = () => {
@@ -23,7 +23,7 @@ export function PurchaseReceiptModal({ context, order, onClose, onSaved }: Props
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const invalid = !remaining ? '累计收货数量不一致，请重新查询订单' : validatePositiveAmount(qty, remaining);
-    if (invalid || !reference.trim()) { setValidation(invalid || '请填写本批送货单号'); return; }
+    if (!command.uncertain && (invalid || !reference.trim())) { setValidation(invalid || '请填写本批送货单号'); return; }
     setValidation('');
     // UI -> procurement client -> business backend; the server controls inspection/posting status.
     const result = await command.execute(async key => {
@@ -49,7 +49,7 @@ export function PurchaseReceiptModal({ context, order, onClose, onSaved }: Props
         {command.uncertain && <p role="status" className="text-sm text-amber-700">结果待核对，重试将使用原批次及幂等键。</p>}
         <footer className="flex justify-end gap-3 border-t pt-4">
           <button type="button" disabled={command.pending} onClick={close} className="rounded-md border px-4 py-2 text-sm">取消</button>
-          <button disabled={command.pending || !remaining} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white">{command.pending ? '提交中' : command.uncertain ? '按原请求重试' : '登记收货'}</button>
+          <button disabled={command.pending || (!command.uncertain && !remaining)} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white">{command.pending ? '提交中' : command.uncertain ? '按原请求重试' : '登记收货'}</button>
         </footer>
       </form>
     </section>

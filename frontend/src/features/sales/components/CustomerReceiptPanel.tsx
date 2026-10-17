@@ -17,7 +17,7 @@ import { listCustomerReceipts, type CustomerReceiptReadDto } from '../../../api/
 import { hasPermission } from '../../../app/permissions';
 import { useApiResource } from '../../../hooks/useApiResource';
 import type { ApiPage } from '../../../shared/apiCollection';
-import { aftercareText, aftercareQuantity, customerReceiptStatus } from '../aftercarePresentation';
+import { aftercareText, receiptLineQuantities, customerReceiptStatus } from '../aftercarePresentation';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: '待签收', color: 'amber' },
@@ -36,15 +36,20 @@ export function CustomerReceiptPanel({ apiContext, permissions, onOpenOrder }: {
   const allowed = hasPermission(permissions, 'sales.receipt.read');
   const load = useCallback((context: ApiContext) => listCustomerReceipts(context, page), [page]);
   const records = useApiResource<ApiPage<CustomerReceiptReadDto>>(allowed ? apiContext : null, load);
+  const quantities = (row: CustomerReceiptReadDto, field: 'signedQty' | 'rejectedQty' | 'damagedQty') => {
+    const lines = receiptLineQuantities(row, field);
+    return lines.length ? <div className="space-y-1">{lines.map((line, index) =>
+      <div key={index} title={`出库行：${line.source}`}>{line.source}：{line.value} {line.unit}</div>)}</div> : '-';
+  };
   const cols: Column<CustomerReceiptReadDto>[] = [
     { key: 'receiptNo', label: '签收单号', render: r => aftercareText(r.receiptNo) },
     { key: 'orderNo', label: '订单号', render: r => onOpenOrder && aftercareText(r.orderId) !== '-'
       ? <button type="button" onClick={() => onOpenOrder(r.orderId!)} className="text-blue-600 hover:underline font-medium">{aftercareText(r.orderNo) === '-' ? r.orderId : r.orderNo}</button>
       : aftercareText(r.orderNo) },
     { key: 'customerName', label: '客户', render: r => aftercareText(r.customerName) },
-    { key: 'signedQty', label: '正常签收', align: 'right', render: r => aftercareQuantity(r.signedQty) },
-    { key: 'rejectedQty', label: '拒收', align: 'right', render: r => aftercareQuantity(r.rejectedQty) },
-    { key: 'damagedQty', label: '破损', align: 'right', render: r => aftercareQuantity(r.damagedQty) },
+    { key: 'signedQty', label: '正常签收（逐行）', align: 'right', render: r => quantities(r, 'signedQty') },
+    { key: 'rejectedQty', label: '拒收（逐行）', align: 'right', render: r => quantities(r, 'rejectedQty') },
+    { key: 'damagedQty', label: '破损（逐行）', align: 'right', render: r => quantities(r, 'damagedQty') },
     { key: 'status', label: '状态', align: 'center', render: r => { const value = customerReceiptStatus(r.receiptStatus, r.status); const s = STATUS_MAP[value]; return s ? <Badge color={s.color as 'amber'}>{s.label}</Badge> : value; } },
     { key: 'signedAt', label: '签收时间', render: r => aftercareText(r.signedAt) },
   ];

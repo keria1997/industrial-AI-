@@ -123,6 +123,7 @@ export type AuditRecord = {
 
 export type PlatformState = {
   tenant: {
+    version?: number;
     id: string;
     code: string;
     name: string;

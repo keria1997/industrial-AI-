@@ -1,3 +1,5 @@
+import type { CustomerReceiptReadDto, CustomerReceiptLineReadDto } from '../../api/sales-aftercare';
+
 export const aftercareText = (value: unknown): string =>
   typeof value === 'string' && value.trim() ? value : '-';
 
@@ -16,3 +18,13 @@ export const customerReceiptStatus = (receiptStatus: unknown, status: unknown): 
   if (canonical !== '-' && alias !== '-' && canonical !== alias) return '状态不一致，待核实';
   return canonical === '-' ? alias : canonical;
 };
+
+// Keep each source line separate: receipt DTOs do not guarantee a unit or a conversion.
+export function receiptLineQuantities(receipt: CustomerReceiptReadDto, field: 'signedQty' | 'rejectedQty' | 'damagedQty') {
+  if (!Array.isArray(receipt.lines) || !receipt.lines.length) return [];
+  return receipt.lines.map((line: CustomerReceiptLineReadDto, index) => ({
+    source: aftercareText(line.outboundLineId) !== '-' ? line.outboundLineId! : `第 ${index + 1} 行`,
+    value: aftercareQuantity(line[field]),
+    unit: aftercareText(line.uom) === '-' ? '单位未提供' : line.uom!,
+  }));
+}

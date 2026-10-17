@@ -37,8 +37,15 @@ export function useFormalProduction(context: ApiContext | null) {
       if (active) setError(reason instanceof Error ? reason.message : "生产数据加载失败");
     });
     void load();
-    const interval = window.setInterval(load, 3000);
-    return () => { active = false; generation.current += 1; window.clearInterval(interval); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      generation.current += 1;
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [refresh]);
   return { snapshot, error, refresh };
 }

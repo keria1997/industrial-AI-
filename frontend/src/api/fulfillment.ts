@@ -249,7 +249,7 @@ export const inventoryApi = {
   // Warehouse
   listWarehouses: (context: ApiContext) => apiRequest<{ items: WarehouseDto[]; total: number }>('/api/v1/inventory/warehouses', context),
   getWarehouse: (context: ApiContext, id: string) => apiRequest<WarehouseDto>(`/api/v1/inventory/warehouses/${id}`, context),
-  createWarehouse: (context: ApiContext, input: { code: string; name: string; type?: string; address?: string; manager?: string; phone?: string; organization?: string; capacity?: string; usedCapacity?: string; status?: string; remark?: string }) => apiRequest<{ warehouse: WarehouseDto }>('/api/v1/inventory/warehouses', context, { method: 'POST', idempotencyKey: key(`warehouse-create:${input.code}`), body: JSON.stringify(input) }),
+  createWarehouse: (context: ApiContext, input: { code: string; name: string; type?: string; address?: string; manager?: string; phone?: string; organization?: string; capacity?: string; usedCapacity?: string; status?: string; remark?: string }, idempotencyKey?: string) => apiRequest<{ warehouse: WarehouseDto }>('/api/v1/inventory/warehouses', context, { method: 'POST', idempotencyKey: idempotencyKey ?? key(`warehouse-create:${input.code}`), body: JSON.stringify(input) }),
   updateWarehouse: (context: ApiContext, warehouse: WarehouseDto, input: Partial<{ name: string; type: string; address: string; manager: string; phone: string; status: string; remark: string; organization: string; capacity: string; usedCapacity: string }>) => apiRequest<{ warehouse: WarehouseDto }>(`/api/v1/inventory/warehouses/${warehouse.id}`, context, { method: 'PATCH', expectedVersion: warehouse.version, idempotencyKey: key(`warehouse-update:${warehouse.id}`), body: JSON.stringify(input) }),
   deleteWarehouse: (context: ApiContext, warehouse: WarehouseDto) => apiRequest<{ deleted: boolean }>(`/api/v1/inventory/warehouses/${warehouse.id}`, context, { method: 'DELETE', expectedVersion: warehouse.version, idempotencyKey: key(`warehouse-delete:${warehouse.id}`) }),
 
@@ -257,20 +257,20 @@ export const inventoryApi = {
     apiRequest<AvailabilityFactDto[]>(`/api/v1/inventory/availability?warehouseId=${encodeURIComponent(warehouseId)}&productIds=${productIds.map(encodeURIComponent).join(',')}`, context),
   listAvailability: (context: ApiContext) =>
     apiRequest<AvailabilityFactDto[]>('/api/v1/inventory/availability', context),
-  importAvailability: (context: ApiContext, input: AvailabilityFactDto & { formulaVersion: string; sourceSystem: string }) =>
+  importAvailability: (context: ApiContext, input: AvailabilityFactDto & { formulaVersion: string; sourceSystem: string }, idempotencyKey?: string) =>
     apiRequest<{ duplicate: boolean; projectionResult: string }>('/api/v1/inventory/import/availability', context,
-      { method: 'POST', idempotencyKey: key(`inventory-import:${input.eventId}`), body: JSON.stringify(input) }),
+      { method: 'POST', idempotencyKey: idempotencyKey ?? key(`inventory-import:${input.eventId}`), body: JSON.stringify(input) }),
 
   // Product
   listProducts: (context: ApiContext) => apiRequest<{ items: ProductDto[]; total: number }>('/api/v1/inventory/products', context),
-  createProduct: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; productType?: string; remark?: string; defaultWarehouseId?: string }) => apiRequest<{ product: ProductDto }>('/api/v1/inventory/products', context, { method: 'POST', idempotencyKey: key(`product-create:${input.code}`), body: JSON.stringify(input) }),
+  createProduct: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; productType?: string; remark?: string; defaultWarehouseId?: string }, idempotencyKey?: string) => apiRequest<{ product: ProductDto }>('/api/v1/inventory/products', context, { method: 'POST', idempotencyKey: idempotencyKey ?? key(`product-create:${input.code}`), body: JSON.stringify(input) }),
   updateProduct: (context: ApiContext, id: string, version: number, input: Partial<Pick<ProductDto, 'name' | 'specification' | 'category' | 'uom' | 'unitPrice' | 'safetyStockQty' | 'maxStockQty' | 'productType' | 'status' | 'remark' | 'defaultWarehouseId'>>) =>
     apiRequest<{ product: ProductDto }>(`/api/v1/inventory/products/${encodeURIComponent(id)}`, context,
       { method: 'PATCH', expectedVersion: version, idempotencyKey: key(`product-update:${id}`), body: JSON.stringify(input) }),
 
   // Material
   listMaterials: (context: ApiContext) => apiRequest<{ items: MaterialDto[]; total: number }>('/api/v1/inventory/materials', context),
-  createMaterial: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; materialType?: string; remark?: string; defaultWarehouseId?: string }) => apiRequest<{ material: MaterialDto }>('/api/v1/inventory/materials', context, { method: 'POST', idempotencyKey: key(`material-create:${input.code}`), body: JSON.stringify(input) }),
+  createMaterial: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; materialType?: string; remark?: string; defaultWarehouseId?: string }, idempotencyKey?: string) => apiRequest<{ material: MaterialDto }>('/api/v1/inventory/materials', context, { method: 'POST', idempotencyKey: idempotencyKey ?? key(`material-create:${input.code}`), body: JSON.stringify(input) }),
   updateMaterial: (context: ApiContext, id: string, version: number, input: Partial<Pick<MaterialDto, 'name' | 'specification' | 'category' | 'uom' | 'unitPrice' | 'safetyStockQty' | 'maxStockQty' | 'materialType' | 'status' | 'remark' | 'defaultWarehouseId'>>) =>
     apiRequest<{ material: MaterialDto }>(`/api/v1/inventory/materials/${encodeURIComponent(id)}`, context,
       { method: 'PATCH', expectedVersion: version, idempotencyKey: key(`material-update:${id}`), body: JSON.stringify(input) }),
@@ -300,6 +300,8 @@ export type AiInsights = {
   availability?: 'AVAILABLE' | 'EMPTY' | 'UNAVAILABLE';
   dataAsOf?: string | null;
   sourceVersion?: string | null;
+  metricCompleteness?: 'COMPLETE' | 'INCOMPLETE';
+  incompleteFactCount?: number;
   currency?: string | null;
   stalledOrders: Array<{
     orderId: string;

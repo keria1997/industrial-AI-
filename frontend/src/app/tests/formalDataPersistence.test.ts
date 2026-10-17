@@ -82,14 +82,37 @@ describe('formal data persistence replaces prototype bridges', () => {
     expect(fetch.mock.calls[0][1]?.method).toBe('POST');
   });
 
-  it('rejects unsupported tenant and adapter sync changes before sending a request', async () => {
+  it('updates only supported tenant fields using the current server version', async () => {
+    const before = snapshot();
+    before.tenant = { ...before.tenant, name: '企业', version: 9 };
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({}));
+    await persistPlatformChange(context, before, { ...before, tenant: { ...before.tenant, name: '改变企业' } });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toBe('/api/v1/platform/tenant');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'PUT', headers: { 'If-Match': '"9"' } });
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ name: '改变企业', version: 9 });
+  });
+
+  it('rejects unsupported admin transfer, versionless edits and configuration-plus-sync', async () => {
     const before = snapshot();
     const fetch = vi.spyOn(globalThis, 'fetch');
-    await expect(persistPlatformChange(context, before, { ...before, tenant: { ...before.tenant, name: '改变企业' } })).rejects.toThrow('未提供');
-    await expect(persistPlatformChange(context, before, { ...before, adapters: [{ id: 'adapter', status: 'synced' } as any] })).rejects.toThrow('未提供');
+    await expect(persistPlatformChange(context, before, { ...before, tenant: { ...before.tenant, name: '改变企业' } })).rejects.toThrow('版本未加载');
+    await expect(persistPlatformChange(context, before, { ...before, tenant: { ...before.tenant, formalAdminAccountId: 'other' } })).rejects.toThrow('不支持管理员交接');
+    before.adapters = [{ id: 'adapter', version: 4, legacyRoleCode: 'ROLE-A', status: 'pending_sync' } as any];
+    await expect(persistPlatformChange(context, before, { ...before, adapters: [{ ...before.adapters[0], legacyRoleCode: 'ROLE-B', status: 'synced' }] })).rejects.toThrow('单独提交同步');
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('sends adapter sync as one POST without writing an invented sync timestamp', async () => {
+    const before = snapshot();
+    before.adapters = [{ id: 'adapter', version: 4, status: 'pending_sync' } as any];
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({}));
+    await persistPlatformChange(context, before, { ...before, adapters: [{ ...before.adapters[0], status: 'synced' }] });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toBe('/api/v1/platform/permission-adapters/adapter/sync');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST', headers: { 'If-Match': '"4"' } });
+    expect(fetch.mock.calls[0][1]?.body).toBeUndefined();
+  });
   it('rejects missing server versions and multi-entity pseudo transactions', async () => {
     const before = snapshot();
     before.orgUnits = [{ id: 'id', name: '原名称' } as any];

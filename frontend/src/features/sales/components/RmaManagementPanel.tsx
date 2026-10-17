@@ -52,8 +52,8 @@ export function RmaManagementPanel({ apiContext, permissions, onOpenOrder }: {
     { key: 'receivedQty', label: '实际收到', align: 'right', render: r => aftercareQuantity(r.receivedQty) },
     { key: 'qualifiedQty', label: '检验合格', align: 'right', render: r => aftercareQuantity(r.qualifiedQty) },
     { key: 'status', label: '状态', align: 'center', render: r => { const s = STATUS_MAP[r.status]; return s ? <Badge color={s.color as 'amber'}>{s.label}</Badge> : aftercareText(r.status); } },
-    { key: 'creditArId', label: '红字AR引用', render: r => aftercareText(r.creditArId) },
-    { key: 'creditArAmount', label: '红字AR金额', align: 'right', render: r => creditNoteAmount(r.creditArAmount, r.currency) },
+    { key: 'creditNoteFinanceId', label: '贷项财务单引用', render: r => aftercareText(r.creditNoteFinanceId) },
+    { key: 'creditNoteAmount', label: '贷项金额', align: 'right', render: r => creditNoteAmount(r.creditNoteAmount, r.currency) },
     { key: 'createdAt', label: '创建时间', render: r => aftercareText(r.createdAt) },
   ];
 

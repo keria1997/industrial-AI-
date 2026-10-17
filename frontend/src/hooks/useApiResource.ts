@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ApiContext } from '../api/client';
+import { apiContextScope, type ApiContext } from '../api/client';
 
 export type ApiResource<T> = {
   data: T | null;
@@ -13,7 +13,7 @@ export function useApiResource<T>(
   context: ApiContext | null,
   load: (context: ApiContext) => Promise<T>,
 ): ApiResource<T> {
-  const scope = context ? `${context.tenantId}:${context.accessToken}` : '';
+  const scope = apiContextScope(context);
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{
     scope: string; loader?: typeof load; revision?: number; data: T | null; loading: boolean; error: string | null;

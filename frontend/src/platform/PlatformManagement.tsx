@@ -44,6 +44,7 @@ import {
   loadPlatformState,
 } from './platformSeed';
 import EmployeeAccountManagement from './EmployeeAccountManagement';
+import { PlatformAuditPanel } from './PlatformAuditPanel';
 import { platformApi } from '../api/platform/client';
 import { ApiError } from '../api/client';
 import { persistPlatformChange } from './persistPlatformChange';
@@ -504,7 +505,6 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   const [permissionError, setPermissionError] = useState('');
   const [roleVersions, setRoleVersions] = useState<Record<string, number>>({});
   const [configMode, setConfigMode] = useState('dictionary');
-  const [auditResult, setAuditResult] = useState('all');
   const [auditDetail, setAuditDetail] = useState<AuditRecord | null>(null);
   const [openNavGroup, setOpenNavGroup] = useState<string | null>(null);
   const [collapsedOrgIds, setCollapsedOrgIds] = useState<string[]>([]);
@@ -608,11 +608,21 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     if (mutationRunning.current) { toast('正在保存，请勿重复提交', 'error'); return false; }
     if (!permissionLoaded || !currentUser?.accessToken) { toast('平台数据未加载，请刷新后重试', 'error'); return false; }
     mutationRunning.current = true;
+    const submittedIdentity = identityRef.current;
+    let submitted = false;
     try {
       await persistPlatformChange({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, state, updater(state));
+      submitted = true;
+      if (identityRef.current !== submittedIdentity) return true;
       await reloadSnapshot();
       toast(message, type);
+      return true;
     } catch (reason) {
+      if (identityRef.current !== submittedIdentity) return submitted;
+      if (submitted) {
+        toast('操作已提交，刷新失败，请重新查询确认结果', 'warning');
+        return true;
+      }
       toast(reason instanceof Error ? reason.message : '保存失败，请重试', 'error');
       return false;
     } finally { mutationRunning.current = false; }
@@ -1175,17 +1185,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   };
 
   const renderAudit = () => {
-    const filtered = state.audits.filter((item) => (auditResult === 'all' || item.result === auditResult) && `${item.operator}${item.module}${item.action}${item.target}`.toLowerCase().includes(query.toLowerCase()));
-    return (
-      <div data-testid="platform-view-audit">
-        <PageHeader eyebrow="规则与治理" title="审计日志" description="查看谁在什么时间对哪个对象做了什么；技术追踪编号仅在详情中提供。" />
-        <Panel>
-          <div className="flex flex-col gap-3 border-b border-slate-100 p-4 lg:flex-row lg:items-center"><div className="relative min-w-0 flex-1"><Search size={14} className="absolute left-3 top-3 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索审计日志" placeholder="搜索操作人、模块、动作或对象" className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-[12px] outline-none focus:border-[#1e5fbf]" /></div><div className="flex items-center gap-2"><Filter size={14} className="text-slate-400" /><select value={auditResult} onChange={(event) => setAuditResult(event.target.value)} aria-label="筛选操作结果" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 outline-none"><option value="all">全部结果</option><option value="success">成功</option><option value="failed">失败</option><option value="denied">已拒绝</option></select></div></div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">时间</th><th className="px-4 py-3.5">操作人</th><th className="px-4 py-3.5">模块 / 动作</th><th className="px-4 py-3.5">操作对象</th><th className="px-4 py-3.5">结果</th><th className="px-5 py-3.5 text-right">详情</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((item) => <tr key={item.id} className="text-[12px] hover:bg-slate-50"><td className="whitespace-nowrap px-5 py-4 text-slate-500">{item.time}</td><td className="px-4 py-4 font-black text-slate-800">{item.operator}</td><td className="px-4 py-4"><div className="font-bold text-slate-700">{item.action}</div><div className="mt-1 text-[10px] text-slate-400">{item.module}</div></td><td className="px-4 py-4 text-slate-600">{item.target}</td><td className="px-4 py-4"><StatusPill value={item.result} label={item.result === 'success' ? '成功' : item.result === 'failed' ? '失败' : '已拒绝'} /></td><td className="px-5 py-4 text-right"><Button variant="quiet" onClick={() => setAuditDetail(item)}>查看</Button></td></tr>)}</tbody></table></div>
-          {filtered.length === 0 && <EmptyState title="没有匹配的日志" description="调整搜索词或结果筛选后再试。" />}
-        </Panel>
-      </div>
-    );
+    return <PlatformAuditPanel context={currentUser?.accessToken ? { tenantId: tenantIdentity.id, accessToken: currentUser.accessToken } : null} onSelect={setAuditDetail} />;
   };
 
   const initChecks = [
@@ -1201,7 +1201,10 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   const renderEmployeeAccounts = () => (
     <div data-testid="platform-view-employee-accounts">
       <div className="p-4">
-        <EmployeeAccountManagement accessToken={currentUser?.accessToken ?? ''} onToast={(msg, type) => toast(msg, type ?? 'success')} />
+        <EmployeeAccountManagement key={`${tenantIdentity.id}:${currentUser?.accessToken}`}
+          apiContext={{ tenantId: tenantIdentity.id, accessToken: currentUser?.accessToken ?? '' }}
+          orgUnits={state.orgUnits} positions={state.positions}
+          onToast={(msg, type) => toast(msg, type ?? 'success')} />
       </div>
     </div>
   );

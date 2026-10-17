@@ -6,6 +6,7 @@ const context = { tenantId: 'TENANT-SHWS', accessToken: 'signed-token' };
 const draft: SalesQuoteForConversion = {
   id: 'SO-DRAFT-1', client: '测试客户', date: '2026-10-13', validUntil: '2026-11-12',
   qty: 5, amount: '¥780.00', discountRate: 80, discountAmount: 20, remark: '快速开单备注',
+  recipient: { name: '真实收货人', phone: '13912345678', country: '中国', province: '浙江省', city: '杭州市', address: '测试收货地址' },
   lines: [
     { warehouseId: 'WH-FG-01', productId: 'FG001', productName: '产品一', spec: '规格一', quantity: 2, unitPrice: 200, unit: '件' },
     { warehouseId: 'WH-FG-01', productId: 'FG002', productName: '产品二', quantity: 3, unitPrice: 200, unit: '套' },
@@ -24,10 +25,10 @@ const response = (body: unknown, status = 201) => new Response(JSON.stringify(bo
 afterEach(() => vi.restoreAllMocks());
 
 describe('quick sales order creation from the quotation form', () => {
-  it.each(['台', '件', '个', 'PCS'])('submits %s as the canonical single item unit', async (unit) => {
+  it.each(['台', '件', '个', 'PCS'])('preserves the actual %s unit without an unapproved conversion', async (unit) => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ id: 'order-uuid' }));
     await createQuickSalesOrder(context, { ...draft, lines: [{ ...draft.lines![0], unit }] }, options);
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).lines[0].uom).toBe('PCS');
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).lines[0].uom).toBe(unit);
   });
 
   it('creates one pending order with every line, selected warehouse, units and discounts', async () => {
@@ -44,7 +45,7 @@ describe('quick sales order creation from the quotation form', () => {
       requestedDeliveryDate: '2026-10-13',
       orderDate: '2026-10-13', validUntil: '2026-11-12', remark: '快速开单备注',
       lines: [
-        { lineNo: 1, productId: 'FG001', productName: '产品一', specification: '规格一', orderedQty: '2', unitPrice: '200', uom: 'PCS' },
+        { lineNo: 1, productId: 'FG001', productName: '产品一', specification: '规格一', orderedQty: '2', unitPrice: '200', uom: '件' },
         { lineNo: 2, productId: 'FG002', orderedQty: '3', unitPrice: '200', uom: '套' },
       ],
     });
@@ -68,7 +69,7 @@ describe('quick sales order creation from the quotation form', () => {
   it('rejects unknown customers and invalid product quantities before posting', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
     await expect(createQuickSalesOrder(context, { ...draft, client: '不存在的客户' }, options))
-      .rejects.toThrow('请选择客户列表中的客户');
+      .rejects.toThrow('请选择客户列表中唯一匹配的客户');
     for (const line of [
       { ...draft.lines![0], quantity: 0 },
       { ...draft.lines![0], quantity: Number.NaN },
@@ -96,5 +97,14 @@ describe('quick sales order creation from the quotation form', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ id: 'order-uuid' }));
     await createQuickSalesOrder(context, { ...draft, date: '2026-10-01' }, options);
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).requestedDeliveryDate).toBe(options.today);
+  });
+
+  it('rejects missing real recipient and resources without sending placeholder business facts', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    await expect(createQuickSalesOrder(context, { ...draft, recipient: undefined }, options)).rejects.toThrow('收货人');
+    await expect(createQuickSalesOrder(context, draft, { ...options, ownerEmployeeId: '' })).rejects.toThrow('销售负责人');
+    await expect(createQuickSalesOrder(context, draft, { ...options, factoryResourceId: '' })).rejects.toThrow('履约工厂');
+    await expect(createQuickSalesOrder(context, draft, { ...options, customers: [...options.customers, ...options.customers] })).rejects.toThrow('唯一匹配');
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

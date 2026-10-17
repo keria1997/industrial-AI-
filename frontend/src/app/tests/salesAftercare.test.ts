@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listCustomerReceipts, listSalesRmas } from '../../api/sales-aftercare';
-import { aftercareQuantity, creditNoteAmount, customerReceiptStatus } from '../../features/sales/aftercarePresentation';
+import { aftercareQuantity, creditNoteAmount, customerReceiptStatus, receiptLineQuantities } from '../../features/sales/aftercarePresentation';
 
 const context = { tenantId: 'tenant-read', accessToken: 'read-token' };
 const json = (value: unknown, status = 200) =>
@@ -10,7 +10,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('persisted sales aftercare reads', () => {
   it('uses authorized business API pagination and preserves source fields', async () => {
-    const record = { id: 'receipt-db', receiptStatus: 'DISPUTED', signedQty: '0', rejectedQty: null };
+    const record = { id: 'receipt-db', receiptStatus: 'DISPUTED', lines: [{ signedQty: '0', rejectedQty: null }] };
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ items: [record], total: 21 }));
     expect(await listCustomerReceipts(context, 2, 20)).toEqual({ items: [record], total: 21 });
     expect(fetch.mock.calls[0][0]).toBe('/api/v1/fulfillment/customer-receipts?page=2&pageSize=20');
@@ -47,5 +47,19 @@ describe('persisted sales aftercare reads', () => {
     expect(customerReceiptStatus('SIGNED', 'SIGNED')).toBe('SIGNED');
     expect(customerReceiptStatus('DISPUTED', 'SIGNED')).toBe('状态不一致，待核实');
     expect(customerReceiptStatus(null, null)).toBe('-');
+  });
+
+  it('reads signed quantities per source line without summing units or inventing absent facts', () => {
+    const receipt = { id: 'receipt', lines: [
+      { outboundLineId: 'out-a', signedQty: '0', rejectedQty: '1', uom: 'PCS' },
+      { outboundLineId: 'out-b', signedQty: '2', uom: 'KG' },
+      { signedQty: null },
+    ] };
+    expect(receiptLineQuantities(receipt, 'signedQty')).toEqual([
+      { source: 'out-a', value: '0', unit: 'PCS' },
+      { source: 'out-b', value: '2', unit: 'KG' },
+      { source: '第 3 行', value: '-', unit: '单位未提供' },
+    ]);
+    expect(receiptLineQuantities({ id: 'missing' }, 'signedQty')).toEqual([]);
   });
 });

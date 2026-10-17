@@ -1,4 +1,6 @@
 import { apiRequest, type ApiContext } from "../client";
+import { readAllPages } from '../readAllPages';
+import { requireCompletionFacts, type CompletionFacts } from './completionInput';
 
 export type DemandTraceability = {
   sourceSystem: string;
@@ -90,7 +92,7 @@ export const productionOperationsApi = {
     }),
   readiness: (context: ApiContext) => apiRequest<{ permissions: string[] }>("/api/v1/production/readiness", context),
   dashboard: (context: ApiContext) => apiRequest<DashboardDto>("/api/v1/production/dashboard/kpis", context),
-  listDemands: (context: ApiContext) => apiRequest<{ items: DemandDto[]; total: number }>("/api/v1/production/demands?page=1&pageSize=200", context),
+  listDemands: (context: ApiContext) => readAllPages<DemandDto>('/api/v1/production/demands', context),
   validateDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/validate`, context, {
     method: "POST", body: JSON.stringify({ productActive: true, factoryActive: true, bomEffective: true, routingEffective: true }),
     expectedVersion: demand.version, idempotencyKey: `demand-validate:${context.tenantId}:${demand.id}:${demand.version}`,
@@ -103,7 +105,7 @@ export const productionOperationsApi = {
     method: "POST", expectedVersion: demand.version,
     idempotencyKey: `demand-claim:${context.tenantId}:${demand.id}:${demand.version}`,
   }),
-  listWorkOrders: (context: ApiContext) => apiRequest<{ items: WorkOrderDto[]; total: number }>("/api/v1/production/work-orders?page=1&pageSize=200", context),
+  listWorkOrders: (context: ApiContext) => readAllPages<WorkOrderDto>('/api/v1/production/work-orders', context),
   getWorkOrder: (context: ApiContext, id: string) => apiRequest<WorkOrderDto>(`/api/v1/production/work-orders/${id}`, context),
   createDemand: (context: ApiContext, input: Record<string, unknown>, key: string) => apiRequest<DemandDto>("/api/v1/production/demands", context, {
     method: "POST", body: JSON.stringify(input), idempotencyKey: key,
@@ -149,11 +151,14 @@ export const productionOperationsApi = {
   retryCompletion: (context: ApiContext, completionId: string) => apiRequest<unknown>(`/api/v1/production/completions/${completionId}/retry`, context, {
     method: "POST", body: "{}", idempotencyKey: `completion-retry:${context.tenantId}:${completionId}:${crypto.randomUUID()}`,
   }),
-  createCompletion: (context: ApiContext, order: WorkOrderDto, inspection: InspectionDto, inventoryWarehouseId: string) => apiRequest<{ completionId: string; taskId: string; status: string; traceId: string }>(`/api/v1/production/work-orders/${order.id}/completions`, context, {
+  createCompletion: async (context: ApiContext, order: WorkOrderDto, inspection: InspectionDto, inventoryWarehouseId: string, facts?: CompletionFacts) => {
+    const confirmedFacts = requireCompletionFacts(facts);
+    return apiRequest<{ completionId: string; taskId: string; status: string; traceId: string }>(`/api/v1/production/work-orders/${order.id}/completions`, context, {
     method: "POST",
-    body: JSON.stringify({ inspectionId: inspection.id, qty: inspection.passedQty, uom: order.uom, warehouseResourceId: inventoryWarehouseId, inventoryWarehouseId, traceMode: "NONE", productionDate: new Date().toISOString().slice(0, 10), allocationRevision: 1 }),
+    body: JSON.stringify({ ...confirmedFacts, inspectionId: inspection.id, qty: inspection.passedQty, uom: order.uom, inventoryWarehouseId }),
     idempotencyKey: `completion-create:${context.tenantId}:${order.id}:${inspection.id}:${inspection.version}`,
-  }),
+    });
+  },
   getCompletion: (context: ApiContext, completionId: string) => apiRequest<CompletionDto>(`/api/v1/production/completions/${completionId}`, context),
   waitForCompletion: async (context: ApiContext, completionId: string) => {
     let completion = await productionOperationsApi.getCompletion(context, completionId);

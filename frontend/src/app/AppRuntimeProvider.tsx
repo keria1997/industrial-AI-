@@ -210,13 +210,15 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    const expireSession = () => {
+    const expireSession = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && (detail.accessToken !== currentUser?.accessToken || detail.tenantId !== currentTenantId)) return;
       clearAuthenticatedSession();
       setCurrentUser(null);
     };
     window.addEventListener('industrial-ai-session-expired', expireSession);
     return () => window.removeEventListener('industrial-ai-session-expired', expireSession);
-  }, []);
+  }, [currentUser?.accessToken, currentTenantId]);
 
   useEffect(() => {
     setActiveRole(resolveSessionRole(currentUser));

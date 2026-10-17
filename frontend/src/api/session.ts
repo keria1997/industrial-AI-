@@ -11,7 +11,7 @@ export type AuthenticatedUser = {
   accessToken: string;
   expiresAt: string;
   loginAt: string;
-  loginType: "account";
+  loginType: "account" | "phone";
   permissionSource: string;
   firstLogin?: boolean;
 };
@@ -77,36 +77,32 @@ export type EmployeeAccount = {
   createdAt: string;
 };
 
-export async function listEmployeeAccounts(accessToken: string): Promise<EmployeeAccount[]> {
-  const response = await apiRequest<{ items: EmployeeAccount[] }>("/api/v1/platform/employee-accounts", null, {
+export async function listEmployeeAccounts(context: ApiContext): Promise<EmployeeAccount[]> {
+  const response = await apiRequest<{ items: EmployeeAccount[] }>("/api/v1/platform/employee-accounts", context, {
     method: "GET",
-    headers: { Authorization: `Bearer ${accessToken}` },
   });
   return response.items;
 }
 
-export async function createEmployeeAccount(accessToken: string, input: {
+export async function createEmployeeAccount(context: ApiContext, input: {
   name: string; phone: string; email: string; account: string; department: string; position: string; employeeNo?: string;
 }): Promise<{ id: string; account: string; temporaryPassword: string }> {
-  return apiRequest<{ id: string; account: string; temporaryPassword: string }>("/api/v1/platform/employee-accounts", null, {
+  return apiRequest<{ id: string; account: string; temporaryPassword: string }>("/api/v1/platform/employee-accounts", context, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-export async function updateEmployeeStatus(accessToken: string, id: string, status: 'active' | 'disabled'): Promise<void> {
-  await apiRequest<void>(`/api/v1/platform/employee-accounts/${id}/status`, null, {
+export async function updateEmployeeStatus(context: ApiContext, id: string, status: 'active' | 'disabled'): Promise<void> {
+  await apiRequest<void>(`/api/v1/platform/employee-accounts/${encodeURIComponent(id)}/status`, context, {
     method: "PUT",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
   });
 }
 
-export async function resetEmployeePassword(accessToken: string, id: string): Promise<{ temporaryPassword: string }> {
-  return apiRequest<{ temporaryPassword: string }>(`/api/v1/platform/employee-accounts/${id}/reset-password`, null, {
+export async function resetEmployeePassword(context: ApiContext, id: string): Promise<{ temporaryPassword: string }> {
+  return apiRequest<{ temporaryPassword: string }>(`/api/v1/platform/employee-accounts/${encodeURIComponent(id)}/reset-password`, context, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
 
@@ -134,7 +130,7 @@ export async function loginWithSms(phone: string, code: string): Promise<Authent
     accessToken: response.accessToken,
     expiresAt: response.expiresAt,
     loginAt: new Date().toISOString(),
-    loginType: "account",
+    loginType: "phone",
     permissionSource: "工业 AI 平台签名会话",
   };
 }

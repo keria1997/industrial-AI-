@@ -38,6 +38,10 @@ export type SalesQuoteForConversion = {
   version?: number | string;
   status?: string;
   convertedOrderId?: string;
+  ownerEmployeeId?: string;
+  factoryResourceId?: string;
+  recipient?: { name: string; phone: string; country: string; province: string; city: string; address: string };
+  allowPartialShipment?: boolean;
 };
 
 export type SalesQuoteLineForConversion = {

@@ -1,4 +1,5 @@
 import { ApiError, apiRequest, type ApiContext } from '../client';
+import { readAllPages } from '../readAllPages';
 
 export type ProductionApiContext = ApiContext;
 
@@ -75,7 +76,5 @@ export async function createSalesOrderIntake(
 }
 
 export async function listProductionDemands(context: ProductionApiContext) {
-  return apiRequest<{ items: ProductionDemandDto[]; total: number }>(
-    '/api/v1/production/demands?page=1&pageSize=200', context,
-  );
+  return readAllPages<ProductionDemandDto>('/api/v1/production/demands', context);
 }

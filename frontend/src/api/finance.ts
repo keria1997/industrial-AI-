@@ -2,7 +2,7 @@ import { apiRequest, type ApiContext } from "./client";
 
 // ===== 枚举类型（与后端 types.ts 保持一致）=====
 
-export type FinanceDocStatus = "draft" | "pending" | "processing" | "done" | "rejected" | "void";
+export type FinanceDocStatus = "draft" | "pending" | "processing" | "done" | "rejected" | "void" | "reversed" | "REVERSED";
 export type BusinessType = "AR" | "AP";
 export type PaymentDirection = "INBOUND" | "OUTBOUND";
 export type PaymentMethod = "bank_transfer" | "cash" | "check" | "offset" | "other";
