@@ -107,7 +107,7 @@ class ProductionExecutionTests {
         var fulfillment = new FulfillmentService(inventory, MAPPER, "TEST", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY");
         var worker = new ProductionFulfillmentOutboxWorker(store, fulfillment, service, tenant, true, 8);
         assertThat(worker.drain(tenant).failed()).isZero();
-        completion.put("qty", "6");
+        completion.put("qty", "6").put("allocationRevision", 2);
         String second = service.createCompletion(context(tenant, "reviewer", "completion2", null), id, completion).body().path("completionId").asText();
         assertThat(worker.drain(tenant).failed()).isZero();
         worker.drain(tenant);
@@ -175,7 +175,8 @@ class ProductionExecutionTests {
         assertThat(service.workOrder(context("T", "operator", "recovered", null), "WO1").path("qualityRecoveredQty").asText()).isEqualTo("2");
         assertThat(store.inspection("T", original.path("id").asText()).orElseThrow().path("status").asText()).isEqualTo("REWORKED");
         service.createCompletion(context("T", "operator", "receipt-original", null), "WO1", receipt(original.path("id").asText(), "8"));
-        service.createCompletion(context("T", "operator", "receipt-child", null), "WO1", receipt(child.path("id").asText(), "2"));
+        service.createCompletion(context("T", "operator", "receipt-child", null), "WO1",
+                receipt(child.path("id").asText(), "2", 2));
         var fulfillment = new FulfillmentService(inventory, MAPPER, "TEST", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY");
         assertThat(new ProductionFulfillmentOutboxWorker(store, fulfillment, service, "T", true, 8).drain("T").failed()).isZero();
         assertThat(service.workOrder(context("T", "operator", "read", null), "WO1").path("status").asText()).isEqualTo("COMPLETED");
@@ -257,9 +258,13 @@ class ProductionExecutionTests {
     }
 
     private static ObjectNode receipt(String inspectionId, String qty) {
+        return receipt(inspectionId, qty, 1);
+    }
+
+    private static ObjectNode receipt(String inspectionId, String qty, int allocationRevision) {
         return json("""
                 {"uom":"PCS","inventoryWarehouseId":"FG-WH","warehouseResourceId":"FG-WH",
-                 "traceMode":"NONE","allocationRevision":1,"productionDate":"2026-10-13"}
-                """).put("inspectionId", inspectionId).put("qty", qty);
+                 "traceMode":"NONE","allocationRevision":%d,"productionDate":"2026-10-13"}
+                """.formatted(allocationRevision)).put("inspectionId", inspectionId).put("qty", qty);
     }
 }

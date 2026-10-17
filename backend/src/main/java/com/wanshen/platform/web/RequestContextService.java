@@ -83,7 +83,9 @@ public class RequestContextService {
                 claims.sub(),
                 permissions,
                 Optional.ofNullable(request.getHeader("X-Trace-Id")).orElse("trace-" + System.nanoTime()),
-                request.getHeader("X-Idempotency-Key"),
+                Optional.ofNullable(request.getHeader("Idempotency-Key"))
+                        .filter(value -> !value.isBlank())
+                        .orElse(request.getHeader("X-Idempotency-Key")),
                 parseIfMatch(request.getHeader("If-Match")),
                 resourceScope
         );

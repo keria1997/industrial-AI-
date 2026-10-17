@@ -5131,6 +5131,34 @@
         }
       }
     },
+    "/api/v1/platform/permission-resources": {
+      "get": {
+        "operationId": "GETapi_v1_platform_permission_resources",
+        "tags": [
+          "Platform"
+        ],
+        "summary": "GET /api/v1/platform/permission-resources",
+        "description": "Implemented by PlatformController.",
+        "x-classification": "public",
+        "responses": {
+          "200": {
+            "description": "Successful response follows the module DTO contract."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "401": {
+            "description": "Missing, expired or revoked session."
+          },
+          "403": {
+            "description": "Permission, tenant or resource scope denied."
+          },
+          "500": {
+            "description": "Unexpected server error."
+          }
+        }
+      }
+    },
     "/api/v1/platform/permissions": {
       "get": {
         "operationId": "GETapi_v1_platform_permissions",
@@ -7630,6 +7658,37 @@
           "SalesFulfillment"
         ],
         "summary": "POST /api/v1/sales-orders/{orderId}/receipts",
+        "description": "Implemented by SalesFulfillmentController.",
+        "x-classification": "public",
+        "responses": {
+          "200": {
+            "description": "Successful response follows the module DTO contract."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "401": {
+            "description": "Missing, expired or revoked session."
+          },
+          "403": {
+            "description": "Permission, tenant or resource scope denied."
+          },
+          "409": {
+            "description": "Version, state, idempotency or business conflict."
+          },
+          "500": {
+            "description": "Unexpected server error."
+          }
+        }
+      }
+    },
+    "/api/v1/sales-orders/{orderId}/receipts/{receiptId}": {
+      "patch": {
+        "operationId": "PATCHapi_v1_sales_orders_orderId_receipts_receiptId",
+        "tags": [
+          "SalesFulfillment"
+        ],
+        "summary": "PATCH /api/v1/sales-orders/{orderId}/receipts/{receiptId}",
         "description": "Implemented by SalesFulfillmentController.",
         "x-classification": "public",
         "responses": {

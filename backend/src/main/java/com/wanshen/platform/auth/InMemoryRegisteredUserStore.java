@@ -11,6 +11,8 @@ public class InMemoryRegisteredUserStore implements RegisteredUserStore {
     private final Map<String, SmsCode> smsCodes = new LinkedHashMap<>();
     private final Map<String, ResetTokenData> resetTokens = new LinkedHashMap<>();
     private final Map<String, Long> consumedSessions = new LinkedHashMap<>();
+    private final Map<String, EmailCode> emailCodes = new LinkedHashMap<>();
+    private final Map<String, LoginLock> loginLocks = new LinkedHashMap<>();
 
     @Override
     public synchronized RegisteredUser createUser(CreateUserInput input) {
@@ -84,6 +86,36 @@ public class InMemoryRegisteredUserStore implements RegisteredUserStore {
         return true;
     }
     @Override
+    public synchronized void saveEmailCode(String email, String code) {
+        emailCodes.put(email.toLowerCase(), new EmailCode(ResetTokens.hash(code),
+                java.time.Instant.now().plusSeconds(600)));
+    }
+    @Override
+    public synchronized boolean verifyEmailCode(String email, String code) {
+        EmailCode record = emailCodes.get(email.toLowerCase());
+        if (record == null || record.used() || !record.codeHash().equals(ResetTokens.hash(code))
+                || record.expiresAt().isBefore(java.time.Instant.now())) return false;
+        emailCodes.put(email.toLowerCase(), new EmailCode(record.codeHash(), record.expiresAt(), true));
+        return true;
+    }
+    @Override
+    public synchronized boolean isLoginLocked(String account) {
+        LoginLock lock = loginLocks.get(account);
+        return lock != null && lock.lockedUntil() != null
+                && lock.lockedUntil().isAfter(java.time.Instant.now());
+    }
+    @Override
+    public synchronized void registerLoginFailure(String account) {
+        LoginLock current = loginLocks.get(account);
+        int failures = current == null ? 1 : current.failedCount() + 1;
+        java.time.Instant lockedUntil = failures >= 5 ? java.time.Instant.now().plusSeconds(900) : null;
+        loginLocks.put(account, new LoginLock(failures, lockedUntil, java.time.Instant.now()));
+    }
+    @Override
+    public synchronized void resetLoginFailures(String account) {
+        loginLocks.remove(account);
+    }
+    @Override
     public synchronized String generateResetToken(String email) {
         String token = ResetTokens.generate();
         resetTokens.entrySet().removeIf(entry -> email.equals(entry.getValue().email()));
@@ -122,4 +154,10 @@ public class InMemoryRegisteredUserStore implements RegisteredUserStore {
         SmsCode(String code, java.time.Instant expiresAt) { this(code, expiresAt, false); }
     }
     private record ResetTokenData(String email, java.time.Instant expiresAt, boolean used) {}
+    private record EmailCode(String codeHash, java.time.Instant expiresAt, boolean used) {
+        EmailCode(String codeHash, java.time.Instant expiresAt) { this(codeHash, expiresAt, false); }
+    }
+    private record LoginLock(
+            int failedCount, java.time.Instant lockedUntil, java.time.Instant lastFailedAt
+    ) {}
 }

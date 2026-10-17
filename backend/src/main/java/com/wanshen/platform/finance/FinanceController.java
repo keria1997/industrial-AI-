@@ -372,6 +372,9 @@ public class FinanceController {
             }
             allocationLines.add(new AllocationLine(documentType, text(line, "documentId"), text(line, "amount")));
             allocatedTotal[0] = new BigDecimal(add(allocatedTotal[0].toPlainString(), text(line, "amount")));
+            if (compare(text(line, "amount"), "0") <= 0) {
+                throw bad("核销金额必须大于 0", "检查每一行核销金额");
+            }
         }
         return command(context, "finance.allocation.create", input, () -> {
             Payment payment = store.payment(context.tenantId(), text(input, "paymentId"))
@@ -379,15 +382,20 @@ public class FinanceController {
             if (!"done".equals(payment.status())) {
                 throw conflict("只有已确认收付款单可以核销", "先确认收付款单");
             }
-            if (compare(allocatedTotal[0].toPlainString(), payment.amount()) > 0) {
-                throw bad("核销金额超过收付款金额", "减少核销金额");
+            String alreadyAllocated = activeAllocatedAmount(context.tenantId(), payment.id(), null, null);
+            String remainingPaymentAmount = subtract(payment.amount(), alreadyAllocated);
+            if (compare(allocatedTotal[0].toPlainString(), remainingPaymentAmount) > 0) {
+                throw bad("核销金额超过收付款可核销余额", "剩余可核销=" + remainingPaymentAmount);
             }
             for (AllocationLine line : allocationLines) {
                 if ("RECEIVABLE".equals(line.documentType())) {
                     Receivable document = getReceivable(context.tenantId(), line.documentId());
                     if (!document.currency().equals(payment.currency())) throw bad("核销币种不一致", "检查币种");
-                    if (compare(line.amount(), document.outstandingAmount()) > 0) {
-                        throw bad("应收核销金额超过未收余额", "减少核销金额");
+                    String alreadyDocumentAllocated = activeAllocatedAmount(
+                            context.tenantId(), null, "RECEIVABLE", document.id());
+                    String documentRemaining = subtract(document.outstandingAmount(), alreadyDocumentAllocated);
+                    if (compare(line.amount(), documentRemaining) > 0) {
+                        throw bad("应收核销金额超过未核销余额", "剩余可核销=" + documentRemaining);
                     }
                     store.saveReceivable(copyReceivable(document,
                             add(document.receivedAmount(), line.amount()),
@@ -395,8 +403,11 @@ public class FinanceController {
                 } else {
                     Payable document = getPayable(context.tenantId(), line.documentId());
                     if (!document.currency().equals(payment.currency())) throw bad("核销币种不一致", "检查币种");
-                    if (compare(line.amount(), document.outstandingAmount()) > 0) {
-                        throw bad("应付核销金额超过未付余额", "减少核销金额");
+                    String alreadyDocumentAllocated = activeAllocatedAmount(
+                            context.tenantId(), null, "PAYABLE", document.id());
+                    String documentRemaining = subtract(document.outstandingAmount(), alreadyDocumentAllocated);
+                    if (compare(line.amount(), documentRemaining) > 0) {
+                        throw bad("应付核销金额超过未核销余额", "剩余可核销=" + documentRemaining);
                     }
                     store.savePayable(copyPayable(document,
                             add(document.paidAmount(), line.amount()),
@@ -482,39 +493,32 @@ public class FinanceController {
                     current.bankAccount(), current.referenceNo(), "done", current.remark(),
                     current.version() + 1, current.createdAt(), timestamp, current.createdBy());
             store.savePayment(payment);
+            // AR/AP balances change only through an explicit allocation fact. Confirmation may
+            // generate that fact for a directly referenced document, but never deducts twice.
             Receivable receivable = null;
             Payable payable = null;
+            Allocation allocation = null;
             if ("INBOUND".equals(current.direction()) && current.receivableId() != null) {
-                Optional<Receivable> found = store.receivable(context.tenantId(), current.receivableId());
-                if (found.isPresent()) {
-                    Receivable item = found.get();
-                    String received = add(item.receivedAmount(), current.amount());
-                    String outstanding = subtract(item.totalAmount(), received);
-                    boolean done = compare(outstanding, "0") <= 0;
-                    receivable = new Receivable(item.id(), item.tenantId(), item.docNo(), item.title(),
-                            item.customerId(), item.customerName(), item.businessType(), item.sourceType(),
-                            item.sourceId(), item.sourceDocNo(), item.currency(), item.totalAmount(), received,
-                            outstanding, done ? "done" : "processing", item.dueDate(), item.issuedAt(),
-                            done ? timestamp : item.settledAt(), item.remark(), item.version() + 1,
-                            item.createdAt(), timestamp, item.createdBy());
-                    store.saveReceivable(receivable);
+                Receivable item = getReceivable(context.tenantId(), current.receivableId());
+                String remaining = subtract(item.outstandingAmount(), activeAllocatedAmount(
+                        context.tenantId(), null, "RECEIVABLE", item.id()));
+                if (compare(current.amount(), remaining) > 0) {
+                    throw bad("确认收款金额超过应收可核销余额", "减少收款金额或分笔核销");
                 }
+                AllocationLine line = new AllocationLine("RECEIVABLE", item.id(), current.amount());
+                allocation = saveAllocation(context, payment, List.of(line), timestamp, "CONFIRM-" + current.id());
+                receivable = getReceivable(context.tenantId(), item.id());
             }
             if ("OUTBOUND".equals(current.direction()) && current.payableId() != null) {
-                Optional<Payable> found = store.payable(context.tenantId(), current.payableId());
-                if (found.isPresent()) {
-                    Payable item = found.get();
-                    String paid = add(item.paidAmount(), current.amount());
-                    String outstanding = subtract(item.totalAmount(), paid);
-                    boolean done = compare(outstanding, "0") <= 0;
-                    payable = new Payable(item.id(), item.tenantId(), item.docNo(), item.title(),
-                            item.supplierId(), item.supplierName(), item.businessType(), item.sourceType(),
-                            item.sourceId(), item.sourceDocNo(), item.currency(), item.totalAmount(), paid,
-                            outstanding, done ? "done" : "processing", item.dueDate(), item.issuedAt(),
-                            done ? timestamp : item.settledAt(), item.remark(), item.version() + 1,
-                            item.createdAt(), timestamp, item.createdBy());
-                    store.savePayable(payable);
+                Payable item = getPayable(context.tenantId(), current.payableId());
+                String remaining = subtract(item.outstandingAmount(), activeAllocatedAmount(
+                        context.tenantId(), null, "PAYABLE", item.id()));
+                if (compare(current.amount(), remaining) > 0) {
+                    throw bad("确认付款金额超过应付可核销余额", "减少付款金额或分笔核销");
                 }
+                AllocationLine line = new AllocationLine("PAYABLE", item.id(), current.amount());
+                allocation = saveAllocation(context, payment, List.of(line), timestamp, "CONFIRM-" + current.id());
+                payable = getPayable(context.tenantId(), item.id());
             }
             audit(context, "Payment", id, payment.version(), "CONFIRM", current, payment);
             outbox(context, "finance.payment.confirmed.v1", "Payment", id, payment.version(),
@@ -523,6 +527,7 @@ public class FinanceController {
             body.put("payment", payment);
             body.put("receivable", receivable);
             body.put("payable", payable);
+            body.put("allocation", allocation);
             return new Command(body, 200);
         });
     }
@@ -563,24 +568,89 @@ public class FinanceController {
                 current.version() + 1, current.createdAt(), timestamp, current.createdBy());
         store.savePayment(reversal);
         store.savePayment(reversed);
-        if ("done".equals(reversed.status())) {
-            BigDecimal amount = new BigDecimal(current.amount());
-            if ("INBOUND".equals(current.direction()) && current.receivableId() != null) {
-                store.receivable(context.tenantId(), current.receivableId()).ifPresent(item -> store.saveReceivable(
-                        copyReceivable(item, subtract(item.receivedAmount(), current.amount()),
-                                add(item.outstandingAmount(), current.amount()), timestamp)));
-            }
-            if ("OUTBOUND".equals(current.direction()) && current.payableId() != null) {
-                store.payable(context.tenantId(), current.payableId()).ifPresent(item -> store.savePayable(
-                        copyPayable(item, subtract(item.paidAmount(), current.amount()),
-                                add(item.outstandingAmount(), current.amount()), timestamp)));
-            }
-        }
+        // Restore balances from reversed allocation facts. Never infer the restoration from
+        // the original payment's old status, which is already overwritten to reversed here.
+        store.allocations(context.tenantId(), new FinanceFilter(null, null, current.id(), 1, Integer.MAX_VALUE))
+                .items().stream().filter(item -> current.id().equals(item.paymentId()))
+                .filter(item -> Set.of("CONFIRMED", "OPEN").contains(item.status()))
+                .forEach(allocation -> reverseAllocation(context, allocation, timestamp, current.id()));
         audit(context, "Payment", reversal.id(), 1, "REVERSE", current, reversal);
         outbox(context, "finance.payment.reversed.v1", "Payment", reversal.id(), 1,
                 Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id(),
                         "amount", current.amount()));
         return Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id(), "status", "REVERSED");
+    }
+
+    private void reverseAllocation(
+            RequestContext context, Allocation allocation, String timestamp, String paymentId
+    ) {
+        allocation.lines().forEach(line -> {
+            if ("RECEIVABLE".equals(line.documentType())) {
+                store.receivable(context.tenantId(), line.documentId()).ifPresent(item -> {
+                    String received = subtract(item.receivedAmount(), line.amount());
+                    String outstanding = add(item.outstandingAmount(), line.amount());
+                    store.saveReceivable(receivableStatus(item, received, outstanding, timestamp));
+                });
+            }
+            if ("PAYABLE".equals(line.documentType())) {
+                store.payable(context.tenantId(), line.documentId()).ifPresent(item -> {
+                    String paid = subtract(item.paidAmount(), line.amount());
+                    String outstanding = add(item.outstandingAmount(), line.amount());
+                    store.savePayable(payableStatus(item, paid, outstanding, timestamp));
+                });
+            }
+        });
+        Allocation reversed = new Allocation(allocation.id(), allocation.tenantId(), allocation.allocationNo(),
+                allocation.paymentId(), allocation.currency(), allocation.lines(), "REVERSED",
+                allocation.remark(), allocation.version() + 1, allocation.createdAt(), timestamp,
+                allocation.createdBy());
+        store.saveAllocation(reversed);
+        audit(context, "Allocation", allocation.id(), reversed.version(), "REVERSE_PAYMENT", allocation, reversed);
+        outbox(context, "finance.allocation.reversed.v1", "Allocation", allocation.id(), reversed.version(),
+                Map.of("allocationId", allocation.id(), "paymentId", paymentId));
+    }
+
+    private String activeAllocatedAmount(
+            String tenantId, String paymentId, String documentType, String documentId
+    ) {
+        return store.allocations(tenantId, new FinanceFilter(null, null, paymentId, 1, Integer.MAX_VALUE))
+                .items().stream()
+                .filter(item -> Set.of("CONFIRMED", "OPEN").contains(item.status()))
+                .filter(item -> paymentId == null || paymentId.equals(item.paymentId()))
+                .flatMap(item -> item.lines().stream())
+                .filter(line -> documentType == null || documentType.equals(line.documentType()))
+                .filter(line -> documentId == null || documentId.equals(line.documentId()))
+                .map(AllocationLine::amount)
+                .map(BigDecimal::new)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .toPlainString();
+    }
+
+    private Allocation saveAllocation(
+            RequestContext context, Payment payment, List<AllocationLine> lines,
+            String timestamp, String commandSuffix
+    ) {
+        Allocation allocation = new Allocation(UUID.randomUUID().toString(), context.tenantId(),
+                docNo("ALLOC"), payment.id(), payment.currency(), lines, "CONFIRMED",
+                "系统核销", 1, timestamp, timestamp, context.actorId());
+        lines.forEach(line -> {
+            if ("RECEIVABLE".equals(line.documentType())) {
+                Receivable item = getReceivable(context.tenantId(), line.documentId());
+                store.saveReceivable(receivableStatus(item,
+                        add(item.receivedAmount(), line.amount()),
+                        subtract(item.outstandingAmount(), line.amount()), timestamp));
+            } else {
+                Payable item = getPayable(context.tenantId(), line.documentId());
+                store.savePayable(payableStatus(item,
+                        add(item.paidAmount(), line.amount()),
+                        subtract(item.outstandingAmount(), line.amount()), timestamp));
+            }
+        });
+        store.saveAllocation(allocation);
+        audit(context, "Allocation", allocation.id(), 1, "CONFIRM_ALLOCATION", null, allocation);
+        outbox(context, "finance.allocation.created.v1", "Allocation", allocation.id(), 1,
+                Map.of("allocationId", allocation.id(), "paymentId", payment.id(), "command", commandSuffix));
+        return allocation;
     }
 
     private Map<String, Object> reverseReceivable(RequestContext context, Receivable current, String reason) {
@@ -1009,6 +1079,18 @@ public class FinanceController {
                 item.currency(), item.totalAmount(), paid, outstanding, done ? "done" : "processing",
                 item.dueDate(), item.issuedAt(), done ? timestamp : item.settledAt(), item.remark(),
                 item.version() + 1, item.createdAt(), timestamp, item.createdBy());
+    }
+
+    private Receivable receivableStatus(
+            Receivable item, String received, String outstanding, String timestamp
+    ) {
+        return copyReceivable(item, received, outstanding, timestamp);
+    }
+
+    private Payable payableStatus(
+            Payable item, String paid, String outstanding, String timestamp
+    ) {
+        return copyPayable(item, paid, outstanding, timestamp);
     }
 
     private RequestContext context(HttpServletRequest request) { return contexts.from(request); }

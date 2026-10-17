@@ -30,6 +30,34 @@ paths:
       responses:
         '201': { description: Completion accepted or posting result }
         '409': { description: Inspection or inventory state prevents completion }
+  /production/work-orders/{id}/completion-allocation-preview:
+    post:
+      summary: Read authoritative completion allocation facts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Allocation preview with factory, work center, warehouse, trace mode, revision and source versions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workOrderId, qty, allocationRevision, availability, missingSources, sourceVersions, allocations]
+                properties:
+                  workOrderId: { type: string }
+                  qty: { type: string }
+                  factoryId: { type: string }
+                  workCenterResourceId: { type: string }
+                  inventoryWarehouseId: { type: string }
+                  traceMode: { type: string }
+                  allocationRevision: { type: integer, minimum: 1 }
+                  businessDate: { type: string, format: date }
+                  availability: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
+                  missingSources: { type: array, items: { type: string } }
+                  sourceVersions: { type: object, additionalProperties: true }
+                  allocations: { type: array, items: { type: object, additionalProperties: true } }
   /production/work-orders/{id}/close-submit:
     post:
       summary: Submit work-order close request

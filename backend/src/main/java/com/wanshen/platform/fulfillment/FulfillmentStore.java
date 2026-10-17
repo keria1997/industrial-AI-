@@ -57,6 +57,10 @@ public class FulfillmentStore {
         rmas.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
     }
 
+    public synchronized Optional<JsonNode> receipt(String tenantId, String id) {
+        return Optional.ofNullable(receipts.get(key(tenantId, id))).map(FulfillmentStore::copy);
+    }
+
     public synchronized void saveReceipt(JsonNode value) {
         receipts.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
     }

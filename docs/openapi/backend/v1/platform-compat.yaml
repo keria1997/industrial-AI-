@@ -22,10 +22,15 @@ paths:
       responses: { '200': { description: Updated tenant } }
   /platform/permissions:
     get:
-      summary: List permission resources
-      description: Compatibility projection over canonical platform resources.
+      summary: List the tenant permission catalog
+      description: Canonical permission definitions; enterprise warehouses and factories are resources, not permissions.
       parameters: [{ $ref: '#/components/parameters/Tenant' }]
-      responses: { '200': { description: Permission resource list } }
+      responses: { '200': { description: Permission catalog entries } }
+  /platform/permission-resources:
+    get:
+      summary: List enterprise authorization resources
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses: { '200': { description: Enterprise resource list } }
   /platform/role-grants:
     get:
       summary: List role grants
@@ -54,7 +59,20 @@ paths:
         - $ref: '#/components/parameters/Tenant'
         - { name: page, in: query, schema: { type: integer, default: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, default: 50 } }
-      responses: { '200': { description: Paged audit result } }
+      responses:
+        '200':
+          description: Paged audit result with exact total and hasMore
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, hasMore, page, pageSize]
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer, minimum: 0 }
+                  hasMore: { type: boolean }
+                  page: { type: integer, minimum: 1 }
+                  pageSize: { type: integer, minimum: 1 }
   /platform/capabilities/{code}:
     put:
       summary: Update capability status

@@ -197,6 +197,13 @@ public class PlatformService {
         return store.list(context.tenantId(), kind);
     }
 
+    public List<Map<String, Object>> permissionCatalog(RequestContext context) {
+        require(context, "platform.permission.read");
+        List<Map<String, Object>> values = new ArrayList<>(store.list(context.tenantId(), "permission"));
+        values.sort(Comparator.comparing(item -> text(item, "code")));
+        return values;
+    }
+
     public Map<String, Object> save(
             RequestContext context, String kind, String permission, String label,
             String action, Map<String, Object> input
@@ -294,6 +301,23 @@ public class PlatformService {
         return values.subList(from, Math.min(from + pageSize, values.size()));
     }
 
+    public Map<String, Object> auditPage(
+            RequestContext context, String module, String resultFilter, String operator,
+            String startTime, String endTime, int page, int pageSize
+    ) {
+        List<Map<String, Object>> items = auditLogs(
+                context, module, resultFilter, operator, startTime, endTime, page, pageSize);
+        int total = auditLogs(context, module, resultFilter, operator,
+                startTime, endTime, 1, Integer.MAX_VALUE).size();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("items", items);
+        response.put("total", total);
+        response.put("hasMore", (long) page * pageSize < total);
+        response.put("page", page);
+        response.put("pageSize", pageSize);
+        return response;
+    }
+
     public Map<String, Object> saveCapability(RequestContext context, Map<String, Object> input) {
         require(context, "platform.capability.manage");
         return store.transaction(() -> {
@@ -314,6 +338,17 @@ public class PlatformService {
             Map<String, Object> value = store.get(context.tenantId(), "adapter", id)
                     .orElseThrow(() -> notFound("权限适配器"));
             requireVersion(context, ((Number) value.get("version")).intValue());
+            String endpoint = text(value, "syncEndpoint");
+            if (endpoint.isBlank()) {
+                value.put("status", "NOT_CONFIGURED");
+                value.put("lastSyncAt", LocalDateTime.now().format(AUDIT_TIME));
+                value.put("errorMessage", "外部适配端点未配置，未发生外部同步");
+                value.put("version", ((Number) value.get("version")).intValue() + 1);
+                value.put("updatedAt", LocalDateTime.now().format(AUDIT_TIME));
+                store.save("adapter", id, value);
+                audit(context, "同步权限适配器失败", target(value), value.get("updatedAt").toString());
+                return value;
+            }
             value.put("status", "synced");
             value.put("lastSyncAt", LocalDateTime.now().format(AUDIT_TIME));
             value.put("errorMessage", "");

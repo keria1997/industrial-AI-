@@ -103,4 +103,19 @@ class AuthControllerTests {
                 .andExpect(jsonPath("$.error.code").value("PRODUCTION_400_INVALID_ARGUMENT"))
                 .andExpect(jsonPath("$.error.message").value("图形验证码错误或已过期"));
     }
+
+    @Test
+    void locksRegisteredAccountAfterFivePasswordFailures() {
+        InMemoryRegisteredUserStore users = new InMemoryRegisteredUserStore();
+        users.createUser(new RegisteredUserStore.CreateUserInput(
+                "locked-user", "encoded", "Locked", "13800000001", "locked@example.com",
+                null, "Lock Ltd", "制造", true, null, null, null, null
+        ));
+        for (int index = 0; index < 4; index++) users.registerLoginFailure("locked-user");
+        org.junit.jupiter.api.Assertions.assertFalse(users.isLoginLocked("locked-user"));
+        users.registerLoginFailure("locked-user");
+        org.junit.jupiter.api.Assertions.assertTrue(users.isLoginLocked("locked-user"));
+        users.resetLoginFailures("locked-user");
+        org.junit.jupiter.api.Assertions.assertFalse(users.isLoginLocked("locked-user"));
+    }
 }

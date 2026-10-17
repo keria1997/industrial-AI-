@@ -129,6 +129,42 @@ paths:
                   total: { type: integer, minimum: 0 }
                   page: { type: integer, minimum: 1 }
                   pageSize: { type: integer, minimum: 1 }
+  /sales-orders/{orderId}/receipts/{receiptId}:
+    patch:
+      tags: [Customer Receipt]
+      summary: Supplement or resolve signed, rejected and damaged quantities
+      description: Each updated line replaces the line totals; signedQty + rejectedQty + damagedQty must equal server-side shippedQty.
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+        - { name: receiptId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lines]
+              properties:
+                signedBy: { type: string }
+                signedAt: { type: string, format: date-time }
+                lines:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [orderLineId]
+                    properties:
+                      orderLineId: { type: string }
+                      signedQty: { type: string }
+                      rejectedQty: { type: string }
+                      damagedQty: { type: string }
+      responses:
+        '200': { description: Updated receipt with canonical receiptStatus }
+        '409': { description: Receipt already signed, version conflict, or supplement conflict }
+        '422': { description: Quantity conservation or source line validation failed }
   /sales-orders/{orderId}/complete-check:
     post:
       tags: [Sales Completion]

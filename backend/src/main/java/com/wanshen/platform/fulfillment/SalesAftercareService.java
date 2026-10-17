@@ -137,15 +137,17 @@ public class SalesAftercareService {
     }
 
     private void approve(RequestContext ctx, ObjectNode rma, Map<String, Object> input, String target) {
-        requireTransition(rma, target, "APPROVED", "REQUESTED");
         if (ctx.actorId().equals(text(rma, "createdBy"))) {
             throw forbidden("制单人与审批人必须分离");
         }
         String decision = requiredText(input, "decision");
         requiredText(input, "comment");
+        requireTransition(rma, target, target, "REQUESTED");
         if ("REJECTED".equals(decision)) {
             if (!"REJECTED".equals(target)) throw invalid("decision与toStatus不一致", "REJECTED decision必须迁移到REJECTED");
             rma.put("status", "REJECTED");
+            rma.put("rejectedReason", requiredText(input, "comment"));
+            rma.put("rejectedAt", Instant.now().toString());
             return;
         }
         if (!"APPROVE".equals(decision) || !"APPROVED".equals(target)) {
@@ -256,25 +258,27 @@ public class SalesAftercareService {
             return;
         }
         BigDecimal approved = decimal(rma, "approvedQty");
-        BigDecimal taxBasis = positive(input, "taxBasis");
+        // Compatibility accepts the legacy amount-only payload, but formal credit-note
+        // calculation always starts from the original shipment recognition line.
+        BigDecimal taxBasis = input.get("creditAmount") != null
+                ? positive(input, "creditAmount") : positive(input, "taxBasis");
         String currency = requiredText(input, "currency");
         requiredText(input, "reason");
         if (asList(input.get("lines")).isEmpty()) {
             throw invalid("红字AR明细不能为空", "按原发货确权行填写 lines");
         }
-        AbstractFinanceStore.Receivable original = financeStore.receivableBySource(
-                        ctx.tenantId(), "SalesOrder", text(rma, "orderId"))
+        List<AbstractFinanceStore.Receivable> originals = financeStore.receivables(ctx.tenantId(),
+                        new AbstractFinanceStore.FinanceFilter(null, null, null, 1, Integer.MAX_VALUE))
+                .items().stream().filter(item -> "SalesOrder".equals(item.sourceType())
+                        && text(rma, "orderId").equals(item.sourceId()))
+                .toList();
+        AbstractFinanceStore.Receivable original = originals.stream().findFirst()
                 .orElseThrow(() -> invalid("原发货确权AR不存在", "先完成发货确权再创建红字AR"));
         if (!original.currency().equals(currency)) {
             throw invalid("红字AR币种必须与原AR一致", "原AR币种=" + original.currency());
         }
         if (taxBasis.compareTo(new BigDecimal(original.outstandingAmount())) > 0) {
             throw invalid("红字金额不能超过原AR余额", "原AR余额=" + original.outstandingAmount());
-        }
-        if (approved.signum() > 0 && taxBasis.compareTo(approved) > 0
-                && original.totalAmount().compareTo("0") != 0) {
-            // The caller must send the approved-return portion of the confirmed line amount.
-            // This guard prevents a quantity being silently converted to a larger amount.
         }
         String creditId = "credit-rma-" + text(rma, "id");
         if (financeStore.receivable(ctx.tenantId(), creditId).isPresent()) {
@@ -337,6 +341,7 @@ public class SalesAftercareService {
                     .put("updatedAt", Instant.now().toString());
             aggregate.set("evidence", mapper.valueToTree(input.getOrDefault("evidence", List.of())));
             ArrayNode lines = aggregate.putArray("lines");
+            java.util.Set<String> receiptOrderLineIds = new java.util.HashSet<>();
             for (Map<String, Object> item : asList(input.get("lines"))) {
                 @SuppressWarnings("unchecked") Map<String, Object> line = item;
                 String orderLineId = requiredText(line, "orderLineId");
@@ -357,10 +362,21 @@ public class SalesAftercareService {
                         .put("remark", optionalText(line, "remark"));
                 BigDecimal total = decimal(persisted, "signedQty").add(decimal(persisted, "rejectedQty"))
                         .add(decimal(persisted, "damagedQty"));
-                if (total.compareTo(source.shippedQty()) > 0) {
-                    throw invalid("签收、拒收和破损数量不能超过发货数量", "检查行 " + orderLineId);
+                if (total.compareTo(source.shippedQty()) != 0) {
+                    throw invalid("签收、拒收和破损数量必须等于发货数量",
+                            "检查行 " + orderLineId + "，已发=" + source.shippedQty().toPlainString());
+                }
+                if (!receiptOrderLineIds.add(orderLineId)) {
+                    throw invalid("签收行重复", "每个订单行只能提交一条签收结果");
                 }
                 lines.add(persisted);
+            }
+            for (JsonNode orderLine : order.path("lines")) {
+                String orderLineId = text(orderLine, "id");
+                if (decimal(orderLine, "shippedQty").signum() > 0
+                        && !receiptOrderLineIds.contains(orderLineId)) {
+                    throw invalid("签收行未覆盖全部已发订单行", "补充订单行 " + orderLineId);
+                }
             }
             aggregate.put("receiptStatus", receiptStatus(lines))
                     .put("sourceOutboundVersion", input.getOrDefault("sourceOutboundVersion", "1").toString())
@@ -388,6 +404,67 @@ public class SalesAftercareService {
         result.put("missingConditions", missing);
         result.put("checkedAt", Instant.now().toString());
         return result;
+    }
+
+    public Map<String, Object> supplementReceipt(
+            RequestContext ctx, String orderId, String receiptId, Map<String, Object> input
+    ) {
+        String idempotencyKey = requireKey(ctx, "RECEIPT_SUPPLEMENT");
+        Map<String, Object> command = new LinkedHashMap<>(input);
+        command.put("orderId", orderId);
+        command.put("receiptId", receiptId);
+        return store.transaction(ctx.tenantId(), ignored -> {
+            Optional<Map<String, Object>> replay = replay(ctx, "RECEIPT_SUPPLEMENT", idempotencyKey, command);
+            if (replay.isPresent()) return replay.get();
+            rejectKeyConflict(ctx, "RECEIPT_SUPPLEMENT", idempotencyKey, command);
+            JsonNode current = store.receipt(ctx.tenantId(), receiptId)
+                    .orElseThrow(() -> notFound("签收聚合不存在: " + receiptId));
+            if (!orderId.equals(text(current, "orderId"))) {
+                throw invalid("签收聚合不属于当前订单", "检查 orderId");
+            }
+            if (Set.of("SIGNED", "ARCHIVED").contains(text(current, "receiptStatus"))) {
+                throw conflict("RECEIPT_409_ALREADY_SIGNED", "签收已完成", "如需售后处理请创建RMA");
+            }
+            ObjectNode updated = current.deepCopy();
+            for (Map<String, Object> item : asList(input.get("lines"))) {
+                @SuppressWarnings("unchecked") Map<String, Object> inputLine = item;
+                String orderLineId = requiredText(inputLine, "orderLineId");
+                JsonNode persisted = null;
+                for (JsonNode line : updated.path("lines")) {
+                    if (orderLineId.equals(text(line, "orderLineId"))) {
+                        persisted = line;
+                        break;
+                    }
+                }
+                if (persisted == null || persisted instanceof com.fasterxml.jackson.databind.node.NullNode) {
+                    throw invalid("补签订单行不存在", "检查 orderLineId");
+                }
+                ObjectNode target = (ObjectNode) persisted;
+                String signed = inputLine.get("signedQty") == null
+                        ? text(target, "signedQty") : nonNegative(inputLine, "signedQty").toPlainString();
+                String rejected = inputLine.get("rejectedQty") == null
+                        ? text(target, "rejectedQty") : nonNegative(inputLine, "rejectedQty").toPlainString();
+                String damaged = inputLine.get("damagedQty") == null
+                        ? text(target, "damagedQty") : nonNegative(inputLine, "damagedQty").toPlainString();
+                target.put("signedQty", signed).put("rejectedQty", rejected).put("damagedQty", damaged);
+                BigDecimal total = new BigDecimal(signed).add(new BigDecimal(rejected)).add(new BigDecimal(damaged));
+                if (total.compareTo(decimal(target, "shippedQty")) != 0) {
+                    throw invalid("补签后三项数量必须等于发货数量", "检查订单行 " + orderLineId);
+                }
+            }
+            if (input.get("signedBy") != null) updated.put("signedBy", requiredText(input, "signedBy"));
+            if (input.get("signedAt") != null) updated.put("signedAt", requiredText(input, "signedAt"));
+            updated.put("receiptStatus", receiptStatus((ArrayNode) updated.path("lines")));
+            updated.put("status", text(updated, "receiptStatus"));
+            updated.put("version", current.path("version").asInt(1) + 1);
+            updated.put("updatedAt", Instant.now().toString());
+            store.saveReceipt(updated);
+            publish(ctx, receiptEvent(text(updated, "receiptStatus")), "CustomerReceipt", receiptId,
+                    updated.path("version").asInt(), orderId, updated);
+            Map<String, Object> response = toMap(updated);
+            saveIdempotency(ctx, "RECEIPT_SUPPLEMENT", idempotencyKey, command, response);
+            return response;
+        });
     }
 
     public Map<String, Object> complete(RequestContext ctx, String orderId, Map<String, Object> input) {
@@ -430,9 +507,26 @@ public class SalesAftercareService {
         Optional<JsonNode> receipt = store.receipts(ctx.tenantId()).values().stream()
                 .filter(item -> orderId.equals(text(item, "orderId"))).findFirst();
         if (receipt.isEmpty() || !"SIGNED".equals(text(receipt.get(), "receiptStatus"))) missing.add("客户签收完成");
-        if (financeStore.receivableBySource(ctx.tenantId(), "SalesOrder", orderId)
-                .map(item -> !"done".equals(item.status()) || new BigDecimal(item.outstandingAmount()).signum() > 0)
-                .orElse(true)) missing.add("AR结算完成");
+        List<AbstractFinanceStore.Receivable> receivables = financeStore.receivables(ctx.tenantId(),
+                        new AbstractFinanceStore.FinanceFilter(null, null, null, 1, Integer.MAX_VALUE))
+                .items().stream().filter(item -> "SalesOrder".equals(item.sourceType())
+                        && orderId.equals(item.sourceId())).toList();
+        if (receivables.isEmpty() || receivables.stream().anyMatch(item ->
+                !"done".equals(item.status()) || new BigDecimal(item.outstandingAmount()).signum() > 0)) {
+            missing.add("AR结算完成");
+        }
+        if (order.path("invoiceRequired").asBoolean(false)) {
+            boolean allIssued = receivables.stream().allMatch(ar -> financeStore.invoices(ctx.tenantId(),
+                            new AbstractFinanceStore.FinanceFilter("done", null, null, 1, Integer.MAX_VALUE))
+                    .items().stream().anyMatch(invoice -> ar.id().equals(invoice.receivableId())));
+            if (!allIssued) missing.add("REQUIRED发票已开具");
+        }
+        if (order.path("voucherRequired").asBoolean(false)) {
+            boolean allPosted = receivables.stream().allMatch(ar -> financeStore.vouchers(ctx.tenantId(),
+                            new AbstractFinanceStore.FinanceFilter("posted", null, null, 1, Integer.MAX_VALUE))
+                    .items().stream().anyMatch(voucher -> ar.id().equals(voucher.sourceId())));
+            if (!allPosted) missing.add("REQUIRED凭证已过账");
+        }
         boolean openRma = store.rmas(ctx.tenantId()).values().stream()
                 .anyMatch(item -> orderId.equals(text(item, "orderId"))
                         && !Set.of("CLOSED", "REJECTED").contains(text(item, "status")));

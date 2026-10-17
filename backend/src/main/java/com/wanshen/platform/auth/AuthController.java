@@ -37,7 +37,6 @@ public class AuthController {
     @Value("${AUTH_EMAIL_FROM:}") private String emailFrom = "";
     private final SmsSender smsSender;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
-    private final Map<String, EmailCode> emailCodes = new java.util.concurrent.ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
     private final Map<String, RateWindow> rates = new ConcurrentHashMap<>();
 
@@ -79,15 +78,21 @@ public class AuthController {
             throw bad("图形验证码错误或已过期", "刷新验证码后重新输入");
         }
         if (demoAuthEnabled && demoAccounts.contains(request.account()) && demoPassword.equals(request.password())) {
+            users.resetLoginFailures(request.account());
             SessionUser user = developmentUser(request.account());
             return ResponseEntity.ok(response(issue(user, "development-session-v1"), user, null));
         }
         RegisteredUser registered = users.findByAccount(request.account()).orElse(null);
+        if (registered != null && users.isLoginLocked(request.account())) {
+            throw forbidden("账号已临时锁定", "15分钟后重试或联系管理员");
+        }
         if (registered != null && passwordHasher.verify(request.password(), registered.passwordHash())) {
+            users.resetLoginFailures(request.account());
             if ("disabled".equals(registered.status())) throw forbidden("该账号已被禁用", "联系租户管理员");
             SessionUser user = registeredUser(registered);
             return ResponseEntity.ok(response(issue(user, "registered-user-v1"), user, registered.firstLogin()));
         }
+        if (registered != null) users.registerLoginFailure(request.account());
         throw unauthorized("账号或密码不正确", "检查凭据后重试");
     }
 
@@ -145,9 +150,6 @@ public class AuthController {
         limitKey("forgot-email:" + email.toLowerCase(java.util.Locale.ROOT), 3);
         if (users.findByEmail(email).isEmpty()) return Map.of("message", "如果该邮箱已注册，验证码已发送");
         String code = String.valueOf(100000 + random.nextInt(900000));
-        emailCodes.put(email.toLowerCase(java.util.Locale.ROOT),
-                new EmailCode(code, Instant.now().plusSeconds(600)));
-        emailCodes.values().removeIf(ec -> ec.expiresAt().isBefore(Instant.now()));
         try {
             sendResetEmail(email, code);
         } catch (RuntimeException exception) {
@@ -162,12 +164,9 @@ public class AuthController {
         String email = text(input, "email"); String code = text(input, "code");
         String password = text(input, "newPassword");
         validatePassword(password);
-        EmailCode stored = emailCodes.get(email.toLowerCase(java.util.Locale.ROOT));
-        if (stored == null || stored.expiresAt().isBefore(Instant.now())
-                || !stored.code().equals(code.trim())) {
+        if (!users.verifyEmailCode(email.toLowerCase(java.util.Locale.ROOT), code.trim())) {
             throw unauthorized("验证码错误或已过期", "重新获取验证码");
         }
-        emailCodes.remove(email.toLowerCase(java.util.Locale.ROOT));
         RegisteredUser user = users.findByEmail(email).orElseThrow(() ->
                 unauthorized("邮箱未注册", "检查邮箱地址"));
         String resetToken = users.generateResetToken(email);
@@ -456,9 +455,10 @@ public class AuthController {
         }
     }
     private void validatePassword(String password) {
-        if (password == null || password.length() < 8 || password.length() > 200
-                || !password.matches(".*[A-Za-z].*") || !password.matches(".*\\d.*")) {
-            throw bad("密码必须包含字母和数字，且至少 8 位", "检查密码后重试");
+        if (password == null || password.length() < 10 || password.length() > 200
+                || !password.matches(".*[A-Z].*") || !password.matches(".*[a-z].*")
+                || !password.matches(".*\\d.*")) {
+            throw bad("密码至少10位，且必须包含大小写字母和数字", "检查密码后重试");
         }
     }
     private String text(JsonNode input, String field) { return input == null || !input.hasNonNull(field) ? "" : input.get(field).asText(); }
@@ -475,5 +475,4 @@ public class AuthController {
                               List<String> tenantIds, List<String> permissions, String permissionVersion) {}
     private record RateWindow(Instant window, List<Instant> requests) {}
 
-    public record EmailCode(String code, Instant expiresAt) {}
 }

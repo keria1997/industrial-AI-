@@ -10,7 +10,7 @@ paths:
       summary: Read workbench sections
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: role, in: query, required: true, schema: { type: string } }
+        - { name: role, in: query, required: true, schema: { type: string }, description: Presentation role only; authorization is derived from the signed identity }
         - { name: date, in: query, schema: { type: string, format: date } }
         - { name: sections, in: query, schema: { type: string, example: metrics,todos,alerts,activities } }
         - { name: search, in: query, schema: { type: string, maxLength: 50 } }
@@ -19,7 +19,31 @@ paths:
         - { name: activityLimit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
         - { name: cursor, in: query, schema: { type: string } }
       responses:
-        '200': { description: Workbench projection schema 1.1 }
+        '200':
+          description: Workbench projection schema 1.1 with nested data
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schemaVersion, data, error]
+                properties:
+                  schemaVersion: { type: string, enum: ['1.1'] }
+                  data:
+                    type: object
+                    required: [generatedAt, dataAsOf, timeZone, businessDate, period, role, roleGroups, requestedSections, scope, sources]
+                    properties:
+                      generatedAt: { type: string, format: date-time }
+                      dataAsOf: { type: string, format: date-time }
+                      timeZone: { type: string }
+                      businessDate: { type: string, format: date }
+                      roleGroups: { type: array, items: { type: string } }
+                      scope: { type: object, additionalProperties: true }
+                      metrics: { type: object, additionalProperties: true }
+                      todos: { type: object, additionalProperties: true }
+                      alerts: { type: object, additionalProperties: true }
+                      activities: { type: object, additionalProperties: true }
+                      sources: { type: array, items: { type: object, additionalProperties: true } }
+                  error: { nullable: true }
         '400': { description: Invalid role, date, section, scope, limit or cursor }
         '401': { description: Missing or expired session }
         '403': { description: Dashboard permission denied }

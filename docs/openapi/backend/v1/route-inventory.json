@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-10-17",
   "source": "Spring controller annotations",
-  "total": 306,
+  "total": 308,
   "routes": [
     {
       "method": "GET",
@@ -1049,6 +1049,12 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/platform/permission-resources",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/platform/permissions",
       "controller": "PlatformController",
       "classification": "public"
@@ -1554,6 +1560,12 @@
     {
       "method": "POST",
       "path": "/api/v1/sales-orders/{orderId}/receipts",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/sales-orders/{orderId}/receipts/{receiptId}",
       "controller": "SalesFulfillmentController",
       "classification": "public"
     },

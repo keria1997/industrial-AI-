@@ -102,4 +102,43 @@ class FinanceControllerTests {
             org.junit.jupiter.api.Assertions.assertEquals("ar-1", bodyJson.path("document").path("id").asText());
         }
     }
+
+    @Test
+    void confirmationAllocatesOnceAndIndependentAllocationRespectsCumulativeLimit() throws Exception {
+        MvcResult registerResult = mockMvc.perform(post("/api/v1/finance/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .header("X-Idempotency-Key", "confirm-payment-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"direction":"INBOUND","receivableId":"ar-1","counterpartyId":"c-1",
+                                 "counterpartyName":"客户一","amount":"100","paymentMethod":"cash",
+                                 "paymentDate":"2099-01-01"}
+                                """))
+                .andExpect(status().isCreated()).andReturn();
+        String registeredPaymentId = objectMapper.readTree(registerResult.getResponse().getContentAsString())
+                .path("payment").path("id").asText();
+        MvcResult confirmResult = mockMvc.perform(post("/api/v1/finance/payments/" + registeredPaymentId + "/confirm")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .header("X-Idempotency-Key", "confirm-1")
+                        .header("If-Match", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentDate\":\"2099-01-01\"}"))
+                .andExpect(status().isOk()).andReturn();
+        String paymentId = objectMapper.readTree(confirmResult.getResponse().getContentAsString())
+                .path("payment").path("id").asText();
+        org.junit.jupiter.api.Assertions.assertFalse(paymentId.isBlank());
+        mockMvc.perform(post("/api/v1/finance/allocations")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .header("X-Idempotency-Key", "double-allocation-2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"paymentId":"%s","lines":[
+                                 {"documentType":"RECEIVABLE","documentId":"ar-1","amount":"1"}]}
+                                """.formatted(paymentId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.message").value("核销金额超过收付款可核销余额"));
+    }
 }

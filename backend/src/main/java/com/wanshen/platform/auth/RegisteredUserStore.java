@@ -15,6 +15,11 @@ public interface RegisteredUserStore {
     void updateFirstLogin(String account, boolean value);
     void saveSmsCode(String phone, String code);
     boolean verifySmsCode(String phone, String code);
+    void saveEmailCode(String email, String code);
+    boolean verifyEmailCode(String email, String code);
+    boolean isLoginLocked(String account);
+    void registerLoginFailure(String account);
+    void resetLoginFailures(String account);
     String generateResetToken(String email);
     boolean resetPassword(String token, String encodedPassword);
     boolean consumeSession(String jti, long expiresAt);

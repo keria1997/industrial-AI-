@@ -270,6 +270,16 @@ public class SalesFulfillmentController {
         return aftercare.createReceipt(auth(request), orderId, body);
     }
 
+    @PatchMapping("/api/v1/sales-orders/{orderId}/receipts/{receiptId}")
+    public Map<String, Object> supplementOrderReceipt(
+            @PathVariable String orderId,
+            @PathVariable String receiptId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        return aftercare.supplementReceipt(auth(request), orderId, receiptId, body);
+    }
+
     @PostMapping("/api/v1/sales-orders/{orderId}/complete-check")
     public Map<String, Object> completeCheck(
             @PathVariable String orderId,

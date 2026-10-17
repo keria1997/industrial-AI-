@@ -144,6 +144,71 @@ public class JdbcRegisteredUserStore implements RegisteredUserStore {
             statement.setString(1, phone); statement.setString(2, code); return null;
         }) > 0;
     }
+
+    @Override
+    public void saveEmailCode(String email, String code) {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            enableAuthLookup(connection);
+            try (PreparedStatement invalidate = connection.prepareStatement(
+                    "UPDATE auth_email_code SET consumed_at = now() WHERE email_hash = ? AND consumed_at IS NULL")) {
+                invalidate.setString(1, ResetTokens.hash(email.toLowerCase()));
+                invalidate.executeUpdate();
+            }
+            try (PreparedStatement insert = connection.prepareStatement("""
+                    INSERT INTO auth_email_code (email_hash, code_hash, purpose, expires_at)
+                    VALUES (?, ?, 'PASSWORD_RESET', ?)
+                    """)) {
+                insert.setString(1, ResetTokens.hash(email.toLowerCase()));
+                insert.setString(2, ResetTokens.hash(code));
+                insert.setTimestamp(3, Timestamp.from(Instant.now().plusSeconds(600)));
+                insert.executeUpdate();
+            }
+            connection.commit();
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not persist password reset challenge", exception);
+        }
+    }
+
+    @Override
+    public boolean verifyEmailCode(String email, String code) {
+        return update("""
+                UPDATE auth_email_code SET consumed_at = now()
+                WHERE email_hash = ? AND code_hash = ? AND consumed_at IS NULL
+                  AND expires_at > now()
+                """, statement -> {
+            statement.setString(1, ResetTokens.hash(email.toLowerCase()));
+            statement.setString(2, ResetTokens.hash(code));
+            return null;
+        }) > 0;
+    }
+
+    @Override
+    public boolean isLoginLocked(String account) {
+        return Boolean.TRUE.equals(queryValue("""
+                SELECT locked_until IS NOT NULL AND locked_until > now() AS locked
+                FROM auth_login_lock WHERE account = ?
+                """, statement -> { statement.setString(1, account); return null; }, "locked"));
+    }
+
+    @Override
+    public void registerLoginFailure(String account) {
+        update("""
+                INSERT INTO auth_login_lock (account, failed_count, locked_until, last_failed_at)
+                VALUES (?, 1, CASE WHEN 1 >= 5 THEN now() + interval '15 minutes' END, now())
+                ON CONFLICT (account) DO UPDATE SET
+                  failed_count = auth_login_lock.failed_count + 1,
+                  locked_until = CASE WHEN auth_login_lock.failed_count + 1 >= 5
+                    THEN now() + interval '15 minutes' ELSE auth_login_lock.locked_until END,
+                  last_failed_at = now(), updated_at = now()
+                """, statement -> { statement.setString(1, account); return null; });
+    }
+
+    @Override
+    public void resetLoginFailures(String account) {
+        update("DELETE FROM auth_login_lock WHERE account = ?",
+                statement -> { statement.setString(1, account); return null; });
+    }
     @Override
     public String generateResetToken(String email) {
         String token = ResetTokens.generate();
@@ -274,9 +339,31 @@ public class JdbcRegisteredUserStore implements RegisteredUserStore {
     private int update(String sql, SqlBinder binder) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
+            enableAuthLookup(connection);
             binder.bind(statement);
             return statement.executeUpdate();
         } catch (SQLException exception) { throw new IllegalStateException(exception); }
+    }
+
+    private <T> T queryValue(String sql, SqlBinder binder, String column) {
+        try (Connection connection = dataSource.getConnection()) {
+            enableAuthLookup(connection);
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                binder.bind(statement);
+                try (ResultSet result = statement.executeQuery()) {
+                    if (!result.next()) return null;
+                    Object value = result.getObject(column);
+                    if (value instanceof Boolean bool) return (T) Boolean.valueOf(bool);
+                    if (value == null) return null;
+                    throw new IllegalStateException("Unexpected column type for " + column);
+                }
+            }
+        } catch (SQLException exception) { throw new IllegalStateException(exception); }
+    }
+
+    private void enableAuthLookup(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT set_config('app.auth_lookup', 'true', true)")) { statement.execute(); }
     }
     private void bindTenant(Connection connection, String tenantId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("SELECT set_config('app.tenant_id', ?, true)")) {

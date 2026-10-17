@@ -7,6 +7,7 @@ import com.wanshen.platform.finance.FinanceStore;
 import com.wanshen.platform.finance.AbstractFinanceStore.Receivable;
 import com.wanshen.platform.fulfillment.FulfillmentStore;
 import com.wanshen.platform.message.MessageStore;
+import com.wanshen.platform.message.AbstractMessageStore;
 import com.wanshen.platform.personnel.PersonnelStore;
 import com.wanshen.platform.personnel.AbstractPersonnelStore.Attendance;
 import com.wanshen.platform.personnel.AbstractPersonnelStore.Employee;
@@ -62,34 +63,44 @@ class WorkbenchControllerTests {
         when(productionStore.demands(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
         when(productionStore.workOrders(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
         when(productionStore.inspections(any(), any())).thenReturn(List.of());
+        MessageStore messageStore = mock(MessageStore.class);
+        when(messageStore.records(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new AbstractMessageStore.Page<>(List.of(), 0));
 
         WorkbenchController controller = new WorkbenchController(
                 financeStore, personnelStore, productionStore, fulfillmentStore,
-                new SupplyChainStore(), new AiStore(), new MessageStore(), contexts, mapper
+                new SupplyChainStore(), new AiStore(), messageStore, contexts, mapper
         );
 
         Map<String, Object> response = controller.dashboard(request, "老板", null, null, null, "ALL", 5, 10, null);
-        assertEquals("老板", response.get("role"));
-        assertEquals(1, response.get("todoTotal"));
-        assertEquals(1, response.get("alertTotal"));
-
+        assertEquals("1.1", response.get("schemaVersion"));
         @SuppressWarnings("unchecked")
-        List<WorkbenchController.Metric> metrics = (List<WorkbenchController.Metric>) response.get("metrics");
-        assertEquals("12000", metric(metrics, "monthlyReceivable").value());
-        assertEquals("0.00", metric(metrics, "productionCompletionRate").value());
-        assertEquals("1", metric(metrics, "lowStockItems").value());
-        assertEquals("50.00", metric(metrics, "attendanceRate").value());
+        Map<String, Object> data = (Map<String, Object>) response.get("data");
+        assertEquals("老板", data.get("role"));
+        assertEquals(List.of("TENANT_OWNER", "ADMIN"), data.get("roleGroups"));
+
+        Map<String, Object> metrics = (Map<String, Object>) data.get("metrics");
+        assertEquals("AVAILABLE", ((Map<?, ?>) metrics.get("orderAmount")).get("availability"));
+        assertEquals("UNAVAILABLE", ((Map<?, ?>) metrics.get("confirmedRevenueAmount")).get("availability"));
+        assertEquals("UNAVAILABLE", ((Map<?, ?>) metrics.get("shippedRecognizedAmount")).get("availability"));
+        @SuppressWarnings("unchecked")
+        List<WorkbenchController.Metric> legacyMetrics = (List<WorkbenchController.Metric>) metrics.get("legacy");
+        assertEquals("0.00", metric(legacyMetrics, "productionCompletionRate").value());
+        assertEquals("1", metric(legacyMetrics, "lowStockItems").value());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                legacyMetrics.stream().noneMatch(item -> "attendanceRate".equals(item.key())));
 
         Map<String, Object> adminResponse = controller.dashboard(request, "管理员", null, null, null, "ALL", 5, 10, null);
-        assertEquals("管理员", adminResponse.get("role"));
-        assertEquals(response.get("metrics"), adminResponse.get("metrics"));
-        assertEquals(response.get("todoTotal"), adminResponse.get("todoTotal"));
-        assertEquals(response.get("alertTotal"), adminResponse.get("alertTotal"));
+        Map<String, Object> adminData = (Map<String, Object>) adminResponse.get("data");
+        assertEquals("管理员", adminData.get("role"));
+        assertEquals(data.get("metrics"), adminData.get("metrics"));
 
         Map<String, Object> unmatchedSearch = controller.dashboard(request, "老板", "NO-MATCH", null, null, "ALL", 5, 10, null);
-        assertEquals(0, unmatchedSearch.get("todoTotal"));
+        Map<String, Object> unmatchedData = (Map<String, Object>) unmatchedSearch.get("data");
+        assertEquals(0, ((Map<?, ?>) unmatchedData.get("todos")).get("total"));
         Map<String, Object> matchedSearch = controller.dashboard(request, "老板", "AR-2", null, null, "ALL", 5, 10, null);
-        assertEquals(1, matchedSearch.get("todoTotal"));
+        Map<String, Object> matchedData = (Map<String, Object>) matchedSearch.get("data");
+        assertEquals(1, ((Map<?, ?>) matchedData.get("todos")).get("total"));
     }
 
     @Test

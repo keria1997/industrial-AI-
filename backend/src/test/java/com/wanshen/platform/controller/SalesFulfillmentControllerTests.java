@@ -120,6 +120,52 @@ class SalesFulfillmentControllerTests {
     }
 
     @Test
+    void rejectsRmaAndSupportsSignedReceiptSupplement() throws Exception {
+        FulfillmentStore store = seedShippedOrder("so-reject");
+        when(contexts.from(request)).thenReturn(
+                context("creator", "reject-create"),
+                context("approver", "reject-approve")
+        );
+        SalesAftercareService aftercare = new SalesAftercareService(store, financeStore, mapper);
+        SalesFulfillmentController controller = new SalesFulfillmentController(store, aftercare, mapper, contexts);
+        Map<String, Object> created = controller.createRma(Map.of(
+                "orderId", "so-reject", "outboundId", "out-1", "outboundLineId", "out-line-1",
+                "requestedQty", "2", "reason", "wrong item", "evidence", List.of(Map.of("url", "https://x"))
+        ), request);
+        Map<String, Object> rejected = controller.transitionRma(String.valueOf(created.get("id")), Map.of(
+                "transition", "APPROVE", "toStatus", "REJECTED", "decision", "REJECTED",
+                "comment", "not accepted", "version", 1
+        ), request);
+        assertEquals("REJECTED", rejected.get("status"));
+        assertEquals("not accepted", rejected.get("rejectedReason"));
+
+        FulfillmentStore receiptStore = seedShippedOrder("so-supplement");
+        when(contexts.from(request)).thenReturn(
+                context("creator", "receipt-create"),
+                context("creator", "receipt-supplement")
+        );
+        SalesAftercareService receiptAftercare = new SalesAftercareService(receiptStore, financeStore, mapper);
+        SalesFulfillmentController receiptController = new SalesFulfillmentController(
+                receiptStore, receiptAftercare, mapper, contexts
+        );
+        Map<String, Object> receipt = receiptController.createOrderReceipt("so-supplement", Map.of(
+                "signedBy", "customer", "signedAt", Instant.now().toString(),
+                "lines", List.of(Map.of("orderLineId", "line-1", "outboundId", "out-1",
+                        "outboundLineId", "out-line-1", "signedQty", "7",
+                        "rejectedQty", "3", "damagedQty", "0"))
+        ), request);
+        Map<String, Object> supplemented = receiptController.supplementOrderReceipt(
+                "so-supplement", String.valueOf(receipt.get("id")), Map.of(
+                        "signedBy", "customer", "signedAt", Instant.now().toString(),
+                        "lines", List.of(Map.of("orderLineId", "line-1", "rejectedQty", "0",
+                                "damagedQty", "3"))
+                ), request
+        );
+        assertEquals("DISPUTED", supplemented.get("receiptStatus"));
+        assertEquals("7", ((Map<?, ?>) ((List<?>) supplemented.get("lines")).get(0)).get("signedQty"));
+    }
+
+    @Test
     void readsRiskAcrossMonthsWithStableOrderId() {
         FulfillmentStore store = new FulfillmentStore();
         String now = Instant.now().toString();

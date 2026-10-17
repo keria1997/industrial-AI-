@@ -65,9 +65,12 @@ public class PlatformController {
 
     @GetMapping("/resources")
     public List<Map<String, Object>> resources(HttpServletRequest request) { return read(request, "resource", "platform.org.view"); }
-    // Platform client compatibility alias; resource is the canonical aggregate.
     @GetMapping("/permissions")
-    public List<Map<String, Object>> permissions(HttpServletRequest request) { return resources(request); }
+    public List<Map<String, Object>> permissions(HttpServletRequest request) {
+        return service.permissionCatalog(context(request));
+    }
+    @GetMapping("/permission-resources")
+    public List<Map<String, Object>> permissionResources(HttpServletRequest request) { return resources(request); }
     @PostMapping("/resources")
     public ResponseEntity<Object> createResource(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "resource", "platform.resource.manage", "企业资源", "新增企业资源", body, 201);
@@ -263,14 +266,8 @@ public class PlatformController {
             @RequestParam(defaultValue = "50") Integer pageSize
     ) {
         validatePage(page, pageSize);
-        List<Map<String, Object>> items = service.auditLogs(context(request), module, result, operator,
+        return service.auditPage(context(request), module, result, operator,
                 startTime, endTime, page, pageSize);
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("items", items);
-        response.put("total", items.size() == pageSize ? page * pageSize + 1 : (page - 1) * pageSize + items.size());
-        response.put("page", page);
-        response.put("pageSize", pageSize);
-        return response;
     }
 
     @GetMapping("/capabilities")

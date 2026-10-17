@@ -754,7 +754,32 @@ public class ProductionService {
 
     public Map<String, Object> allocationPreview(RequestContext context, String workOrderId, String qty) {
         JsonNode order = workOrder(context, workOrderId);
-        return Map.of("workOrderId", workOrderId, "qty", qty, "allocations", calculateAllocations(order, qty, "PREVIEW"));
+        String warehouseId = text(order.path("parameterSnapshot"), "inventoryWarehouseId");
+        String traceMode = expectedTraceMode(order);
+        int allocationRevision = allocationRevision(context.tenantId(), workOrderId);
+        java.util.List<String> missing = new ArrayList<>();
+        if (text(order, "factoryResourceId").isBlank()) missing.add("factoryResourceId");
+        if (text(order, "workCenterResourceId").isBlank()) missing.add("workCenterResourceId");
+        if (warehouseId.isBlank()) missing.add("inventoryWarehouseId");
+        if (traceMode.isBlank()) missing.add("traceMode");
+        Map<String, Object> preview = new LinkedHashMap<>();
+        preview.put("workOrderId", workOrderId);
+        preview.put("qty", qty);
+        preview.put("factoryId", text(order, "factoryResourceId"));
+        preview.put("workCenterResourceId", text(order, "workCenterResourceId"));
+        preview.put("inventoryWarehouseId", warehouseId);
+        preview.put("traceMode", traceMode);
+        preview.put("allocationRevision", allocationRevision);
+        preview.put("businessDate", LocalDate.now().toString());
+        preview.put("availability", missing.isEmpty() ? "AVAILABLE" : "UNAVAILABLE");
+        preview.put("missingSources", missing);
+        preview.put("sourceVersions", Map.of(
+                "workOrderVersion", version(order),
+                "bomSnapshotVersion", order.path("bomSnapshot").path("version").asInt(0),
+                "routingSnapshotVersion", order.path("routingSnapshot").path("version").asInt(0)
+        ));
+        preview.put("allocations", calculateAllocations(order, qty, "PREVIEW"));
+        return preview;
     }
 
     public Command createCompletion(RequestContext context, String workOrderId, JsonNode input) {
@@ -772,6 +797,14 @@ public class ProductionService {
             if (!text(input, "uom").equals(text(order, "uom"))
                     || !text(input, "inventoryWarehouseId").equals(text(order.path("parameterSnapshot"), "inventoryWarehouseId"))) {
                 invalid("完工入库单位或仓库与工单不一致");
+            }
+            if (input.path("allocationRevision").asInt(-1)
+                    != allocationRevision(context.tenantId(), workOrderId)) {
+                throw new ApiException(409, "PRODUCTION_409_ALLOCATION_REVISION_CONFLICT",
+                        "完工分配修订已变化", "重新获取完工分配预览后提交");
+            }
+            if (!expectedTraceMode(order).equals(text(input, "traceMode"))) {
+                invalid("追溯方式与工单来源配置不一致");
             }
             String inspectionCompleted = "0";
             String orderCompleted = "0";
@@ -827,6 +860,24 @@ public class ProductionService {
                     .put("status", "POSTING").put("idempotencyKey", context.idempotencyKey()).put("traceId", context.traceId());
             return new Command(202, body, "Completion", completionId, false);
         });
+    }
+
+    private String expectedTraceMode(JsonNode order) {
+        String value = firstNonBlank(text(order, "traceMode"),
+                text(order.path("routingSnapshot"), "traceMode"),
+                text(order.path("routingSnapshot").path("operations").path(0), "traceMode"));
+        return value.isBlank() ? "NONE" : value;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) if (value != null && !value.isBlank()) return value;
+        return "";
+    }
+
+    private int allocationRevision(String tenantId, String workOrderId) {
+        return (int) store.completions(tenantId, workOrderId).stream()
+                .filter(item -> Set.of("POSTING", "POSTED", "FAILED").contains(text(item, "status")))
+                .count() + 1;
     }
 
     public JsonNode completion(RequestContext context, String id) {

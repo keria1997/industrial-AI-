@@ -43,6 +43,7 @@ public class WorkbenchController {
     private static final Set<String> OPEN_FINANCE = Set.of("pending", "processing");
     private static final Set<String> OPEN_PURCHASE_ORDERS = Set.of("CONFIRMED", "PARTIALLY_RECEIVED");
     private static final Set<String> PENDING_RECEIPTS = Set.of("PENDING_INSPECTION", "INSPECTING");
+    private static final String EVENT_CATALOG_VERSION = "WB-EVENT-CATALOG-20261015-v1";
 
     private final AbstractFinanceStore financeStore;
     private final AbstractPersonnelStore personnelStore;
@@ -121,8 +122,6 @@ public class WorkbenchController {
         var purchaseOrders = fulfillmentStore.purchaseOrders(tenantId);
         var purchaseReceipts = fulfillmentStore.purchaseReceipts(tenantId);
         var stocktakes = fulfillmentStore.stocktakeTasks(tenantId);
-        var employees = personnelStore.employees(tenantId, 1, Integer.MAX_VALUE, "active", null, null, null).items().stream().map(this::json).toList();
-        var attendances = personnelStore.attendances(tenantId, 1, Integer.MAX_VALUE, null, null, null, today, null).items().stream().map(this::json).toList();
         var skills = personnelStore.skills(tenantId, 1, Integer.MAX_VALUE, null, null, null, null).items().stream().map(this::json).toList();
         var supplyRisks = supplyChainStore.riskEvents(tenantId, new AbstractSupplyChainStore.RiskFilter(1, Integer.MAX_VALUE, "active", null, null, null, null)).items();
         var aiInsights = aiStore.insights(tenantId, new AbstractAiStore.InsightFilter(1, Integer.MAX_VALUE, null, null, null, "active", null)).items();
@@ -143,20 +142,18 @@ public class WorkbenchController {
                 .filter(item -> decimal(item, "safetyStockQty").signum() > 0
                         && decimal(item, "fulfillableQty").compareTo(decimal(item, "safetyStockQty")) < 0)
                 .map(item -> text(item, "productId")).distinct().count();
-        long attendedEmployees = attendances.stream()
-                .filter(item -> !item.path("clockIn").isNull() && !Set.of("ABSENT", "LEAVE").contains(text(item, "status")))
-                .map(item -> text(item, "employeeId")).distinct().count();
-        BigDecimal attendanceRate = employees.isEmpty() ? BigDecimal.ZERO : percent(BigDecimal.valueOf(attendedEmployees), BigDecimal.valueOf(employees.size()));
-
         List<Metric> metrics = switch (role) {
             case "老板", "管理员", "超级管理员" -> List.of(
-                    metric("monthlyReceivable", "本月新增应收", sum(receivables.stream()
-                            .filter(item -> OPEN_FINANCE.contains(text(item, "status")) || "settled".equals(text(item, "status")))
+                    metric("orderAmount", "本月订单金额", sum(salesOrders.stream()
                             .filter(item -> text(item, "createdAt").startsWith(month))
-                            .map(item -> decimal(item, "totalAmount"))), "元", "本月新增应收单总额"),
+                            .filter(item -> !Set.of("CANCELLED", "VOIDED").contains(text(item, "overallStatus")))
+                            .map(item -> decimal(item, "totalAmount"))), "元", "本月创建且未取消的销售订单金额"),
+                    metric("confirmedRevenueAmount", "确认收入", null, "元",
+                            "需要确认收入事实；来源缺失时不估算"),
+                    metric("shippedRecognizedAmount", "发货确权金额", null, "元",
+                            "需要发货确权事实；来源缺失时不估算"),
                     metric("productionCompletionRate", "生产完工率", completionRate.toPlainString(), "%", "活动工单已报工数量 / 计划数量"),
-                    metric("lowStockItems", "低水位预警物料", lowStockCount, "项", "可用量低于安全库存的物料"),
-                    metric("attendanceRate", "今日出勤率", attendanceRate.toPlainString(), "%", "今日有效出勤员工 / 在职员工")
+                    metric("lowStockItems", "低水位预警物料", lowStockCount, "项", "可用量低于安全库存的物料")
             );
             case "销售" -> List.of(
                     metric("newOrderAmount", "本月新增订单金额", sum(salesOrders.stream()
@@ -266,9 +263,10 @@ public class WorkbenchController {
                 "有 " + lowStockCount + " 项物料可用量低于安全库存。", null, null));
         alerts.sort(Comparator.comparing(item -> severityOrder(item.severity())));
 
-        boolean tenantWide = TENANT_ADMIN_ROLES.contains(role) || context.permissions().contains("*");
+        // Presentation roles never widen authorization; tenant-wide activities need an explicit permission.
+        boolean tenantWide = context.permissions().contains("*");
         List<AbstractMessageStore.MessageRecord> messageRecords = messageStore.records(
-                tenantId, 1, 50, tenantWide ? null : context.actorId(), null, null, false, null, null, null
+                tenantId, 1, Integer.MAX_VALUE, tenantWide ? null : context.actorId(), null, null, false, null, null, null
         ).items().stream().filter(item -> !item.isArchived() || tenantWide).toList();
         List<AbstractMessageStore.MessageRecord> scopedMessages = messageRecords.stream()
                 .filter(item -> eventScope == null || "ALL".equals(eventScope) || isKeyEvent(item))
@@ -304,29 +302,65 @@ public class WorkbenchController {
                 ? List.of() : filteredActivities.subList(safeOffset, activityTo);
         boolean activitiesHasMore = activityTo < filteredActivities.size();
 
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("generatedAt", Instant.now().toString());
+        data.put("dataAsOf", latestSourceTime(salesOrders, receivables, messageRecords));
+        data.put("timeZone", ZONE.getId());
+        data.put("businessDate", today);
+        data.put("period", Map.of("type", "MONTH", "startDate", month + "-01",
+                "endDate", LocalDate.parse(today).withDayOfMonth(LocalDate.parse(today).lengthOfMonth()).toString()));
+        data.put("role", role);
+        data.put("roleGroups", roleGroups(role));
+        data.put("requestedSections", sectionList);
+        data.put("scope", Map.of(
+                "tenantId", tenantId,
+                "scopeVersion", "iam-" + context.permissions().hashCode(),
+                "tenantWide", tenantWide
+        ));
+        if (sectionList.contains("metrics")) {
+            Map<String, Object> metricProjection = new LinkedHashMap<>();
+            metricProjection.put("orderAmount", Map.of(
+                    "availability", "AVAILABLE", "value", metricValue(metrics, "orderAmount")));
+            metricProjection.put("confirmedRevenueAmount", Map.of(
+                    "availability", "UNAVAILABLE", "unavailableReason", "SOURCE_MISSING"));
+            metricProjection.put("shippedRecognizedAmount", Map.of(
+                    "availability", "UNAVAILABLE", "unavailableReason", "SOURCE_MISSING"));
+            metricProjection.put("legacy", metrics);
+            data.put("metrics", metricProjection);
+        }
+        if (sectionList.contains("todos")) {
+            data.put("todos", Map.of(
+                    "items", filteredTodos.size() > todoLimit ? filteredTodos.subList(0, todoLimit) : filteredTodos,
+                    "hasMore", filteredTodos.size() > todoLimit,
+                    "total", filteredTodos.size()
+            ));
+        }
+        if (sectionList.contains("alerts")) {
+            data.put("alerts", Map.of(
+                    "items", filteredAlerts.size() > 9 ? filteredAlerts.subList(0, 9) : filteredAlerts,
+                    "hasMore", filteredAlerts.size() > 9,
+                    "total", filteredAlerts.size()
+            ));
+        }
+        if (sectionList.contains("activities")) {
+            Map<String, Object> activityProjection = new LinkedHashMap<>();
+            activityProjection.put("items", activityPage);
+            activityProjection.put("hasMore", activitiesHasMore);
+            if (activitiesHasMore) activityProjection.put("nextCursor", encodeActivityCursor(activityTo, context));
+            activityProjection.put("eventCatalogVersion", EVENT_CATALOG_VERSION);
+            data.put("activities", activityProjection);
+        }
+        data.put("sources", List.of(
+                sourceStatus("SalesOrder", "orderAmount",
+                        salesOrders.stream().anyMatch(item -> !text(item, "createdAt").isBlank())),
+                sourceStatus("RevenueRecognition", "confirmedRevenueAmount", false),
+                sourceStatus("ShipmentRecognition", "shippedRecognizedAmount", false),
+                sourceStatus("Message", "activities", !messageRecords.isEmpty())
+        ));
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("role", role);
-        if (sectionList.contains("metrics")) response.put("metrics", metrics);
-        if (sectionList.contains("todos"))
-            response.put("todos", filteredTodos.size() > todoLimit
-                    ? filteredTodos.subList(0, todoLimit) : filteredTodos);
-        if (sectionList.contains("alerts"))
-            response.put("alerts", filteredAlerts.size() > 9 ? filteredAlerts.subList(0, 9) : filteredAlerts);
-        if (sectionList.contains("activities"))
-            response.put("activities", activityPage);
         response.put("schemaVersion", "1.1");
-        response.put("requestedSections", sectionList);
-        response.put("businessDate", today);
-        response.put("timeZone", ZONE.getId());
-        response.put("eventScope", eventScope);
-        response.put("todoTotal", filteredTodos.size());
-        response.put("alertTotal", filteredAlerts.size());
-        response.put("activitiesHasMore", activitiesHasMore);
-        response.put("nextCursor", activitiesHasMore ? encodeActivityCursor(activityTo) : null);
-        response.put("generatedAt", Instant.now().toString());
-        response.put("dataAsOf", Instant.now().minusSeconds(30).toString());
-        response.put("sourceVersion", "wb-v1");
-        response.put("dataScope", Map.of("tenantId", tenantId));
+        response.put("data", data);
+        response.put("error", null);
         return response;
     }
 
@@ -358,9 +392,10 @@ public class WorkbenchController {
                 || item.metadata() != null && Boolean.TRUE.equals(item.metadata().get("keyEvent"));
     }
 
-    private String encodeActivityCursor(int offset) {
+    private String encodeActivityCursor(int offset, RequestContext context) {
         return java.util.Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(("wb-activity-v1:" + offset).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                .encodeToString(("wb-activity-v2:" + offset + ":" + context.tenantId() + ":" + context.actorId())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private int decodeActivityCursor(String value) {
@@ -368,14 +403,56 @@ public class WorkbenchController {
         try {
             String decoded = new String(java.util.Base64.getUrlDecoder().decode(value),
                     java.nio.charset.StandardCharsets.UTF_8);
-            if (!decoded.startsWith("wb-activity-v1:")) throw new IllegalArgumentException();
-            int offset = Integer.parseInt(decoded.substring("wb-activity-v1:".length()));
+            if (!decoded.startsWith("wb-activity-v1:") && !decoded.startsWith("wb-activity-v2:")) {
+                throw new IllegalArgumentException();
+            }
+            String offsetValue = decoded.startsWith("wb-activity-v1:")
+                    ? decoded.substring("wb-activity-v1:".length())
+                    : decoded.split(":")[1];
+            int offset = Integer.parseInt(offsetValue);
             if (offset < 0) throw new IllegalArgumentException();
             return offset;
         } catch (RuntimeException exception) {
             throw new ApiException(400, "WORKBENCH_400_INVALID_CURSOR",
                     "cursor无效或已过期", "从第一页重新读取动态");
         }
+    }
+
+    private List<String> roleGroups(String role) {
+        if (TENANT_ADMIN_ROLES.contains(role)) return List.of("TENANT_OWNER", "ADMIN");
+        return switch (role) {
+            case "销售" -> List.of("SALES");
+            case "计划员", "车间" -> List.of("PLANNER");
+            case "采购" -> List.of("PROCUREMENT");
+            case "仓管" -> List.of("WAREHOUSE");
+            case "财务" -> List.of("FINANCE");
+            default -> List.of();
+        };
+    }
+
+    private Object metricValue(List<Metric> metrics, String key) {
+        return metrics.stream().filter(item -> key.equals(item.key())).findFirst().map(Metric::value).orElse(null);
+    }
+
+    private Map<String, Object> sourceStatus(String source, String metric, boolean available) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("source", source);
+        value.put("metric", metric);
+        value.put("availability", available ? "AVAILABLE" : "UNAVAILABLE");
+        if (!available) value.put("unavailableReason", "SOURCE_MISSING");
+        return value;
+    }
+
+    private String latestSourceTime(
+            List<com.fasterxml.jackson.databind.JsonNode> salesOrders,
+            List<com.fasterxml.jackson.databind.JsonNode> receivables,
+            List<AbstractMessageStore.MessageRecord> messages
+    ) {
+        return java.util.stream.Stream.concat(java.util.stream.Stream.concat(
+                                salesOrders.stream().map(item -> firstText(item, "updatedAt", "createdAt")),
+                                receivables.stream().map(item -> firstText(item, "updatedAt", "createdAt"))),
+                        messages.stream().map(item -> item.sentAt() == null ? item.updatedAt() : item.sentAt()))
+                .filter(value -> value != null && !value.isBlank()).max(String::compareTo).orElse(Instant.now().toString());
     }
 
     
