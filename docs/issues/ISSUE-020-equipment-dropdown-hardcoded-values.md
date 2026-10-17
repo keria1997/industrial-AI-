@@ -45,16 +45,40 @@
 
 ## 修改方案
 
-1. 在平台管理 → 字典中预置以下字典条目：
-   - 字典分类 `equipment_type`：贴片加工设备(SMT)、装配装配站(Assembly)、测试设备(Test)、包装设备(Packaging) 等
-   - 字典分类 `equipment_health_status`：运行正常、闲置待产、故障停机、维修中、报废
+将硬编码 `<select>` 下拉框替换为自由文本输入框 `<input type="text">`，由用户自行输入设备种类和健康状态。
 
-2. 前端修改：从 `GET /api/v1/platform/dictionaries` 加载字典数据，替换硬编码 `<option>` 为动态渲染
+**不预置字典条目，不依赖字典 API。**
+
+### 修改示例
+
+```tsx
+// 修改前：硬编码 <select> 下拉
+<select value={type} onChange={e=>setType(e.target.value)} ...>
+    <option value="SMT">贴片加工设备</option>
+    <option value="Assembly">装配装配站</option>
+</select>
+
+// 修改后：自由文本输入
+<input
+    type="text"
+    value={type}
+    onChange={e=>setType(e.target.value)}
+    placeholder="请输入硬件种类"
+    className="w-full border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 bg-white"
+/>
+```
+
+健康状态同理，将 `<select>` 替换为 `<input type="text">`。
 
 ## 修改范围
 
 | 文件 | 修改内容 |
 |---|---|
-| `frontend/src/App.tsx` 设备注册弹窗 | 硬件种类和健康状态 `<option>` 替换为从字典 API 加载的动态列表 |
-| `backend/src/main/resources/db/migrations/` | 新增迁移：向字典表插入设备类型和健康状态预置数据 |
+| `frontend/src/App.tsx` 设备注册弹窗（line 3808~3816） | 硬件种类 `<select>` → `<input type="text">`，健康状态 `<select>` → `<input type="text">` |
+
+## 验证步骤
+
+1. 生产管理 → 基础主数据 → 设备机台 → 注册物理设备
+2. 硬件种类和健康状态应为文本输入框，可自由输入任意值
+3. 输入后保存，列表中显示用户输入的值
 
