@@ -312,20 +312,20 @@ export const settlePayable = (context: ApiContext, id: string, input: Settlement
 export const listPayments = (context: ApiContext, filter?: FinanceListFilter) =>
   apiRequest<{ items: Payment[]; total: number }>(`/api/v1/finance/payments${buildQuery(filter)}`, context, { method: "GET" });
 
-export const registerPayment = (context: ApiContext, input: RegisterPaymentInput) =>
+export const registerPayment = (context: ApiContext, input: RegisterPaymentInput, idempotencyKey = key()) =>
   apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>("/api/v1/finance/payments", context, {
     method: "POST",
-    headers: { "X-Idempotency-Key": key() },
+    headers: { "X-Idempotency-Key": idempotencyKey },
     body: JSON.stringify(input),
   });
 
-export const confirmPayment = (context: ApiContext, id: string, version: number) =>
+export const confirmPayment = (context: ApiContext, id: string, version: number, idempotencyKey = key()) =>
   apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>(
     `/api/v1/finance/payments/${encodeURIComponent(id)}/confirm`,
     context,
     {
       method: "POST",
-      headers: { "If-Match": String(version), "X-Idempotency-Key": key() },
+      headers: { "If-Match": String(version), "X-Idempotency-Key": idempotencyKey },
     },
   );
 

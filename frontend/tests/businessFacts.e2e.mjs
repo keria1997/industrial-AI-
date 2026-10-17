@@ -88,7 +88,7 @@ try {
         if (rejectSubmit) return route.fulfill({ status: 403, json: { error: { message: 'SUBMIT_DENIED' } } });
         return route.fulfill({ json: { actionPlan: { id: 'P1', status: 'submitted' } } });
       }
-      if (path.endsWith('/production/readiness')) return route.fulfill({ json: { permissions: [] } });
+      if (path.endsWith('/production/readiness')) return route.fulfill({ json: { permissions: ['*'] } });
       if (path.endsWith('/production/work-orders')) return page(data ? [{
         id: 'API-WORK-ID', code: 'API-WORK-CODE', productId: 'API-PRODUCT', plannedQty: '7',
         inputQty: '7', reportedGoodQty: '0', reportedDefectQty: '0', reportedScrapQty: '0',
@@ -265,6 +265,7 @@ try {
     const path = new URL(request.url()).pathname;
     if (!path.startsWith('/api/')) return route.fallback();
     if (path.endsWith('/platform/snapshot')) return route.fulfill({ json: snapshot });
+    if (path.endsWith('/production/readiness')) return route.fulfill({ json: { permissions: ['*'] } });
     if (path.includes('/workbench/')) return route.fulfill({ status: 503, json: { error: { message: 'CONTROLLED_UNAVAILABLE' } } });
     if (path.endsWith('/personnel/employees')) {
       const old = request.headers()['x-tenant-id'] === 'TENANT-SHWS';

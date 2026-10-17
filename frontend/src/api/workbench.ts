@@ -1,4 +1,5 @@
 import { apiRequest, type ApiContext } from './client';
+import { workbenchProjection } from './workbenchProjection';
 
 export type WorkbenchRole =
   | '老板' | '销售' | '计划员' | '采购' | '仓管' | '车间' | '财务' | '人事' | '管理员' | '超级管理员';
@@ -23,6 +24,7 @@ export type WorkbenchTodoDto = {
 
 export type WorkbenchAlertDto = {
   module: string;
+  sourceType?: string;
   severity: 'low' | 'medium' | 'high';
   title: string;
   detail: string;
@@ -47,17 +49,32 @@ export type WorkbenchDashboardDto = {
   todos: WorkbenchTodoDto[];
   alerts: WorkbenchAlertDto[];
   activities: WorkbenchActivityDto[];
-  todoTotal: number;
-  alertTotal: number;
+  todoTotal: number | null;
+  alertTotal: number | null;
   generatedAt: string;
   dataScope: { tenantId: string };
+  nextCursor?: string | null;
+  activitiesHasMore?: boolean;
+  sourceWarnings?: string[];
+};
+
+export type WorkbenchQuery = {
+  sections?: 'metrics' | 'todos,alerts,activities';
+  search?: string;
+  eventScope?: 'KEY' | 'ALL';
+  todoLimit?: number;
+  activityLimit?: number;
+  cursor?: string;
 };
 
 export const workbenchApi = {
-  getDashboard: (context: ApiContext, role: WorkbenchRole) =>
-    apiRequest<WorkbenchDashboardDto>(
-      `/api/v1/workbench/dashboard?role=${encodeURIComponent(role)}`,
+  getDashboard: (context: ApiContext, role: WorkbenchRole, query: WorkbenchQuery = {}) => {
+    const params = new URLSearchParams({ role });
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)); });
+    return apiRequest<unknown>(
+      `/api/v1/workbench/dashboard?${params}`,
       context,
       { method: 'GET' },
-    ),
+    ).then(response => workbenchProjection(response, query));
+  },
 };

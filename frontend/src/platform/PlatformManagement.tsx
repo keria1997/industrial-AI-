@@ -462,8 +462,8 @@ function ImpactDialog({ config, onClose }: { config: ImpactConfig | null; onClos
   return (
     <div className="fixed inset-0 z-[170] flex items-center justify-center bg-slate-950/35 p-4" role="dialog" aria-modal="true" aria-label={config.title}>
       <button className="absolute inset-0 cursor-default" aria-label="关闭确认窗口" onClick={onClose} />
-      <div ref={panelRef} className="relative w-full max-w-[520px] overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div className="px-6 pb-5 pt-6">
+      <div ref={panelRef} className="relative flex max-h-[90vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="min-h-0 overflow-y-auto px-6 pb-5 pt-6">
           <div className={`mb-4 flex h-10 w-10 items-center justify-center rounded-full ${danger ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-[#1e5fbf]'}`}>{danger ? <AlertTriangle size={19} /> : <CheckCircle2 size={19} />}</div>
           {config.eyebrow && <div className="mb-1.5 text-[10px] font-black tracking-[0.14em] text-slate-400">{config.eyebrow}</div>}
           <h2 className="text-[18px] font-black text-slate-950">{config.title}</h2>
@@ -497,7 +497,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   const [resourceType, setResourceType] = useState('all');
   const [identityMode, setIdentityMode] = useState('employee');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('EMP-001');
-  const [selectedRoleId, setSelectedRoleId] = useState('ROLE-ADMIN');
+  const [selectedRoleId, setSelectedRoleId] = useState('');
   const [permissionDraft, setPermissionDraft] = useState<Record<string, 'allow' | 'deny' | 'unset'>>({});
   const [permissionLoaded, setPermissionLoaded] = useState(false);
   const [permissionSaving, setPermissionSaving] = useState(false);
@@ -644,6 +644,10 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     }
     return false;
   };
+
+  useEffect(() => {
+    if (!state.roles.some(role => role.id === selectedRoleId)) setSelectedRoleId(state.roles[0]?.id || '');
+  }, [state.roles, selectedRoleId]);
 
   useEffect(() => {
     const draft: Record<string, 'allow' | 'deny' | 'unset'> = {};
@@ -984,9 +988,14 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       try {
         const grants = Object.entries(permissionDraft).filter(([, effect]) => effect !== 'unset')
           .map(([permissionId, effect]) => ({ permissionId, effect: effect as 'allow' | 'deny' }));
-        const saved = await platformApi.replaceRoleGrants({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, roleId, grants, version);
-        setState(prev => ({ ...prev, roleGrants: [...prev.roleGrants.filter(item => item.roleId !== roleId), ...saved] }));
-        setRoleVersions(prev => ({ ...prev, [roleId]: version + 1 }));
+        const context = { tenantId: tenantIdentity.id, accessToken: currentUser.accessToken };
+        await platformApi.replaceRoleGrants(context, roleId, grants, version);
+        window.dispatchEvent(new CustomEvent('industrial-ai-permissions-changed', { detail: context }));
+        const snapshot = await platformApi.getSnapshot(context);
+        const published = snapshot.roles.find(role => role.id === roleId);
+        if (!published || !Number.isInteger(published.version)) throw new Error('授权已提交，但尚未取得发布版本，请重新查询后核对');
+        setState(migratePlatformState(snapshot));
+        setRoleVersions(Object.fromEntries(snapshot.roles.map(role => [role.id, role.version])));
         setPermissionError('');
         toast('角色权限已发布');
       } catch (error) {
@@ -995,11 +1004,17 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
         toast(message, 'error');
       } finally { setPermissionSaving(false); }
     };
-    const savePermissions = () => setImpact({ eyebrow: '发布确认', title: `发布“${selectedRole.name}”权限变更？`, description: '发布后，已分配该角色的账号将按新授权执行主生产计划操作。', impacts: ['主生产计划菜单允许制单人审批本人生产需求', '拒绝权限优先于允许权限', '本次修改会写入审计日志'], confirmLabel: '发布权限变更', onConfirm: () => { void publishPermissions(); } });
+    const changes = state.permissions.flatMap(permission => {
+      const saved = state.roleGrants.find(grant => grant.roleId === selectedRoleId && grant.permissionId === permission.id)?.effect || 'unset';
+      const next = permissionDraft[permission.id] || 'unset';
+      const label = { allow: '允许', deny: '拒绝', unset: '未设置' };
+      return saved === next ? [] : [`${permission.name} (${permission.code})：${label[saved]} → ${label[next]}`];
+    });
+    const savePermissions = () => setImpact({ eyebrow: '发布确认', title: `发布“${selectedRole.name}”权限变更？`, description: '发布后按服务端授权版本执行，数据范围和职责分离仍由服务端校验。', impacts: changes, confirmLabel: '发布权限变更', onConfirm: () => { void publishPermissions(); } });
     return (
       <div data-testid="platform-view-access">
         <PageHeader eyebrow="人员与权限" title="角色与权限" description="分别设置允许与拒绝；拒绝始终优先。修改发布前只保存在当前草稿中。" actions={<>
-          <Button icon={BadgeCheck} onClick={() => setImpact({ eyebrow: '权限草稿预览', title: `“${selectedRole.name}”权限摘要`, description: '以下是当前草稿结果，发布后才会应用到账号。', impacts: [`允许 ${Object.values(permissionDraft).filter(item => item === 'allow').length} 项`, `拒绝 ${Object.values(permissionDraft).filter(item => item === 'deny').length} 项`, `未设置 ${Object.values(permissionDraft).filter(item => item === 'unset').length} 项`], confirmLabel: '关闭预览', hideSecondary: true, onConfirm: () => {} })}>预览草稿</Button>
+          <Button icon={BadgeCheck} onClick={() => setImpact({ eyebrow: '权限草稿预览', title: `“${selectedRole.name}”权限差异`, description: '逐项对比当前已发布授权与本页草稿。', impacts: changes.length ? changes : ['当前没有权限变更'], confirmLabel: '关闭预览', hideSecondary: true, onConfirm: () => {} })}>预览草稿</Button>
           <Button disabled={!permissionDirty || !permissionLoaded || permissionSaving} title={!permissionLoaded ? '请等待角色权限加载完成' : !permissionDirty ? '当前没有待发布修改' : undefined} variant="primary" icon={Save} onClick={savePermissions}>{permissionSaving ? '发布中' : '发布变更'}</Button>
         </>} />
         {permissionError && <p role="alert" className="mb-4 text-[12px] text-rose-700">{permissionError}</p>}

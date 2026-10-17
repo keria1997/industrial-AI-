@@ -11,11 +11,11 @@ export const defaultModule: ModuleLabel = '工作台';
 
 const moduleOwnedSearchParams: Record<ModuleId, readonly string[]> = {
   workbench: [],
-  sales: ['tab', 'focusOrder'],
+  sales: ['tab', 'focusOrder', 'quickCreate'],
   inventory: ['inventory', 'sourceOrder', 'focusOutbound', 'warehouseId'],
   production: ['production', 'focusMps', 'focusOrder'],
-  procurement: ['procurement', 'focusPr'],
-  finance: [],
+  procurement: ['procurement', 'focusPr', 'focusPo'],
+  finance: ['finance', 'focusAr', 'focusAp'],
   personnel: [],
   'supply-chain': [],
   'ai-hub': [],

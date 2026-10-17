@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
 import { SidebarItem } from './app/SidebarItem';
 import { useAppRuntime } from './app/AppRuntimeProvider';
-import { getModulesForRole, isRoleName } from './app/moduleRegistry';
+import { isRoleName } from './app/moduleRegistry';
+import { getAuthorizedModules, hasPermission } from './app/permissions';
 import PlatformManagementV2 from './platform/PlatformManagement';
 import {
   ProductionApiError,
@@ -26,7 +27,11 @@ import { ApiDataState } from './components/ApiDataState';
 import { personnelApi } from "./api/personnel";
 import { supplyChainApi } from "./api/supply-chain";
 import { platformApi } from './api/platform/client';
-import { workbenchApi, type WorkbenchDashboardDto, type WorkbenchRole } from './api/workbench';
+import { type WorkbenchRole } from './api/workbench';
+import { useWorkbenchDashboard } from './hooks/useWorkbenchDashboard';
+import { sourceDestination } from './app/sourceDestination';
+import { PageNavigation } from './components/PageNavigation';
+import { validateNewPassword } from './shared/passwordPolicy';
 import { AIHubManagement as AIHubManagementV2, AIAssistantDrawer } from './features/ai-hub';
 import { AIDataAnalysisManagement } from './features/analytics/AIDataAnalysisManagement';
 import {
@@ -58,10 +63,15 @@ import {
   validateShipmentDeliveryDate,
 } from './features/sales/model/salesRules';
 import { SalesShipmentOrderEditModal } from './features/sales/components/SalesShipmentOrderEditModal';
+import { SalesReviewModal } from './features/sales/components/SalesReviewModal';
+import { SalesCancelModal } from './features/sales/components/SalesCancelModal';
 import { RmaManagementPanel } from './features/sales/components/RmaManagementPanel';
 import { CustomerReceiptPanel } from './features/sales/components/CustomerReceiptPanel';
 import { CostAccumulationPanel } from './features/production/components/CostAccumulationPanel';
 import { PaymentAllocationModal } from './features/finance/components/PaymentAllocationModal';
+import { PaymentsPanel } from './features/finance/components/PaymentsPanel';
+import { PurchaseReceiptModal } from './features/procurement/components/PurchaseReceiptModal';
+import { ProcurementExecutionPanel } from './features/procurement/components/ProcurementExecutionPanel';
 import { confirmSalesOrderContents, mergeFormalSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
 import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
 import { createQuickSalesOrder } from './features/sales/model/quickSalesOrder';
@@ -385,7 +395,8 @@ const ForgotPasswordPage = ({ onBack, onSuccess }) => {
 
   const submitReset = async () => {
     if (!verifyCode || verifyCode.length !== 6) { setError('请输入6位验证码'); return; }
-    if (newPassword.length < 8) { setError('密码至少8位'); return; }
+    const passwordError = validateNewPassword(newPassword);
+    if (passwordError) { setError(passwordError); return; }
     if (newPassword !== confirmPassword) { setError('两次密码不一致'); return; }
     setError('');
     setLoading(true);
@@ -431,7 +442,7 @@ const ForgotPasswordPage = ({ onBack, onSuccess }) => {
             </label>
             <label className="block">
               <span className="block text-[12px] text-slate-300 font-bold mb-2">新密码</span>
-              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少8位，含大小写和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少10位，含大小写字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
             </label>
             <label className="block">
               <span className="block text-[12px] text-slate-300 font-bold mb-2">确认新密码</span>
@@ -456,8 +467,8 @@ const FirstLoginPage = ({ account, tempPassword, onComplete, onLogout }) => {
 
   const submit = async () => {
     setError('');
-    if (newPassword.length < 8) { setError('密码至少 8 位，须包含字母和数字'); return; }
-    if (!/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) { setError('密码必须同时包含字母和数字'); return; }
+    const passwordError = validateNewPassword(newPassword);
+    if (passwordError) { setError(passwordError); return; }
     if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
     setLoading(true);
     try {
@@ -477,7 +488,7 @@ const FirstLoginPage = ({ account, tempPassword, onComplete, onLogout }) => {
         <p className="text-[13px] text-slate-400 text-center mb-8">首次登录，请设置您的专属密码</p>
         <label className="block mb-5">
           <span className="block text-[12px] text-slate-300 font-bold mb-2">新密码</span>
-          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 位，包含字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少10位，含大小写字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
         </label>
         <label className="block mb-5">
           <span className="block text-[12px] text-slate-300 font-bold mb-2">确认新密码</span>
@@ -501,8 +512,8 @@ const ResetPasswordPage = ({ token, onBack, onSuccess }) => {
 
   const submit = async () => {
     setError('');
-    if (newPassword.length < 8) { setError('密码至少 8 位，须包含字母和数字'); return; }
-    if (!/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) { setError('密码必须同时包含字母和数字'); return; }
+    const passwordError = validateNewPassword(newPassword);
+    if (passwordError) { setError(passwordError); return; }
     if (newPassword !== confirmPassword) { setError('两次输入的密码不一致'); return; }
     setLoading(true);
     try {
@@ -526,7 +537,7 @@ const ResetPasswordPage = ({ token, onBack, onSuccess }) => {
         <p className="text-[13px] text-slate-400 text-center mb-8">请设置新密码</p>
         <label className="block mb-5">
           <span className="block text-[12px] text-slate-300 font-bold mb-2">新密码</span>
-          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 位，包含字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少10位，含大小写字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
         </label>
         <label className="block mb-5">
           <span className="block text-[12px] text-slate-300 font-bold mb-2">确认新密码</span>
@@ -558,8 +569,8 @@ const RegisterPage = ({ onBack, onRegistered }) => {
     if (!/^1[3-9]\d{9}$/.test(form.phone)) { setError('请输入有效手机号'); return; }
     if (!form.account.trim() || form.account.trim().length < 2) { setError('账号至少 2 个字符'); return; }
     if (!form.name.trim()) { setError('请输入管理员姓名'); return; }
-    if (form.password.length < 8) { setError('密码至少 8 位，须包含字母和数字'); return; }
-    if (!/[A-Za-z]/.test(form.password) || !/[0-9]/.test(form.password)) { setError('密码必须同时包含字母和数字'); return; }
+    const passwordError = validateNewPassword(form.password);
+    if (passwordError) { setError(passwordError); return; }
     if (form.password !== form.confirmPassword) { setError('两次输入的密码不一致'); return; }
     setLoading(true);
     try {
@@ -620,7 +631,7 @@ const RegisterPage = ({ onBack, onRegistered }) => {
           </label>
           <label className="block">
             <span className="block text-[12px] text-slate-300 font-bold mb-2">设置密码 <span className="text-rose-400">*</span></span>
-            <input type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="至少 8 位，包含字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
+            <input type="password" value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="至少10位，含大小写字母和数字" className="w-full h-11 rounded-md bg-[#273353] border border-slate-500/40 px-3 text-[14px] outline-none focus:border-blue-400 text-white placeholder:text-slate-500" />
           </label>
           <label className="block">
             <span className="block text-[12px] text-slate-300 font-bold mb-2">确认密码 <span className="text-rose-400">*</span></span>
@@ -838,7 +849,7 @@ const CenterToast = ({ toast, onClose }) => {
   );
 };
 
-const BusinessActionModal = ({ action, onClose, onConfirm, children = null }) => {
+const BusinessActionModal = ({ action, onClose, onConfirm, children = null, pending = false }) => {
   if (!action) return null;
   const tone = monitorToneMap[action.tone || 'blue'] || monitorToneMap.blue;
   const Icon = action.icon || Workflow;
@@ -1123,8 +1134,8 @@ const BusinessActionModal = ({ action, onClose, onConfirm, children = null }) =>
           )}
         </div>
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors">取消</button>
-          <button onClick={onConfirm} className={`px-5 py-2.5 text-[13px] font-bold rounded-xl transition-colors ${tone.button}`}>{action.confirmText || '确认执行'}</button>
+          <button disabled={pending} onClick={onClose} className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors">取消</button>
+          <button disabled={pending} onClick={onConfirm} className={`px-5 py-2.5 text-[13px] font-bold rounded-xl transition-colors ${tone.button}`}>{pending ? '提交中' : action.confirmText || '确认执行'}</button>
         </div>
       </div>
     </div>
@@ -1196,7 +1207,7 @@ const businessFlowActionMap = {
   production: { label: '质检合格，成品入库', action: 'finishProduction', tone: 'emerald' },
   finishedInbound: { label: '销售出库并确认发货', action: 'shipSales', tone: 'blue' },
   delivery: { label: '生成应收/应付单据', action: 'generateFinanceDocs', tone: 'purple' },
-  financeDocs: { label: '完成收付款与开票', action: 'settleFinance', tone: 'emerald' },
+  financeDocs: { label: '办理收付款', action: 'settleFinance', tone: 'emerald' },
   settlement: { label: '关闭流程上下文', action: 'resetFlow', tone: 'slate' },
 };
 
@@ -2120,7 +2131,7 @@ const Sales_QuotesView = ({ quotes, setQuotes, customers, quoteWarehouses, quote
   );
 };
 
-const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel, onOutbound }) => {
+const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel, onOutbound, permissions }) => {
   const isLinked = businessFlow?.orderId === order.id;
   const flowSteps = [
     { key: 'approval', label: '订单审批' },
@@ -2201,8 +2212,8 @@ const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel
           {order.remark && <section><h4 className="text-[13px] font-bold text-slate-800 mb-2">订单备注</h4><div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-[12px] leading-relaxed text-slate-600">{order.remark}</div></section>}
         </div>
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap justify-end gap-3">
-          {(['已确认', '部分发货'].includes(order.status) || order.outStatus === '已移交仓库') && <button onClick={onOutbound} className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 text-[13px] font-bold text-white hover:bg-blue-700"><Truck size={14}/>{order.status === '部分发货' ? '发起剩余发货' : '去发货'}</button>}
-          {(order.status === '待发货' && order.outStatus === '未发货' || (order.status === '已确认' && (order.outStatus === '库存不足' || order.outStatus === '未发货'))) && <button onClick={onCancel} className="px-5 py-2 rounded-lg border border-rose-200 bg-white text-[13px] font-bold text-rose-600 hover:bg-rose-50">取消订单</button>}
+          {hasPermission(permissions, 'sales.order.ship') && (['已确认', '部分发货'].includes(order.status) || order.outStatus === '已移交仓库') && <button onClick={onOutbound} className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 text-[13px] font-bold text-white hover:bg-blue-700"><Truck size={14}/>{order.status === '部分发货' ? '发起剩余发货' : '去发货'}</button>}
+          {hasPermission(permissions, 'sales.order.cancel') && (order.status === '待发货' && order.outStatus === '未发货' || (order.status === '已确认' && (order.outStatus === '库存不足' || order.outStatus === '未发货'))) && <button onClick={onCancel} className="px-5 py-2 rounded-lg border border-rose-200 bg-white text-[13px] font-bold text-rose-600 hover:bg-rose-50">取消订单</button>}
           <button onClick={onClose} className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-[13px] font-bold text-slate-600 hover:bg-slate-100">关闭</button>
         </div>
       </div>
@@ -2210,7 +2221,7 @@ const Sales_OrderDetailModal = ({ order, businessFlow, audits, onClose, onCancel
   );
 };
 
-const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit, onRequestOutbound, onReviewFormalOrder, onConfirmFormalOrder, onCancelFormalOrder, onCancelOrderOutbound, onNavigateProduction, customers = [], products = [], orderCreationRevision = 0, apiContext = null }) => {
+const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusinessFlowAction, audits, onAudit, onRequestOutbound, onReviewFormalOrder, onConfirmFormalOrder, onCancelFormalOrder, onCancelOrderOutbound, onNavigateProduction, customers = [], products = [], orderCreationRevision = 0, apiContext = null, permissions = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [customerFilter, setCustomerFilter] = useState('全部客户');
@@ -2254,7 +2265,11 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   const currentPage = Math.min(page, totalPages);
   const pagedOrders = visibleOrders.slice((currentPage - 1) * limit, currentPage * limit);
   const actionsForOrder = (order) => {
-      return getSalesOrderActions(order.status === '生产补货中' ? '生产中' : order.status, order.outStatus, order.reviewStatus, Boolean(order.aggregateId));
+      return getSalesOrderActions(order.status === '生产补货中' ? '生产中' : order.status, order.outStatus, order.reviewStatus, Boolean(order.aggregateId))
+        .filter(action => {
+          const code = { review: 'sales.order.approve', confirm: 'sales.order.confirm', outbound: 'sales.order.ship', cancel: 'sales.order.cancel', complete: 'sales.order.complete' }[action];
+          return !['duplicate', 'rollback', 'edit'].includes(action) && (!code || hasPermission(permissions, code));
+        });
   };
   const activeMenuOrder = menuOrderId ? orderRows.find((order) => order.id === menuOrderId) : null;
   const activeMenuActions = activeMenuOrder
@@ -2327,28 +2342,9 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
       onToast('未生成副本', '请通过快速开单创建正式订单，当前订单未复制', 'warning');
   };
 
-  const runOrderAction = async () => {
-      if (!confirmAction) return;
-      const { action, row } = confirmAction;
-      if (!row.aggregateId || !['review', 'cancel'].includes(action)) {
-          onToast('未执行', '请通过正式业务操作办理，当前订单状态未变更', 'warning');
-          setConfirmAction(null);
-          return;
-      }
-      setIsSubmitting(true);
-      try {
-          const updatedOrder = action === 'review'
-              ? await onReviewFormalOrder(row) : await onCancelFormalOrder(row);
-          if (!updatedOrder) throw new Error('未收到订单更新结果');
-          setOrders(prev => prev.map(item => item.aggregateId === row.aggregateId ? updatedOrder : item));
-          onToast(action === 'review' ? '订单复核已通过' : '销售订单已取消', row.id);
-          onAudit(action === 'review' ? '完成订单复核' : '取消销售订单', row.id);
-          setConfirmAction(null);
-      } catch (error) {
-          onToast('操作失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
-      } finally {
-          setIsSubmitting(false);
-      }
+  const runOrderAction = () => {
+      onToast('未执行', '请通过正式业务操作办理，当前订单状态未变更', 'warning');
+      setConfirmAction(null);
   };
 
   const navigateToOutbound = (row) => {
@@ -2442,15 +2438,27 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
               {activeMenuActions.includes('outbound') && <button role="menuitem" onClick={() => { navigateToOutbound(activeMenuOrder); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><Truck size={14} className="text-emerald-600" />{activeMenuOrder.status === '部分发货' ? '发起剩余发货' : '去发货'}</button>}
               {activeMenuActions.includes('rollback') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'rollback', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-amber-700 hover:bg-amber-50"><RotateCcw size={14} className="text-amber-600" />退回待发货</button>}
               {activeMenuActions.includes('expedite') && <button role="menuitem" onClick={() => { onNavigateProduction(); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><Factory size={14} className="text-amber-600" />查看生产补货</button>}
-              {activeMenuActions.includes('complete') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'complete', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><CheckCircle2 size={14} className="text-emerald-600" />确认收货</button>}
+              {activeMenuActions.includes('complete') && <button role="menuitem" disabled title="签收、财务结清及完成校验契约待统一" className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-slate-400"><CheckCircle2 size={14} />完成关闭（待接入）</button>}
               {activeMenuActions.includes('duplicate') && <button role="menuitem" onClick={() => { duplicateOrder(activeMenuOrder); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"><Copy size={14} className="text-blue-600" />复制订单</button>}
               {activeMenuActions.includes('cancel') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'cancel', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-rose-600 hover:bg-rose-50"><X size={14} />取消订单</button>}
           </div>
       )}
       {recordModal?.mode === 'edit' && <Sales_OrderEditModal mode="edit" record={recordModal.record} customers={customers} products={products} onClose={() => setRecordModal(null)} onSubmit={updateOrder} />}
       {recordModal?.mode === 'shipment' && <SalesShipmentOrderEditModal mode="confirm" order={recordModal.record} pending={isSubmitting} apiContext={apiContext} products={products} onClose={() => setRecordModal(null)} onSubmit={submitShipmentOrderEdit} />}
-      {recordModal?.mode === 'detail' && <Sales_OrderDetailModal order={recordModal.record} businessFlow={businessFlow} audits={audits} onClose={() => setRecordModal(null)} onCancel={() => { setConfirmAction({ action: 'cancel', row: recordModal.record }); setRecordModal(null); }} onOutbound={() => { setRecordModal(null); navigateToOutbound(recordModal.record); }} />}
-      {confirmAction && (
+      {recordModal?.mode === 'detail' && <Sales_OrderDetailModal order={recordModal.record} businessFlow={businessFlow} audits={audits} permissions={permissions} onClose={() => setRecordModal(null)} onCancel={() => { setConfirmAction({ action: 'cancel', row: recordModal.record }); setRecordModal(null); }} onOutbound={() => { setRecordModal(null); navigateToOutbound(recordModal.record); }} />}
+      {confirmAction?.action === 'review' && <SalesReviewModal orderNo={confirmAction.row.id} onClose={() => setConfirmAction(null)} onDecision={async (decision, comment, key) => {
+        const updated = await onReviewFormalOrder(confirmAction.row, decision, comment, key);
+        if (!updated) throw new Error('未取得复核结果');
+        setOrders(prev => prev.map(item => item.aggregateId === confirmAction.row.aggregateId ? updated : item));
+        return updated;
+      }} onSaved={() => { setConfirmAction(null); onToast('复核结果已保存', '订单状态以服务端返回为准'); }} />}
+      {confirmAction?.action === 'cancel' && <SalesCancelModal orderNo={confirmAction.row.id} onClose={() => setConfirmAction(null)} onCancel={async (reason, key) => {
+        const updated = await onCancelFormalOrder(confirmAction.row, reason, key);
+        if (!updated) throw new Error('尚未取得取消结果，请核对订单状态');
+        setOrders(prev => prev.map(item => item.aggregateId === confirmAction.row.aggregateId ? updated : item));
+        return updated;
+      }} onSaved={() => { setConfirmAction(null); onToast('销售订单已取消', '订单状态以服务端返回为准'); }} />}
+      {confirmAction && !['review', 'cancel'].includes(confirmAction.action) && (
           <Sales_ConfirmModal
               title={({ review: '审批 / 复核订单', requestShipment: '发起发货', dispatch: '确认订单', recheck: '库存再校验', complete: '确认收货', cancel: '取消订单', rollback: '退回待发货' })[confirmAction.action]}
               desc={confirmAction.action === 'review' ? `复核只更新 ${confirmAction.row.id} 的独立确认状态，总体仍保持待确认；创建人与复核人必须分离。` : confirmAction.action === 'requestShipment' ? `${confirmAction.row.id} 将移交仓库进行权威库存校验；此时不会提前进入已确认。` : confirmAction.action === 'dispatch' ? `确认后，${confirmAction.row.id} 将交由仓库执行出库；仓库发现库存不足时负责发起生产申请。` : confirmAction.action === 'rollback' ? `${confirmAction.row.id} 将退回待发货状态，已创建的出库任务将被取消，订单明细恢复可编辑。` : `确定对 ${confirmAction.row.id} 执行该操作吗？`}
@@ -2909,7 +2917,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
     (permission) => permission === '*' || permission === 'inventory.shipment-task.read',
   ));
   const [activeTab, setActiveTab] = useState(() => resolveSalesTab(window.location.search));
-  const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(false);
+  const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(() => new URLSearchParams(window.location.search).get('quickCreate') === 'order' && hasPermission(currentUser?.permissions, 'sales.order.create'));
   const [orderCreationRevision, setOrderCreationRevision] = useState(0);
   const [quotes, setQuotes] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -2944,8 +2952,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
     let active = true;
     setCustomers([]); setOrders([]); setQuotes([]); setLevels([]); setIndustries([]);
     setAudits([]); setOutboundRequestModal(null); setSalesDataError(''); setCustomerDataError('');
-    if (formalContext) supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 100 })
-      .then(response => { if (active) setCustomers(response.items.map(mapSalesCustomer)); })
+    if (formalContext) loadApiCollection((page, pageSize) => supplyChainApi.listCustomers(formalContext, { page, pageSize }))
+      .then(rows => { if (active) setCustomers(rows.map(mapSalesCustomer)); })
       .catch(error => { if (active) { setCustomers([]); setCustomerDataError(error.message || '客户加载失败'); } });
     return () => { active = false; };
   }, [formalContext?.tenantId, formalContext?.accessToken]);
@@ -2985,14 +2993,14 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
           } : {}),
       })),
       amount: sales_formatMoney(Number(order.totalAmount || 0)),
-      receivable: order.shipmentStatus === 'SHIPPED' ? sales_formatMoney(Number(order.totalAmount || 0)) : '待生成',
+      receivable: '-',
       date: order.orderDate ?? order.createdAt?.slice(0, 10),
       validUntil: order.validUntil,
       remark: order.remark,
       deliveryDate: order.requestedDeliveryDate,
       warehouse: order.fulfillmentWarehouseId,
       outStatus: order.shipmentStatus === 'SHIPPED' ? '全部发货' : order.shipmentStatus === 'PARTIALLY_SHIPPED' ? '部分发货' : order.shipmentStatus === 'REQUESTED' ? '已移交仓库' : '未发货',
-      status: order.overallStatus === 'SHIPPED' ? '已发货' : order.overallStatus === 'PARTIALLY_SHIPPED' ? '部分发货' : order.overallStatus === 'REPLENISHING' ? '生产中' : order.overallStatus === 'CONFIRMED' ? '已确认' : order.overallStatus === 'CANCELED' ? '已取消' : '待发货',
+      status: order.overallStatus === 'COMPLETED' ? '已完成' : order.overallStatus === 'SHIPPED' ? '已发货' : order.overallStatus === 'PARTIALLY_SHIPPED' ? '部分发货' : order.overallStatus === 'REPLENISHING' ? '生产中' : order.overallStatus === 'CONFIRMED' ? '已确认' : order.overallStatus === 'CANCELED' ? '已取消' : '待发货',
       reviewStatus: order.reviewStatus,
       confirmationStatus: order.reviewStatus === 'APPROVED' ? '已审批' : order.reviewStatus === 'NOT_REQUIRED' ? '无需审批' : order.reviewStatus === 'PENDING' ? '待复核' : order.reviewStatus,
       shippedQty: orderLines.reduce((total, line) => total + Number(line.shippedQty), 0),
@@ -3013,9 +3021,9 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       const revision = ++salesReadRevision.current;
       if (!formalContext) { setOrders([]); return; }
       try {
-          const response = await listFulfillmentOrders(formalContext);
+          const rows = await loadApiCollection((page, pageSize) => listFulfillmentOrders(formalContext, { page, pageSize }));
           if (salesIdentity.current !== formalContext || revision !== salesReadRevision.current) return;
-          setOrders(response.items.map(mapFormalOrder));
+          setOrders(rows.map(mapFormalOrder));
           setSalesDataError('');
       } catch (error) {
           if (salesIdentity.current !== formalContext || revision !== salesReadRevision.current) return;
@@ -3087,6 +3095,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   };
 
   const requestOutbound = async (order) => {
+      if (!hasPermission(currentUser?.permissions, 'sales.order.ship')) { showToast('无发货权限', '请联系管理员核对权限', 'warning'); return; }
       try {
           let formalOrder = await ensureFormalSalesOrder(order);
           const localOrderId = order.localOrderId || (!order.aggregateId ? order.id : undefined);
@@ -3165,13 +3174,15 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       }
   };
 
-  const reviewFormalOrder = async (row) => {
+  const reviewFormalOrder = async (row, decision: 'APPROVE' | 'RETURN' | 'REJECT' = 'APPROVE', comment = '', key) => {
       if (!formalContext || !row.formalOrder) return null;
+      if (!hasPermission(currentUser?.permissions, 'sales.order.approve')) throw new Error('无复核权限');
       if (row.formalOrder.reviewStatus !== 'PENDING') throw new Error('订单当前不在待复核状态');
-      return { ...row, ...mapFormalOrder(await approveFulfillmentOrder(formalContext, row.formalOrder)) };
+      return { ...row, ...mapFormalOrder(await approveFulfillmentOrder(formalContext, row.formalOrder, decision, comment, key)) };
   };
 
   const confirmFormalOrder = async (row) => {
+      if (!hasPermission(currentUser?.permissions, 'sales.order.confirm')) throw new Error('无订单确认权限');
       const formalOrder = await ensureFormalSalesOrder(row);
       const localOrderId = row.localOrderId || (!row.aggregateId ? row.id : undefined);
       const updateOrder = (updated: FulfillmentOrder) => {
@@ -3188,9 +3199,13 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       return mapFormalOrder(await requestSalesShipment(formalContext, row.aggregateId));
   };
 
-  const cancelFormal = async (row) => {
+  const cancelFormal = async (row, reason: string, key: string) => {
       if (!formalContext || !row.formalOrder) return null;
-      return mapFormalOrder(await cancelFulfillmentOrder(formalContext, row.formalOrder, '销售确认取消'));
+      if (!hasPermission(currentUser?.permissions, 'sales.order.cancel')) throw new Error('无取消订单权限');
+      if (!reason.trim()) throw new Error('请填写取消原因');
+      const result = await cancelFulfillmentOrder(formalContext, row.formalOrder, reason, key);
+      if (!result?.id || result.overallStatus !== 'CANCELED') throw new Error('未取得已取消状态，请核对订单');
+      return mapFormalOrder(result);
   };
 
   const cancelOrderOutbound = () => {
@@ -3230,7 +3245,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                           <div className="text-[13px] text-slate-400 font-medium">{activeTabDescriptions[activeTab]}</div>
                       </div>
                   </div>
-                  <button onClick={() => setIsQuickOrderModalOpen(true)} className="bg-[#2563EB] hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center text-[13px] font-medium transition-colors shadow-sm">
+                  <button disabled={!hasPermission(currentUser?.permissions, 'sales.order.create')} onClick={() => setIsQuickOrderModalOpen(true)} className="bg-[#2563EB] hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center text-[13px] font-medium transition-colors shadow-sm disabled:opacity-40">
                       <ShoppingCart size={16} className="mr-2"/> 快速开单
                   </button>
               </div>
@@ -3257,14 +3272,14 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
               <div className="w-full">
                   {(salesDataError || customerDataError) && <div role="alert" className="mb-4 border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{[salesDataError, customerDataError].filter(Boolean).join('；')}<button className="ml-3 underline" onClick={() => {
                       void refreshFormalOrders().catch(() => {});
-                      if (formalContext) supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 100 })
-                          .then(result => { if (salesIdentity.current === formalContext) { setCustomers(result.items.map(mapSalesCustomer)); setCustomerDataError(''); } })
+                      if (formalContext) loadApiCollection((page, pageSize) => supplyChainApi.listCustomers(formalContext, { page, pageSize }))
+                          .then(rows => { if (salesIdentity.current === formalContext) { setCustomers(rows.map(mapSalesCustomer)); setCustomerDataError(''); } })
                           .catch(error => { if (salesIdentity.current === formalContext) setCustomerDataError(error.message || '客户加载失败'); });
                   }}>重新加载</button></div>}
                   {['quotes', 'basic-data'].includes(activeTab) && <div role="status" className="mb-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{activeTab === 'quotes' ? '报价单持久化接口尚未接入，当前不能保存或转单。' : '完整销售基础数据与触达配置尚未接入，当前不能保存配置。'}</div>}
                   {activeTab === 'dashboard' && <SalesMonitorFacts apiContext={formalContext} Cabin={UnifiedMonitorCabin} />}
                   {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
-                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={quoteOptions.products} orderCreationRevision={orderCreationRevision} apiContext={formalContext} />}
+                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={quoteOptions.products} orderCreationRevision={orderCreationRevision} apiContext={formalContext} permissions={currentUser?.permissions} />}
                   {activeTab === 'customers' && <Sales_CustomersView apiContext={formalContext} customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
                   {activeTab === 'rma' && <RmaManagementPanel />}
                   {activeTab === 'receipts' && <CustomerReceiptPanel />}
@@ -3876,7 +3891,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
             apiStatus: d.apiStatus,
             rawDemand: d,
         }));
-    const allRows = [...draftRows, ...mps];
+    const allRows = [...draftRows, ...mps].filter(row => !focusMps || [row.id, row.apiId, row.demandId].includes(focusMps));
     const pendingCount = draftRows.filter(r => ['草稿', '待接收'].includes(r.status)).length;
     const urgentCount = allRows.filter(r => ['紧急', '特急VIP'].includes(r.priority)).length;
 
@@ -3925,7 +3940,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                                 const canReview = isDraft && r.apiStatus === 'PENDING_REVIEW';
                                 const canClaim = isDraft && r.apiStatus === 'APPROVED' && !r.rawDemand?.formalDemand?.acceptedAt;
                                 return (
-                                    <tr key={r.id} aria-current={r.id === focusMps ? 'true' : undefined} className={`transition-colors group ${r.id === focusMps ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
+                                    <tr key={r.id} aria-current={[r.id, r.apiId, r.demandId].includes(focusMps) ? 'true' : undefined} className={`transition-colors group ${[r.id, r.apiId, r.demandId].includes(focusMps) ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
                                         <td className="px-5 py-4 font-mono font-bold text-blue-600">{r.id}</td>
                                         <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${meta.className}`}><SourceIcon size={12} /> {ds}</span></td>
                                         <td className="px-5 py-4">{r.priority === '特急VIP' ? <span className="bg-rose-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max"><Zap size={12}/> 特急VIP</span> : r.priority === '紧急' ? <span className="bg-orange-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max">紧急</span> : r.priority === '销售联动' ? <span className="bg-purple-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max">销售联动</span> : <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 w-max">普通</span>}</td>
@@ -4018,6 +4033,7 @@ const Prod_MrpView = ({ mrp, onIssueMrp, onRunGlobalMrp, onCreatePurchase, showT
 };
 
 const Prod_OrdersView = ({ orders, onCheckKit, onDispatch, onUpdateOrder, onDeleteOrder, showToast }) => {
+    const focusOrder = new URLSearchParams(window.location.search).get('focusOrder');
     const [recordModal, setRecordModal] = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
     return (
@@ -4035,7 +4051,7 @@ const Prod_OrdersView = ({ orders, onCheckKit, onDispatch, onUpdateOrder, onDele
                         <tr><th className="px-6 py-3.5 font-medium">工单编号</th><th className="px-6 py-3.5 font-medium">来源</th><th className="px-6 py-3.5 font-medium">目标产品</th><th className="px-6 py-3.5 font-medium">数量</th><th className="px-6 py-3.5 font-medium">齐套状态</th><th className="px-6 py-3.5 font-medium text-right">协同与操作</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {orders.map(o => (
+                        {orders.filter(order => !focusOrder || [order.id, order.apiId].includes(focusOrder)).map(o => (
                             <tr key={o.id} className="hover:bg-slate-50/50 transition-colors group">
                                 <td className="px-6 py-4 font-bold text-blue-600 font-mono">{o.id}</td>
                                 <td className="px-6 py-4 text-slate-600">{o.source}</td>
@@ -5968,6 +5984,7 @@ type OutboundStockState = {
 const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState(() => resolveInventoryTab(window.location.search));
   const [requestedSalesOrderId, setRequestedSalesOrderId] = useState(() => resolveSalesOutboundOrderId(window.location.search));
+  const focusedOutboundId = new URLSearchParams(window.location.search).get('focusOutbound');
   const [outboundSourceSearch, setOutboundSourceSearch] = useState('');
   const outboundSourceSearchRef = useRef<HTMLInputElement>(null);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(() => resolveInventoryWarehouseId(window.location.search));
@@ -6109,8 +6126,8 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   const [outboundData, setOutboundData] = useState([]);
   const filteredOutboundData = useMemo(() => {
     const keyword = outboundSourceSearch.trim().toLowerCase();
-    return outboundData.filter(row => !keyword || String(row.source || '').toLowerCase().includes(keyword));
-  }, [outboundData, outboundSourceSearch]);
+    return outboundData.filter(row => (!focusedOutboundId || [row.id, row.taskId, row.formalTask?.id, row.outboundId].includes(focusedOutboundId)) && (!keyword || String(row.source || '').toLowerCase().includes(keyword)));
+  }, [outboundData, outboundSourceSearch, focusedOutboundId]);
   const warehouseName = (id) => resolveWarehouse(formalInventory.warehouses, id)?.name || id;
 
   const getOutboundSourceLines = (row) => {
@@ -7270,15 +7287,23 @@ const Procurement_SupplierCreateModal = ({ submitting, onClose, onSubmit }: any)
 const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get('procurement');
-    return ['dashboard', 'pr', 'order', 'supplier'].includes(requested || '') ? requested : 'dashboard';
+    return ['dashboard', 'pr', 'order', 'supplier', 'receipts', 'returns'].includes(requested || '') ? requested : 'dashboard';
   });
   const focusedPrId = new URLSearchParams(window.location.search).get('focusPr');
+  const focusedPoId = new URLSearchParams(window.location.search).get('focusPo');
   const [actionModal, setActionModal] = useState(null);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [formalRequests, setFormalRequests] = useState([]);
   const [formalOrders, setFormalOrders] = useState([]);
   const [formalSuppliers, setFormalSuppliers] = useState([]);
   const [approvalSupplierId, setApprovalSupplierId] = useState('');
+  const [receiptOrder, setReceiptOrder] = useState(null);
+  const [actionReason, setActionReason] = useState('');
+  const [procPending, setProcPending] = useState(false);
+  const procBusy = useRef(false);
+  const [procPages, setProcPages] = useState({ pr: 1, order: 1, supplier: 1 });
+  const procPage = (key, rows) => Math.min(procPages[key], Math.max(1, Math.ceil(rows.length / 10)));
+  const procSlice = (key, rows) => rows.slice((procPage(key, rows) - 1) * 10, procPage(key, rows) * 10);
   const [procurementError, setProcurementError] = useState('');
   const [procurementLoading, setProcurementLoading] = useState(true);
   const procurementRevision = useRef(0);
@@ -7326,6 +7351,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
   const handleCreateSupplier = async (draft: any) => {
+    if (!hasPermission(currentUser?.permissions, 'procurement.supplier.create')) { showCenterToast('无新增供应商权限', 'warning'); return; }
     if (!formalContext) {
       showCenterToast('请先登录正式会话后再创建供应商', 'error');
       return;
@@ -7379,8 +7405,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     creator: '正式采购服务',
     formalOrder: order
   }));
-  const prRows = formalPrRows;
-  const poRows = formalPoRows;
+  const prRows = formalPrRows.filter(row => !focusedPrId || row.id === focusedPrId || row.apiId === focusedPrId);
+  const poRows = formalPoRows.filter(row => !focusedPoId || row.id === focusedPoId || row.apiId === focusedPoId);
   const formalSupplierRows = formalSuppliers.map(supplier => ({
     ...supplier,
     id: supplier.code || supplier.id,
@@ -7395,6 +7421,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   }));
 
   const openProcRowAction = (kind, row) => {
+    const required = { prApprove: ['procurement.pr.approve', 'procurement.request.approve'], prReject: ['procurement.pr.approve', 'procurement.request.approve'], poDelivery: ['procurement.receipt.create', 'procurement.receipt.post'], poCancel: ['procurement.po.cancel', 'procurement.order.cancel'] }[kind];
+    if (required && !hasPermission(currentUser?.permissions, ...required)) { showCenterToast('无此操作权限', 'warning'); return; }
+    if (kind === 'poDelivery') { setReceiptOrder(row.formalOrder); return; }
+    setActionReason('');
     const configs = {
       prView: {
         kind,
@@ -7518,8 +7548,9 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     setActionModal(configs[kind]);
   };
 
-  const confirmProcAction = async () => {
+  const runProcAction = async () => {
     if (!actionModal) return;
+    if (['prReject', 'poCancel'].includes(actionModal.kind) && !actionReason.trim()) { showCenterToast('请填写操作原因', 'error'); return; }
     if (['adopt', 'quote', 'notify', 'supplierScore'].includes(actionModal.kind)) {
       showCenterToast('未执行：后端尚未提供该业务命令接口', 'error');
       return;
@@ -7547,28 +7578,11 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
         return;
       }
     }
-    if (actionModal.kind === 'poDelivery') {
-      if (actionModal.record?.formalOrder) {
-        try {
-          if (!formalContext) throw new Error('请先登录正式会话');
-          const result = await procurementApi.receiveOrder(formalContext, actionModal.record.formalOrder);
-          await refreshProcurement();
-          onBusinessFlowAction?.('formalMaterialInbound', { receipt: result.receipt, availability: result.availability });
-          showCenterToast(`采购入库 ${result.receipt.receiptNo} 已正式过账`, 'success');
-        } catch (error) {
-          showCenterToast(error instanceof Error ? `采购入库失败：${error.message}` : '采购入库失败', 'error');
-          return;
-        }
-      } else {
-        showCenterToast('未收货：正式采购订单未加载', 'error');
-        return;
-      }
-    }
     if (actionModal.kind === 'prReject') {
       if (actionModal.record?.formalRequest) {
         try {
           if (!formalContext) throw new Error('请先登录正式会话');
-          await procurementApi.rejectRequest(formalContext, actionModal.record.formalRequest, '审批不通过');
+          await procurementApi.rejectRequest(formalContext, actionModal.record.formalRequest, actionReason.trim());
           await refreshProcurement();
           showCenterToast(`采购申请 ${actionModal.record.id} 已驳回`, 'warning');
         } catch (error) {
@@ -7584,7 +7598,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
       if (actionModal.record?.formalOrder) {
         try {
           if (!formalContext) throw new Error('请先登录正式会话');
-          await procurementApi.cancelOrder(formalContext, actionModal.record.formalOrder, '订单取消');
+          await procurementApi.cancelOrder(formalContext, actionModal.record.formalOrder, actionReason.trim());
           await refreshProcurement();
           showCenterToast(`采购订单 ${actionModal.record.id} 已取消`, 'warning');
         } catch (error) {
@@ -7602,6 +7616,12 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   const getPOStatusBadge = (status) => {
     if(status.includes('确认')) return <span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/> {status}</span>;
     return <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-lg text-[11px] font-bold">{status}</span>;
+  };
+
+  const confirmProcAction = async () => {
+    if (procBusy.current) return;
+    procBusy.current = true; setProcPending(true);
+    try { await runProcAction(); } finally { procBusy.current = false; setProcPending(false); }
   };
 
   const handleProcurementFlowAction = (action) => {
@@ -7631,9 +7651,11 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   return (
     <div className="w-full h-full font-sans flex flex-col relative">
       <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
-      <BusinessActionModal action={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmProcAction}>
+      <BusinessActionModal action={actionModal} pending={procPending} onClose={() => { if (!procBusy.current) setActionModal(null); }} onConfirm={confirmProcAction}>
         {actionModal?.kind === 'prApprove' && <label className="block text-sm text-slate-700">供应商<select aria-label="审批供应商" value={approvalSupplierId} onChange={event => setApprovalSupplierId(event.target.value)} className="mt-2 w-full rounded border border-slate-200 p-2"><option value="">请选择供应商</option>{formalSuppliers.filter(item => item.status === 'enabled').map(item => <option key={item.id} value={item.id}>{item.name} ({item.code})</option>)}</select></label>}
+        {['prReject', 'poCancel'].includes(actionModal?.kind) && <label className="block text-sm">操作原因<textarea aria-label="采购操作原因" value={actionReason} onChange={event => setActionReason(event.target.value)} disabled={procPending} className="mt-1 w-full rounded-md border p-2" /></label>}
       </BusinessActionModal>
+      {receiptOrder && formalContext && <PurchaseReceiptModal context={formalContext} order={receiptOrder} onClose={() => setReceiptOrder(null)} onSaved={status => { setReceiptOrder(null); setActiveTab('receipts'); void refreshProcurement().catch(() => {}); showCenterToast(`收货记录已保存，来源状态：${status}`); }} />}
       {procurementError && <div role="alert" className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{procurementError}<button className="ml-3 underline" onClick={() => void refreshProcurement().catch(() => {})}>重新加载</button></div>}
       {supplierCreateOpen && <Procurement_SupplierCreateModal submitting={supplierCreating} onClose={() => setSupplierCreateOpen(false)} onSubmit={handleCreateSupplier} />}
       <main className="px-8 py-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
@@ -7646,11 +7668,13 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
             </div>
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl inline-flex p-1.5 shadow-sm mb-6 shrink-0 w-max relative z-10">
+        <div className="bg-white border border-slate-200 rounded-xl flex flex-wrap p-1.5 shadow-sm mb-6 shrink-0 max-w-full relative z-10">
           <button onClick={() => setActiveTab('dashboard')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><LayoutDashboard size={14} className="mr-1.5" /> 采购监控舱</button>
           <button onClick={() => setActiveTab('pr')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'pr' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><FilePlus size={14} className="mr-1.5" /> 采购申请(PR)</button>
           <button onClick={() => setActiveTab('order')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'order' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><FileText size={14} className="mr-1.5" /> 采购订单(PO)</button>
           <button onClick={() => setActiveTab('supplier')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'supplier' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Store size={14} className="mr-1.5" /> 供应商管理</button>
+          <button onClick={() => setActiveTab('receipts')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold ${activeTab === 'receipts' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}><ClipboardCheck size={14} className="mr-1.5" />收货与质检</button>
+          <button onClick={() => setActiveTab('returns')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold ${activeTab === 'returns' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}><RotateCcw size={14} className="mr-1.5" />采购退货</button>
         </div>
         <BusinessFlowDock moduleName="采购管理" flow={businessFlow} onAction={handleProcurementFlowAction} onNavigate={onNavigateModule} />
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
@@ -7844,8 +7868,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                 <tr><th className="px-6 py-4 font-bold">申请单号</th><th className="px-6 py-4 font-bold">需求来源</th><th className="px-6 py-4 font-bold">请购物料</th><th className="px-6 py-4 font-bold text-right">需求数量</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                {prRows.map((row) => (
-                                    <tr key={row.id} aria-current={row.id === focusedPrId ? 'true' : undefined} className={`transition-colors ${row.id === focusedPrId ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
+                {procSlice('pr', prRows).map((row) => (
+                                    <tr key={row.id} aria-current={row.id === focusedPrId || row.apiId === focusedPrId ? 'true' : undefined} className={`transition-colors ${row.id === focusedPrId || row.apiId === focusedPrId ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
                                         <td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td>
                                         <td className="px-6 py-4"><div className="flex items-center gap-2"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold text-[11px] border border-slate-200">{row.source}</span>{row.id === focusedPrId && <span className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-blue-700">本次补货</span>}</div></td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{row.item}</td>
@@ -7854,8 +7878,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                         <td className="px-6 py-4">
                                           <TableActionGroup>
                                             <TableActionButton icon={Eye} label="查看" onClick={() => openProcRowAction('prView', row)} />
-                                            <TableActionButton icon={CheckCircle2} label="审批" tone="emerald" onClick={() => openProcRowAction('prApprove', row)} disabled={row.status === '已转订单'} />
-                                            <TableActionButton icon={XCircle} label="驳回" tone="red" onClick={() => openProcRowAction('prReject', row)} disabled={row.status === '已转订单'} />
+                                            <TableActionButton icon={CheckCircle2} label="审批" tone="emerald" onClick={() => openProcRowAction('prApprove', row)} disabled={row.formalRequest.status !== 'PENDING_APPROVAL' || !hasPermission(currentUser?.permissions, 'procurement.pr.approve', 'procurement.request.approve')} />
+                                            <TableActionButton icon={XCircle} label="驳回" tone="red" onClick={() => openProcRowAction('prReject', row)} disabled={row.formalRequest.status !== 'PENDING_APPROVAL' || !hasPermission(currentUser?.permissions, 'procurement.pr.approve', 'procurement.request.approve')} />
                                           </TableActionGroup>
                                         </td>
                                     </tr>
@@ -7863,7 +7887,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                             </tbody>
                         </table>
                     </div>
-                    <Pagination total={prRows.length} page={1} limit={10} />
+                    <Pagination total={prRows.length} page={procPage('pr', prRows)} limit={10} onPageChange={page => setProcPages(prev => ({ ...prev, pr: page }))} />
                 </div>
             )}
             {activeTab === 'order' && (
@@ -7877,7 +7901,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                 <tr><th className="px-6 py-4 font-bold">采购单号</th><th className="px-6 py-4 font-bold">供应商</th><th className="px-6 py-4 font-bold">采购物料简述</th><th className="px-6 py-4 font-bold text-right">订单总额</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {poRows.map((row) => (
+                                {procSlice('order', poRows).map((row) => (
                                     <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td>
                                         <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2"><Store size={14} className="text-slate-400"/> {row.supplier}</td>
@@ -7887,8 +7911,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                         <td className="px-6 py-4">
                                           <TableActionGroup>
                                             <TableActionButton icon={Eye} label="查看" onClick={() => openProcRowAction('poView', row)} />
-                                            <TableActionButton icon={Truck} label="送货" tone="emerald" onClick={() => openProcRowAction('poDelivery', row)} disabled={row.status.includes('入库') || row.status === '已取消'} />
-                                            <TableActionButton icon={XCircle} label="取消" tone="red" onClick={() => openProcRowAction('poCancel', row)} disabled={row.status.includes('入库') || row.status === '已取消'} />
+                                            <TableActionButton icon={Truck} label="送货" tone="emerald" onClick={() => openProcRowAction('poDelivery', row)} disabled={!['CREATED', 'CONFIRMED', 'PARTIALLY_RECEIVED'].includes(row.formalOrder.status) || !hasPermission(currentUser?.permissions, 'procurement.receipt.create', 'procurement.receipt.post')} />
+                                            <TableActionButton icon={XCircle} label="取消" tone="red" onClick={() => openProcRowAction('poCancel', row)} disabled={!['CREATED', 'CONFIRMED'].includes(row.formalOrder.status) || !hasPermission(currentUser?.permissions, 'procurement.po.cancel', 'procurement.order.cancel')} />
                                           </TableActionGroup>
                                         </td>
                                     </tr>
@@ -7896,14 +7920,14 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                             </tbody>
                         </table>
                     </div>
-                    <Pagination total={poRows.length} page={1} limit={10} />
+                    <Pagination total={poRows.length} page={procPage('order', poRows)} limit={10} onPageChange={page => setProcPages(prev => ({ ...prev, order: page }))} />
                 </div>
             )}
             {activeTab === 'supplier' && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
                     <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                         <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Users className="w-4.5 h-4.5 text-blue-600" /> 供应商名录与绩效评估</h4>
-                        <button onClick={() => setSupplierCreateOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white shadow-sm hover:bg-blue-700 transition-colors"><Plus size={14} />新增供应商</button>
+                        <button disabled={!hasPermission(currentUser?.permissions, 'procurement.supplier.create')} onClick={() => setSupplierCreateOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"><Plus size={14} />新增供应商</button>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap">
@@ -7911,13 +7935,13 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                 <tr><th className="px-6 py-4 font-bold">供应商编码</th><th className="px-6 py-4 font-bold">供应商名称</th><th className="px-6 py-4 font-bold text-center">评级</th><th className="px-6 py-4 font-bold text-right">历史准交率</th><th className="px-6 py-4 font-bold">当前状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {[...formalSupplierRows, ...proc_suppliersData].map((row) => (
+                                {procSlice('supplier', formalSupplierRows).map((row) => (
                                     <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td>
                                         <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2"><Store size={14} className="text-slate-400"/> {row.name}</td>
                                         <td className="px-6 py-4 text-center"><span className="inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-lg text-[12px] font-bold border border-emerald-200 bg-emerald-50 text-emerald-600">{row.level}</span></td>
                                         <td className="px-6 py-4 text-right font-mono font-bold text-slate-800">{row.onTimeRate}</td>
-                                        <td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-lg font-bold text-[11px] border border-emerald-100 flex items-center gap-1 w-max"><CheckCircle2 size={12}/> 合格</span></td>
+                                        <td className="px-6 py-4"><span className="text-[12px]">{row.status}</span></td>
                                         <td className="px-6 py-4">
                                           <TableActionGroup>
                                             <TableActionButton icon={Eye} label="档案" onClick={() => openProcRowAction('supplierView', row)} />
@@ -7929,9 +7953,11 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                             </tbody>
                         </table>
                     </div>
-                    <Pagination total={Math.max(1, Math.ceil([...formalSupplierRows, ...proc_suppliersData].length / 10))} page={1} limit={10} />
+                    <Pagination total={formalSupplierRows.length} page={procPage('supplier', formalSupplierRows)} limit={10} onPageChange={page => setProcPages(prev => ({ ...prev, supplier: page }))} />
                 </div>
             )}
+            {activeTab === 'receipts' && <ProcurementExecutionPanel context={formalContext} mode="receipts" permissions={currentUser?.permissions} onChanged={() => void refreshProcurement().catch(() => {})} />}
+            {activeTab === 'returns' && <ProcurementExecutionPanel context={formalContext} mode="returns" permissions={currentUser?.permissions} onChanged={() => void refreshProcurement().catch(() => {})} />}
         </div>
       </main>
     </div>
@@ -7942,7 +7968,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 // 5. 财务管理模块 (FinancialManagement) 
 // ==========================================
 const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant, refreshSignal = 0 }) => {
-    const [activeTab, setActiveTab] = useState('dashboard');
+    const [activeTab, setActiveTab] = useState(() => {
+      const tab = new URLSearchParams(window.location.search).get('finance');
+      return ['receivable', 'payable', 'cost', 'payments'].includes(tab || '') ? tab : 'dashboard';
+    });
     const [actionModal, setActionModal] = useState(null);
     const [paymentModal, setPaymentModal] = useState(null);
     const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
@@ -7951,10 +7980,20 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const [apiCostData, setApiCostData] = useState([]);
     const [apiDashboard, setApiDashboard] = useState(null);
     const [financeLoadError, setFinanceLoadError] = useState('');
+    const [financeLoading, setFinanceLoading] = useState(false);
+    const [financeFocus, setFinanceFocus] = useState(() => {
+      const params = new URLSearchParams(window.location.search);
+      return { ar: params.get('focusAr') || '', ap: params.get('focusAp') || '' };
+    });
     const [arSourceOrderInput, setArSourceOrderInput] = useState('');
     const [arSourceOrder, setArSourceOrder] = useState('');
     const [apSourceOrderInput, setApSourceOrderInput] = useState('');
     const [apSourceOrder, setApSourceOrder] = useState('');
+    const [financeRevision, setFinanceRevision] = useState(0);
+    const [arPage, setArPage] = useState(1);
+    const [apPage, setApPage] = useState(1);
+    const [costPage, setCostPage] = useState(1);
+    const [financeTotals, setFinanceTotals] = useState({ ar: 0, ap: 0, cost: 0 });
     const formatCurrency = (val) => val == null || val === '' || !Number.isFinite(Number(val))
       ? '-' : new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(Number(val));
 
@@ -7988,13 +8027,13 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 
     useEffect(() => {
       if (!finCtx) return;
-      const timer = setTimeout(() => setArSourceOrder(arSourceOrderInput.trim()), 250);
+        const timer = setTimeout(() => { setArSourceOrder(arSourceOrderInput.trim()); setArPage(1); }, 250);
       return () => clearTimeout(timer);
     }, [arSourceOrderInput]);
 
     useEffect(() => {
       if (!finCtx) return;
-      const timer = setTimeout(() => setApSourceOrder(apSourceOrderInput.trim()), 250);
+        const timer = setTimeout(() => { setApSourceOrder(apSourceOrderInput.trim()); setApPage(1); }, 250);
       return () => clearTimeout(timer);
     }, [apSourceOrderInput]);
 
@@ -8006,10 +8045,12 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       }
       let active = true;
       const load = async () => {
+        setFinanceLoading(true); setFinanceLoadError('');
+        setApiArData([]); setApiApData([]); setApiCostData([]); setApiDashboard(null);
         const results = await Promise.allSettled([
-          financeApi.listReceivables(finCtx, { page: 1, pageSize: 200, sourceOrder: arSourceOrder || undefined }),
-          financeApi.listPayables(finCtx, { page: 1, pageSize: 200, sourceOrder: apSourceOrder || undefined }),
-          financeApi.listCostAccounting(finCtx, { page: 1, pageSize: 200 }),
+          financeFocus.ar ? financeApi.getReceivable(finCtx, financeFocus.ar).then(item => ({ items: [item], total: 1 })) : financeApi.listReceivables(finCtx, { page: arPage, pageSize: 10, sourceOrder: arSourceOrder || undefined }),
+          financeFocus.ap ? financeApi.getPayable(finCtx, financeFocus.ap).then(item => ({ items: [item], total: 1 })) : financeApi.listPayables(finCtx, { page: apPage, pageSize: 10, sourceOrder: apSourceOrder || undefined }),
+          financeApi.listCostAccounting(finCtx, { page: costPage, pageSize: 10 }),
           financeApi.getFinanceDashboard(finCtx),
         ]);
         if (!active) return;
@@ -8022,11 +8063,17 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         setApiApData(results[1].status === 'fulfilled' ? results[1].value.items.map(mapApiAp) : []);
         setApiCostData(results[2].status === 'fulfilled' ? results[2].value.items.map(mapApiCost) : []);
         setApiDashboard(results[3].status === 'fulfilled' ? results[3].value : null);
+        setFinanceTotals({
+          ar: results[0].status === 'fulfilled' ? results[0].value.total : 0,
+          ap: results[1].status === 'fulfilled' ? results[1].value.total : 0,
+          cost: results[2].status === 'fulfilled' ? results[2].value.total : 0,
+        });
         setFinanceLoadError(failures.map(item => `${item.name}加载失败：${item.reason}`).join('；'));
+        setFinanceLoading(false);
       };
       void load();
       return () => { active = false; };
-    }, [finCtx?.tenantId, finCtx?.accessToken, arSourceOrder, apSourceOrder, refreshSignal]);
+    }, [finCtx?.tenantId, finCtx?.accessToken, arSourceOrder, apSourceOrder, refreshSignal, financeRevision, arPage, apPage, costPage, financeFocus]);
 
     const showCenterToast = (msg, type = 'success') => {
       setToast({ show: true, msg, type });
@@ -8036,8 +8083,8 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const arRows = apiArData;
     const apRows = apiApData;
     const baseCostRows = apiCostData;
-    const visibleArRows = arSourceOrder ? arRows.filter(row => row.soId === arSourceOrder) : arRows;
-    const visibleApRows = apSourceOrder ? apRows.filter(row => row.poId === apSourceOrder) : apRows;
+    const visibleArRows = arRows;
+    const visibleApRows = apRows;
     const priorityArRows = apiArData
       .filter(row => row.unreceived > 0)
       .sort((left, right) => (left.dueDate || '9999-12-31').localeCompare(right.dueDate || '9999-12-31'))
@@ -8097,8 +8144,12 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     };
 
     const openFinanceRowAction = (kind, row) => {
-      if (kind === 'arCollect') {
-        setPaymentModal({ arNo: row.id, balance: formatCurrency(row.amount - row.received) });
+      if (kind === 'arCollect' || kind === 'apPay') {
+        if (!hasPermission(currentUser?.permissions, 'finance.payment.create')) {
+          showCenterToast('无登记收付款权限', 'warning');
+          return;
+        }
+        setPaymentModal({ document: row._backend, direction: kind === 'arCollect' ? 'INBOUND' : 'OUTBOUND' });
         return;
       }
       const configs = {
@@ -8116,22 +8167,6 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             { label: '到期日', value: row.dueDate }
           ]
         },
-        arCollect: {
-          kind,
-          title: '完成应收结算',
-          desc: `按 ${row.id} 的未结余额登记回款，并在同一事务中生成发票、凭证并核销应收。`,
-          icon: ArrowDownToLine,
-          tone: 'emerald',
-          confirmText: '确认结算',
-          _documentId: row._backend?.id,
-          details: [
-            { label: '应收单号', value: row.id },
-            { label: '应收总额', value: formatCurrency(row.amount) },
-            { label: '未收金额', value: formatCurrency(row.unreceived) },
-            { label: '当前状态', value: row.status }
-          ],
-          steps: ['核对未结余额', '登记收款流水', '生成发票和凭证', '核销并更新应收']
-        },
         apView: {
           kind,
           title: '查看应付单据',
@@ -8145,22 +8180,6 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             { label: '源采购订单', value: row.poId },
             { label: '到期日', value: row.dueDate }
           ]
-        },
-        apPay: {
-          kind,
-          title: '完成应付结算',
-          desc: `按 ${row.id} 的未付余额登记付款，并在同一事务中生成发票、凭证并核销应付。`,
-          icon: ArrowUpFromLine,
-          tone: 'amber',
-          confirmText: '确认结算',
-          _documentId: row._backend?.id,
-          details: [
-            { label: '应付单号', value: row.id },
-            { label: '应付总额', value: formatCurrency(row.amount) },
-            { label: '未付金额', value: formatCurrency(row.unpaid) },
-            { label: '当前状态', value: row.status }
-          ],
-          steps: ['核对未付余额', '登记付款流水', '生成发票和凭证', '核销并更新应付']
         },
         costView: {
           kind,
@@ -8197,12 +8216,6 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       if (actionModal.kind === 'arView' || actionModal.kind === 'apView' || actionModal.kind === 'costView') {
         showCenterToast('财务单据详情已打开', 'success');
       }
-      if (actionModal.kind === 'arCollect') {
-        await onBusinessFlowAction?.('settleFinanceDocument', { kind: 'receivable', documentId: actionModal._documentId });
-      }
-      if (actionModal.kind === 'apPay') {
-        await onBusinessFlowAction?.('settleFinanceDocument', { kind: 'payable', documentId: actionModal._documentId });
-      }
       setActionModal(null);
     };
 
@@ -8220,10 +8233,11 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
               </div>
             </div>
           </div>
-          <div className="bg-white border border-slate-200 rounded-xl inline-flex p-1.5 shadow-sm mb-6 shrink-0 w-max relative z-10">
+          <div className="bg-white border border-slate-200 rounded-xl flex flex-wrap p-1.5 shadow-sm mb-6 shrink-0 max-w-full relative z-10">
             <button onClick={() => setActiveTab('dashboard')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><LayoutDashboard size={14} className="mr-1.5" /> 财务监控舱</button>
             <button onClick={() => setActiveTab('receivable')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'receivable' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Receipt size={14} className="mr-1.5" /> 应收账款(AR)</button>
             <button onClick={() => setActiveTab('payable')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'payable' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><CreditCard size={14} className="mr-1.5" /> 应付账款(AP)</button>
+            <button onClick={() => setActiveTab('payments')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold ${activeTab === 'payments' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}><Landmark size={14} className="mr-1.5" />收付款记录</button>
             <div className="w-px h-5 bg-slate-200 mx-1 self-center"></div>
             <button onClick={() => setActiveTab('cost')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'cost' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><PieChart size={14} className="mr-1.5" /> 生产成本核算</button>
           </div>
@@ -8231,8 +8245,11 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           {financeLoadError && (
             <div className="mb-6 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] font-bold text-rose-600">
               {financeLoadError}
+              <button onClick={() => setFinanceRevision(value => value + 1)} className="ml-3 underline">重试</button>
             </div>
           )}
+          {(financeFocus.ar || financeFocus.ap) && <div className="mb-3 flex items-center gap-3 text-sm text-blue-700"><span>正在定位来源财务单据</span><button onClick={() => { setFinanceFocus({ ar: '', ap: '' }); const url = new URL(window.location.href); url.searchParams.delete('focusAr'); url.searchParams.delete('focusAp'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} className="underline">返回完整列表</button></div>}
+          {financeLoading && <p role="status" className="mb-3 text-sm text-slate-500">正在加载财务数据…</p>}
           <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
               {activeTab === 'dashboard' && (
                   <div className="space-y-6 animate-in fade-in duration-300">
@@ -8248,9 +8265,9 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                               <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 relative">
                                   <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-800 text-[14px]">当前资金义务</h3><span className="px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-600 text-[11px] font-bold rounded-lg">实时看板</span></div>
                                   <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
-                                      <p><span className="font-bold text-slate-800">未结应收：</span> {formatCurrency(Number.parseFloat(apiDashboard?.totalReceivable || '0') || 0)}</p>
-                                      <p><span className="font-bold text-slate-800">未结应付：</span> {formatCurrency(Number.parseFloat(apiDashboard?.totalPayable || '0') || 0)}</p>
-                                      <p><span className="font-bold text-slate-800">待结算单据：</span> {apiDashboard?.pendingSettlementCount ?? 0} 笔</p>
+                                      <p><span className="font-bold text-slate-800">未结应收：</span> {formatCurrency(apiDashboard?.totalReceivable)}</p>
+                                      <p><span className="font-bold text-slate-800">未结应付：</span> {formatCurrency(apiDashboard?.totalPayable)}</p>
+                                      <p><span className="font-bold text-slate-800">待结算单据：</span> {apiDashboard?.pendingSettlementCount ?? '-'} 笔</p>
                                   </div>
                                   <div className="flex gap-3">
                                       <button onClick={() => openFinanceAction('collect')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">核对应收</button>
@@ -8281,7 +8298,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                           <div className="xl:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
                               <div className="flex items-center justify-between mb-5">
-                                  <div className="flex items-center text-slate-800 font-bold text-[16px]"><div className="bg-blue-50 p-1.5 rounded-lg text-blue-600 mr-2.5 border border-blue-100"><ArrowUpFromLine size={18} /></div>应收回款优先级</div>
+                              <div className="flex items-center text-slate-800 font-bold text-[16px]"><div className="bg-blue-50 p-1.5 rounded-lg text-blue-600 mr-2.5 border border-blue-100"><ArrowUpFromLine size={18} /></div>当前页应收回款优先级</div>
                                   <span className="text-[11px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-lg">按到期日排序</span>
                               </div>
                               <div className="space-y-3">
@@ -8302,7 +8319,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                               </div>
                           </div>
                           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                              <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-emerald-50 p-1.5 rounded-lg text-emerald-600 mr-2.5 border border-emerald-100"><CalendarDays size={18} /></div>资金日历</div>
+                              <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]"><div className="bg-emerald-50 p-1.5 rounded-lg text-emerald-600 mr-2.5 border border-emerald-100"><CalendarDays size={18} /></div>当前页资金日历</div>
                               <div className="space-y-4">
                                   {financeCalendarRows.map(item => (
                                       <div key={`${item.date}-${item.title}`} className="flex gap-3">
@@ -8358,7 +8375,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                           <tbody className="divide-y divide-slate-100">{visibleArRows.map(row => (
                               <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.customer}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.soId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.received)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'} px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 w-max`}><CheckCircle2 size={12}/>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('arView', row)} /><TableActionButton icon={ArrowDownToLine} label="收款" tone="emerald" onClick={() => openFinanceRowAction('arCollect', row)} disabled={row.status === '已结清'} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
-                      </div><Pagination total={visibleArRows.length} page={1} limit={10} />
+                      </div><Pagination total={financeTotals.ar} page={arPage} limit={10} onPageChange={setArPage} />
                   </div>
               )}
               {activeTab === 'payable' && (
@@ -8375,7 +8392,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                           <tbody className="divide-y divide-slate-100">{visibleApRows.map(row => (
                               <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.supplier}</td><td className="px-6 py-4 text-slate-500 font-mono">{row.poId}</td><td className="px-6 py-4 text-right font-mono font-bold">{formatCurrency(row.amount)}</td><td className="px-6 py-4 text-right font-mono font-bold text-emerald-600">{formatCurrency(row.paid)}</td><td className="px-6 py-4"><span className={`${row.status === '已结清' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} border px-2.5 py-1 rounded-lg text-[11px] font-bold`}>{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="查看" onClick={() => openFinanceRowAction('apView', row)} /><TableActionButton icon={ArrowUpFromLine} label="付款" tone="amber" onClick={() => openFinanceRowAction('apPay', row)} disabled={row.status === '已结清'} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
-                      </div><Pagination total={visibleApRows.length} page={1} limit={10} />
+                      </div><Pagination total={financeTotals.ap} page={apPage} limit={10} onPageChange={setApPage} />
                   </div>
               )}
               {activeTab === 'cost' && (
@@ -8386,20 +8403,23 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                           <tbody className="divide-y divide-slate-100">{baseCostRows.map(row => (
                               <tr key={row.id} className="hover:bg-slate-50/50 transition-colors"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{row.id}</td><td className="px-6 py-4 font-bold text-slate-800">{row.product}</td><td className="px-6 py-4 text-right font-mono font-bold text-slate-900 bg-slate-50/50">{formatCurrency(row.totalCost)}</td><td className="px-6 py-4 text-center font-mono font-bold"><span className={`px-2.5 py-0.5 rounded text-[11px] ${row.variance.startsWith('-') ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{row.variance}</span></td><td className="px-6 py-4"><span className={`${row.status === '已核算' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} border px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max`}>{row.status === '已核算' ? <CheckCircle2 size={12}/> : <RefreshCw size={12} className="animate-spin-slow"/>}{row.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openFinanceRowAction('costView', row)} /></TableActionGroup></td></tr>
                           ))}</tbody></table>
-                      </div><Pagination total={baseCostRows.length} page={1} limit={10} />
+                      </div><Pagination total={financeTotals.cost} page={costPage} limit={10} onPageChange={setCostPage} />
                   </div>
               )}
+              {activeTab === 'payments' && <PaymentsPanel apiContext={finCtx} permissions={currentUser?.permissions} actorId={currentUser?.userId || currentUser?.account} onChanged={() => setFinanceRevision(value => value + 1)} />}
           </div>
         </main>
-      {paymentModal && (
+      {paymentModal && finCtx && (
           <PaymentAllocationModal
-              open
-              arNo={paymentModal.arNo}
-              balance={paymentModal.balance}
+              apiContext={finCtx}
+              document={paymentModal.document}
+              direction={paymentModal.direction}
               onClose={() => setPaymentModal(null)}
-              onSubmit={(amount, method, remark) => {
+              onSaved={() => {
                   setPaymentModal(null);
-                  setToast({ show: true, msg: `收款 ${amount} 已登记核销（${method}）`, type: 'success' });
+                  setFinanceRevision(value => value + 1);
+                  setActiveTab('payments');
+                  showCenterToast('收付款已登记，请在收付款记录中核对状态并由有权人员确认');
               }}
           />
       )}
@@ -9244,9 +9264,9 @@ const RuleConfigModal = ({ config, onClose, onSave }: any) => {
     );
 };
 
-const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, focusTick }) => {
+const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, onArchiveMessage, focusMsgId, focusTick, query, onQuery, category, onCategory, page, total, onPage, loading, error, onRetry }) => {
     const [activeTab, setActiveTab] = useState('inbox');
-    const [msgFilter, setMsgFilter] = useState('all'); // all, ai, approval, system
+    const [searchInput, setSearchInput] = useState(query);
     const [selectedMsgId, setSelectedMsgId] = useState(focusMsgId || msgs[0]?.id);
     const [rules, setRules] = useState([]);
     const [ruleConfig, setRuleConfig] = useState(null);
@@ -9256,7 +9276,6 @@ const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, 
     useEffect(() => {
         if (!focusMsgId) return;
         setActiveTab('inbox');
-        setMsgFilter('all');
         setSelectedMsgId(focusMsgId);
     }, [focusMsgId, focusTick]);
 
@@ -9280,16 +9299,13 @@ const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, 
 
     const handleAction = (msgId, action) => {
         const msg = msgs.find(m => m.id === msgId);
-        const targetModule = action.includes('财务') || action.includes('催款') ? '财务管理'
-            : action.includes('采购') || action.includes('批准') || action.includes('驳回') || action.includes('单据') ? '采购管理'
-            : action.includes('APS') || action.includes('排产') ? '生产管理'
-            : null;
-        const isCollectionNotice = action.includes('催款');
-        const isFinanceDrill = action.includes('财务') && !isCollectionNotice;
+        const destination = sourceDestination(msg?._backend || {});
+        const targetModule = destination?.module;
         const modalConfig = {
             kind: targetModule ? 'navigate' : 'process',
             msgId,
             targetModule,
+            destination,
             title: action,
             desc: targetModule ? `确认后将穿透跳转到「${targetModule}」，并把该消息标记为已读。` : '确认后将执行该消息动作，并把消息标记为已读。',
             icon: targetModule ? Link : Workflow,
@@ -9301,8 +9317,8 @@ const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, 
                 { label: '来源', value: msg?.source || '-' },
                 { label: '目标界面', value: targetModule || '消息中心当前页' }
             ],
-            checks: targetModule ? ['标记消息已读', `打开${targetModule}`] : ['标记消息已读', '写入处理记录'],
-            note: targetModule ? '确认后会携带当前消息上下文进入目标模块，便于继续处理，不再展示无业务含义的步骤序号。' : '确认后会执行当前动作并保留处理记录。'
+            checks: targetModule ? ['仅更新消息已读状态', `定位来源单据 ${msg?._backend?.sourceDocNo || msg?._backend?.sourceId}`] : [],
+            note: targetModule ? '消息已读不改变来源单据的业务状态。' : '来源类型或稳定ID尚未提供，暂无法定位。'
         };
 
         setActionModal(modalConfig);
@@ -9314,18 +9330,19 @@ const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, 
             showToast('未执行：尚未接入该消息业务动作', 'warning');
             return;
         }
-        await onReadMessage(actionModal.msgId);
-        const targetModule = actionModal.targetModule;
+        const read = await onReadMessage(actionModal.msgId);
+        if (!read) return;
+        const destination = actionModal.destination;
         setActionModal(null);
-        if (targetModule && onNavigateModule) {
-            onNavigateModule(targetModule);
+        if (destination && onNavigateModule) {
+            onNavigateModule(destination.module, { query: destination.query });
             return;
         }
         showToast('未执行：来源页面跳转不可用', 'warning');
     };
 
-    const filteredMsgs = msgs.filter(m => msgFilter === 'all' ? true : m.type === msgFilter);
-    const activeMsg = msgs.find(m => m.id === selectedMsgId) || filteredMsgs[0];
+    const filteredMsgs = msgs;
+    const activeMsg = filteredMsgs.find(m => m.id === selectedMsgId) || filteredMsgs[0];
 
     const getLevelIcon = (level) => {
         if (level === 'critical') return <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]"></div>;
@@ -9365,23 +9382,22 @@ const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, 
                 <div className="w-full flex-1 overflow-hidden">
                     {/* 1. 统一消息收件箱 (Message Inbox) */}
                     {activeTab === 'inbox' && (
-                        <div className="flex h-full gap-6 animate-in fade-in duration-300">
+                        <div className="flex h-full flex-col gap-6 lg:flex-row animate-in fade-in duration-300">
                             {/* 左侧：列表与过滤 */}
-                            <div className="w-[380px] bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col shrink-0 overflow-hidden">
+                            <div className="w-full lg:w-[380px] bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col shrink-0 overflow-hidden">
                                 <div className="p-4 border-b border-slate-100 flex flex-col gap-3 bg-slate-50/50">
-                                    <div className="relative">
-                                        <input type="text" placeholder="搜索消息标题或内容..." className="w-full bg-white border border-slate-200 text-[13px] rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-slate-700 placeholder-slate-400" />
+                                    <form className="relative flex gap-2" onSubmit={event => { event.preventDefault(); onQuery(searchInput.trim()); }}>
+                                        <input aria-label="搜索消息" value={searchInput} onChange={event => setSearchInput(event.target.value)} type="text" placeholder="搜索消息标题或内容..." className="min-w-0 w-full bg-white border border-slate-200 text-[13px] rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-slate-700 placeholder-slate-400" />
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                                    </div>
-                                    <div className="flex gap-2 overflow-x-auto hide-scrollbar">
-                                        <button onClick={() => setMsgFilter('all')} className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors ${msgFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>全部</button>
-                                        <button onClick={() => setMsgFilter('ai')} className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors ${msgFilter === 'ai' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>@AI 预警</button>
-                                        <button onClick={() => setMsgFilter('approval')} className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors ${msgFilter === 'approval' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>待办审批</button>
-                                        <button onClick={() => setMsgFilter('system')} className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors ${msgFilter === 'system' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>系统通知</button>
-                                    </div>
+                                        <button className="shrink-0 text-sm text-blue-600">查询</button>
+                                    </form>
+                                    <select aria-label="消息业务分类" value={category} onChange={event => onCategory(event.target.value)} className="max-w-full rounded-md border p-2 text-sm">
+                                      <option value="">全部业务分类</option>{[['order', '销售'], ['payment', '收付款'], ['shipping', '发货'], ['inventory', '库存'], ['production', '生产'], ['procurement', '采购'], ['finance', '财务'], ['system', '系统']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                    </select>
+                                    <button aria-label="刷新消息" title="刷新消息" onClick={onRetry} className="self-end text-blue-600"><RefreshCw size={15} /></button>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-slate-100">
-                                    {filteredMsgs.map(msg => (
+                                    {!loading && !error && filteredMsgs.map(msg => (
                                         <div 
                                             key={msg.id} 
                                             onClick={() => {
@@ -9404,19 +9420,22 @@ const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, 
                                             <p className="text-[12px] text-slate-500 line-clamp-2 leading-relaxed">{msg.content}</p>
                                         </div>
                                     ))}
-                                    {filteredMsgs.length === 0 && <div className="p-8 text-center text-slate-400 text-[13px]">暂无该分类消息</div>}
+                                    {(loading || error) && <ApiDataState loading={loading} error={error} onRetry={onRetry} />}
+                                    {!loading && !error && filteredMsgs.length === 0 && <div className="p-8 text-center text-slate-400 text-[13px]">暂无符合条件的消息</div>}
                                 </div>
+                                <PageNavigation page={page} pageSize={20} total={total} onPage={onPage} />
                             </div>
 
                             {/* 右侧：消息详情与操作区 */}
                             <div className="flex-1 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden relative">
-                                {activeMsg ? (
+                                {activeMsg && !loading && !error ? (
                                     <>
                                         <div className="px-8 py-6 border-b border-slate-100 shrink-0">
                                             <div className="flex items-center gap-3 mb-4">
                                                 {getTypeBadge(activeMsg.type)}
                                                 <span className="text-[12px] text-slate-400 font-mono flex items-center gap-1"><Clock size={12}/> {activeMsg.time}</span>
                                                 <span className="text-[12px] text-slate-400 flex items-center gap-1 ml-auto"><Server size={12}/> 来源: {activeMsg.source}</span>
+                                                <button type="button" onClick={() => void onArchiveMessage(activeMsg.id)} className="text-sm text-blue-600">归档</button>
                                             </div>
                                             <h2 className="text-[20px] font-bold text-slate-800 flex items-center gap-2">
                                                 {getLevelIcon(activeMsg.level)} {activeMsg.title}
@@ -9689,6 +9708,10 @@ export default function App() {
     setActiveRole,
     setCurrentTenantId,
     setCurrentUser,
+    permissionsReady,
+    permissionError,
+    permissionRefreshing,
+    refreshPermissions,
   } = useAppRuntime();
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -9696,6 +9719,17 @@ export default function App() {
   const [passwordResetToken, setPasswordResetToken] = useState('');
   const [firstLoginSession, setFirstLoginSession] = useState<{ account: string; tempPassword: string } | null>(null);
   const [messages, setMessages] = useState([]);
+  const [messagePage, setMessagePage] = useState(1);
+  const [messageTotal, setMessageTotal] = useState(0);
+  const [messageUnread, setMessageUnread] = useState<number | null>(null);
+  const [messageQuery, setMessageQuery] = useState('');
+  const [messageCategory, setMessageCategory] = useState('');
+  const [messageLoading, setMessageLoading] = useState(false);
+  const [messageError, setMessageError] = useState('');
+  const messageGeneration = useRef(0);
+  const messageScope = `${formalContext?.tenantId}:${formalContext?.accessToken}:${permissionsReady}`;
+  const messageScopeRef = useRef(messageScope);
+  messageScopeRef.current = messageScope;
   const [focusedMessageId, setFocusedMessageId] = useState<string | undefined>(undefined);
   const [messageFocusTick, setMessageFocusTick] = useState(0);
 
@@ -9714,21 +9748,36 @@ export default function App() {
       id: msg.id, type: typeMap[msg.category] || 'system', level: levelMap[msg.priority] || 'info',
       title: msg.title, content: msg.body, time: timeAgo(msg.createdAt),
       read: msg.isRead, source: msg.senderName || msg.sourceType || '系统',
-      actions: msg.sourceDocNo ? ['查看单据详情'] : [], _backend: msg,
+      actions: sourceDestination(msg) ? ['查看单据详情'] : [], _backend: msg,
     };
   };
 
   const refreshMessages = async () => {
-    if (!formalContext) return;
+    const generation = ++messageGeneration.current;
+    const requestedScope = messageScope;
+    setMessages([]); setMessageTotal(0); setMessageUnread(null);
+    setMessageError('');
+    if (!formalContext || !permissionsReady || !hasPermission(currentUser?.permissions, 'message.read', 'message.message.read', 'MSG_VIEW')) { setMessageLoading(false); return; }
+    setMessageLoading(true);
     try {
-      const response = await messagesApi.listMessages(formalContext, { page: 1, pageSize: 50 });
+      const response = requireApiPage(await messagesApi.listMessages(formalContext, { page: messagePage, pageSize: 20, search: messageQuery || undefined, category: messageCategory || undefined, isArchived: false }));
+      if (generation !== messageGeneration.current || requestedScope !== messageScopeRef.current) return;
       setMessages(response.items.map(mapBackendMessage));
-    } catch {
-      setMessages([]);
-    }
+      setMessageTotal(response.total);
+      try {
+        const dashboard = await messagesApi.getDashboard(formalContext);
+        if (generation === messageGeneration.current && requestedScope === messageScopeRef.current && Number.isInteger(dashboard?.unread)) setMessageUnread(dashboard.unread);
+      } catch { /* A failed unread aggregate stays unavailable, never becomes a false zero. */ }
+    } catch (cause) {
+      if (generation === messageGeneration.current && requestedScope === messageScopeRef.current) setMessageError(cause instanceof Error ? cause.message : '消息读取失败');
+    } finally { if (generation === messageGeneration.current && requestedScope === messageScopeRef.current) setMessageLoading(false); }
   };
 
-  useEffect(() => { refreshMessages(); }, [formalContext?.tenantId, formalContext?.accessToken]);
+  useEffect(() => {
+    void refreshMessages();
+    const timer = window.setInterval(() => void refreshMessages(), 60000);
+    return () => { messageGeneration.current += 1; window.clearInterval(timer); };
+  }, [messageScope, messagePage, messageQuery, messageCategory, currentUser?.permissions]);
   const [salesResetSignal, setSalesResetSignal] = useState(0);
   const [businessFlow, setBusinessFlow] = useState(null);
   const [financeRefreshTick, setFinanceRefreshTick] = useState(0);
@@ -9736,54 +9785,36 @@ export default function App() {
   const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
   const [profileModal, setProfileModal] = useState(null);
   const roleMeta = roleWorkbenchMeta[activeRole] || roleWorkbenchMeta.老板;
-  const [workbenchDashboard, setWorkbenchDashboard] = useState<WorkbenchDashboardDto | null>(null);
-  const [workbenchError, setWorkbenchError] = useState('');
-  const [workbenchLoading, setWorkbenchLoading] = useState(false);
-
-  useEffect(() => {
-    if (!formalContext) {
-      setWorkbenchDashboard(null);
-      setWorkbenchError('');
-      return;
+  const [workbenchSearchInput, setWorkbenchSearchInput] = useState('');
+  const [workbenchSearch, setWorkbenchSearch] = useState('');
+  const [workbenchEventScope, setWorkbenchEventScope] = useState<'KEY' | 'ALL'>('KEY');
+  const workbench = useWorkbenchDashboard(
+    activeModule === '工作台' && permissionsReady && hasPermission(currentUser?.permissions, 'workbench.dashboard.read') ? formalContext : null,
+    activeRole as WorkbenchRole,
+    `${currentUser?.userId || currentUser?.account}:${currentUser?.permissionVersion || ''}:${currentUser?.scopeVersion || ''}:${currentUser?.permissions?.join(',')}`,
+    workbenchSearch, workbenchEventScope,
+  );
+  const workbenchDashboard = workbench.dashboard;
+  const workbenchError = workbench.error;
+  const workbenchLoading = workbench.loading;
+  const openSource = (item) => {
+    const destination = sourceDestination(item);
+    if (!destination) { showFlowToast('尚未提供可定位的来源单据类型和ID', 'warning'); return; }
+    if (!getAuthorizedModules(currentUser?.permissions).some(module => module.label === destination.module)) {
+      showFlowToast('当前账号无权访问来源模块', 'warning'); return;
     }
-    let cancelled = false;
-    const role = activeRole as WorkbenchRole;
-    const refresh = async () => {
-      setWorkbenchLoading(true);
-      try {
-        const dashboard = await workbenchApi.getDashboard(formalContext, role);
-        if (!cancelled) {
-          setWorkbenchDashboard(dashboard);
-          setWorkbenchError('');
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setWorkbenchDashboard(null);
-          setWorkbenchError(error instanceof Error ? error.message : '工作台数据读取失败');
-        }
-      } finally {
-        if (!cancelled) {
-          setWorkbenchLoading(false);
-        }
-      }
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 60000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [activeRole, formalContext?.tenantId, formalContext?.accessToken]);
+    setActiveModule(destination.module, { query: destination.query });
+  };
 
   const workbenchMetrics = useMemo(() => {
     if (!workbenchDashboard) return [];
-    const generatedAt = new Date(workbenchDashboard.generatedAt);
+    const generatedAt = new Date(workbench.metricTime || workbenchDashboard.generatedAt);
     const updatedAt = `${String(generatedAt.getHours()).padStart(2, '0')}:${String(generatedAt.getMinutes()).padStart(2, '0')}`;
     return workbenchDashboard.metrics.map((metric, index) => {
       const { icon, iconTone } = workbenchMetricVisual(metric.key, index);
       return { ...metric, value: formatMetricValue(metric.value, metric.unit), displayUnit: formatMetricUnit(metric.value, metric.unit), updatedAt, icon, iconTone };
     });
-  }, [workbenchDashboard]);
+  }, [workbenchDashboard, workbench.metricTime]);
   const todayLabel = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
   const authorizedTenantOptions = allTenantOptions.filter((tenant) =>
     !currentUser?.tenantIds?.length || currentUser.tenantIds.includes(tenant.id),
@@ -9923,39 +9954,14 @@ export default function App() {
 
     if (action === 'settleFinance') {
       if (!formalContext) {
-        showFlowToast('请使用正式登录会话完成结算', 'error');
+        showFlowToast('请使用正式登录会话办理收付款', 'error');
         return;
       }
       try {
         const documents = await loadLinkedFinanceDocuments(businessFlow);
         if (!documents.receivable) throw new Error('未找到正式应收单');
-        const paymentDate = localDate();
-        const receivableTask = documents.receivable.status === 'done'
-          ? Promise.resolve({ document: documents.receivable })
-          : financeApi.settleReceivable(formalContext, documents.receivable.id, {
-            paymentDate,
-            referenceNo: businessFlow.orderId,
-            remark: '销售订单业务闭环结算',
-          });
-        const payableTask = documents.payable && documents.payable.status !== 'done'
-          ? financeApi.settlePayable(formalContext, documents.payable.id, {
-            paymentDate,
-            referenceNo: businessFlow.purchaseOrder?.orderNo || businessFlow.purchaseOrder?.id,
-            remark: '采购订单业务闭环结算',
-          })
-          : Promise.resolve(documents.payable ? { document: documents.payable } : null);
-        const [receivableResult, payableResult] = await Promise.all([receivableTask, payableTask]);
-        setBusinessFlow(prev => ({
-          ...prev,
-          currentStep: 'settlement',
-          receivable: receivableResult.document,
-          payable: payableResult?.document || null,
-          completed: Array.from(new Set([...prev.completed, 'financeDocs'])),
-          ledger: [...prev.ledger, { module: '财务管理', text: `正式收付款、发票和凭证已完成${payableResult ? '' : '（无采购应付）'}` }],
-        }));
-        setFinanceRefreshTick(value => value + 1);
-        setActiveModule('财务管理');
-        showFlowToast('正式收付款、发票和凭证已完成', 'success');
+        setActiveModule('财务管理', { query: { finance: 'receivable', focusAr: documents.receivable.id } });
+        showFlowToast('请核对单据后填写本次收付款金额；进入页面不会自动结算', 'warning');
       } catch (error) {
         showFlowToast(readFinanceError(error), 'error');
       }
@@ -9963,37 +9969,7 @@ export default function App() {
     }
 
     if (action === 'settleFinanceDocument' && payload?.documentId) {
-      if (!formalContext) {
-        showFlowToast('请使用正式登录会话完成结算', 'error');
-        return;
-      }
-      try {
-        const paymentDate = localDate();
-        const result = payload.kind === 'payable'
-          ? await financeApi.settlePayable(formalContext, payload.documentId, { paymentDate, remark: '财务应付结算' })
-          : await financeApi.settleReceivable(formalContext, payload.documentId, { paymentDate, remark: '财务应收结算' });
-        const documents = businessFlow?.orderId ? await loadLinkedFinanceDocuments(businessFlow) : { receivable: null, payable: null };
-        const financeComplete = (!documents.receivable || documents.receivable.status === 'done')
-          && (!businessFlow?.purchaseOrder?.id || !documents.payable || documents.payable.status === 'done');
-        setBusinessFlow(prev => {
-          if (!prev) return prev;
-          const matchesFlow = (doc, orderNo) => doc && (doc.sourceDocNo === orderNo || doc.sourceId === orderNo);
-          return {
-            ...prev,
-            currentStep: matchesFlow(documents.receivable, prev.orderId) && financeComplete ? 'settlement' : prev.currentStep,
-            receivable: matchesFlow(documents.receivable, prev.orderId) ? documents.receivable : prev.receivable,
-            payable: matchesFlow(documents.payable, prev.purchaseOrder?.id) ? documents.payable : prev.payable,
-            completed: matchesFlow(documents.receivable, prev.orderId) && financeComplete
-              ? Array.from(new Set([...prev.completed, 'financeDocs']))
-              : prev.completed,
-            ledger: [...prev.ledger, { module: '财务管理', text: `正式结算完成：${result.document.docNo}` }],
-          };
-        });
-        setFinanceRefreshTick(value => value + 1);
-        showFlowToast(`正式结算完成：${result.document.docNo}`, 'success');
-      } catch (error) {
-        showFlowToast(readFinanceError(error), 'error');
-      }
+      setActiveModule('财务管理', { query: payload.kind === 'payable' ? { finance: 'payable', focusAp: payload.documentId } : { finance: 'receivable', focusAr: payload.documentId } });
       return;
     }
 
@@ -10142,18 +10118,31 @@ export default function App() {
 
   const markMessageRead = async (messageId) => {
     const msg = messages.find((item) => item.id === messageId);
-    if (msg?.read) return;
+    if (msg?.read) return true;
     if (!formalContext || !msg?._backend) {
       showFlowToast('未标记已读：缺少正式消息信息', 'warning');
-      return;
+      return false;
     }
     try {
       const result = await messagesApi.markAsRead(formalContext, msg._backend);
       if (!result?.message?.isRead) throw new Error('未收到已读确认');
       setMessages(prev => prev.map(item => item.id === messageId ? mapBackendMessage(result.message) : item));
+      setMessageUnread(previous => previous === null ? null : Math.max(0, previous - 1));
+      return true;
     } catch (error) {
       showFlowToast(error instanceof Error ? error.message : '标记已读失败', 'warning');
+      return false;
     }
+  };
+  const archiveMessage = async (messageId) => {
+    const msg = messages.find(item => item.id === messageId);
+    if (!formalContext || !msg?._backend || !hasPermission(currentUser?.permissions, 'message.archive')) { showFlowToast('当前不可归档此消息', 'warning'); return; }
+    try {
+      const result = await messagesApi.archiveMessage(formalContext, msg._backend);
+      if (!result?.message?.isArchived) throw new Error('未收到归档确认');
+      await refreshMessages();
+      showFlowToast('消息已归档', 'success');
+    } catch (cause) { showFlowToast(cause instanceof Error ? cause.message : '归档失败', 'warning'); }
   };
 
   const openMessageFromBell = (messageId) => {
@@ -10182,17 +10171,17 @@ export default function App() {
       showFlowToast(error instanceof Error ? error.message : '标记已读失败', 'warning');
     }
   };
-  const menuItems = getModulesForRole(activeRole);
+  const menuItems = permissionsReady ? getAuthorizedModules(currentUser?.permissions) : [];
   const allowedModules = menuItems.map((item) => item.label);
   const productionAvailable = Boolean(currentUser?.accessToken && currentUser?.tenantIds?.includes(currentTenant.id));
   const visibleMenuItems = menuItems.filter(item => allowedModules.includes(item.label) && (item.label !== '生产管理' || productionAvailable));
 
   useEffect(() => {
-    if (!allowedModules.includes(activeModule) || (activeModule === '生产管理' && !productionAvailable)) {
-      setActiveModule('工作台', { replace: true });
+    if (permissionsReady && visibleMenuItems.length && (!allowedModules.includes(activeModule) || (activeModule === '生产管理' && !productionAvailable))) {
+      setActiveModule(visibleMenuItems[0].label, { replace: true });
       if (activeModule === '生产管理' && !productionAvailable) showFlowToast('生产管理已被平台应用开关、账号权限或工厂数据范围阻断', 'warning');
     }
-  }, [activeRole, activeModule, productionAvailable]);
+  }, [activeModule, productionAvailable, permissionsReady, currentUser?.permissions]);
 
   if (!currentUser) {
     if (loginPageView === 'first-login' && firstLoginSession) {
@@ -10210,8 +10199,19 @@ export default function App() {
     return <LoginPage onLogin={handleLogin} onForgotPassword={() => setLoginPageView('forgot')} onRegister={() => setLoginPageView('register')} />;
   }
 
+  if (!permissionsReady || !visibleMenuItems.length || !allowedModules.includes(activeModule)) {
+    return <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <section className="w-full max-w-lg space-y-4 rounded-lg border bg-white p-6">
+        <h1 className="text-lg font-bold">{!permissionsReady && !permissionError ? '正在刷新访问权限' : '暂无可访问的业务模块'}</h1>
+        <p role={permissionError ? 'alert' : 'status'} className="text-sm text-slate-600">{permissionError || '请联系管理员核对当前租户的菜单和数据权限。'}</p>
+        <div className="flex gap-3"><button onClick={() => void refreshPermissions()} className="rounded-md border px-4 py-2 text-sm">重新获取权限</button><button onClick={handleLogout} className="rounded-md border px-4 py-2 text-sm">退出登录</button></div>
+      </section>
+    </main>;
+  }
+
   return (
     <AppShell>
+      {permissionRefreshing && <div role="status" aria-live="polite" className="fixed inset-0 z-[300] flex items-center justify-center bg-white/95 text-sm text-slate-700">正在复核访问权限…</div>}
       <CenterToast toast={flowToast} onClose={() => setFlowToast({ show: false, msg: '', type: 'success' })} />
       <BusinessActionModal action={profileModal} onClose={() => setProfileModal(null)} onConfirm={() => setProfileModal(null)} />
       {isGlobalAssistantOpen && (
@@ -10300,6 +10300,7 @@ export default function App() {
               </select>
             </div>
             <button
+              disabled={!hasPermission(currentUser.permissions, 'ai.assistant.use', 'AI_ASSISTANT_USE')}
               onClick={() => setIsGlobalAssistantOpen(true)}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 rounded-xl text-[13px] font-bold transition-colors shadow-sm"
             >
@@ -10313,9 +10314,9 @@ export default function App() {
                 title="消息通知"
               >
                 <Bell size={20} />
-                {unreadMessages.length > 0 && (
+                {messageUnread > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-rose-500 text-white rounded-full border-2 border-white shadow-sm text-[10px] font-bold flex items-center justify-center">
-                    {unreadMessages.length > 9 ? '9+' : unreadMessages.length}
+                    {messageUnread > 99 ? '99+' : messageUnread}
                   </span>
                 )}
               </button>
@@ -10324,9 +10325,9 @@ export default function App() {
                   <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
                     <div>
                       <div className="text-[15px] font-bold text-slate-800">消息通知</div>
-                      <div className="text-[12px] text-slate-500 mt-0.5">{unreadMessages.length > 0 ? `${unreadMessages.length} 条未读消息` : '暂无未读消息'}</div>
+                      <div className="text-[12px] text-slate-500 mt-0.5">{messageUnread === null ? '未读数量尚未取得' : messageUnread > 0 ? `${messageUnread} 条未读消息` : '暂无未读消息'}</div>
                     </div>
-                    <button onClick={markAllMessagesRead} disabled={unreadMessages.length === 0} className="text-[12px] font-bold text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed">全部已读</button>
+                    <button onClick={markAllMessagesRead} disabled={!messageUnread} className="text-[12px] font-bold text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed">全部已读</button>
                   </div>
                   <div className="max-h-[360px] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
                     {recentMessages.map(message => (
@@ -10370,18 +10371,26 @@ export default function App() {
                     <span className="px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">{activeRole} · {roleMeta.title}</span>
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${workbenchError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`}></span>
-                    {workbenchError ? '数据读取异常' : workbenchLoading ? '实时取数中' : '实时数据已就绪'}
+                    {workbenchError ? '数据读取异常' : workbench.expired ? '数据已失效' : workbench.stale || workbench.businessStale ? '数据已过期' : workbenchLoading ? '实时取数中' : '数据已更新'}
                   </span>
+                  <button type="button" aria-label="刷新工作台" title="刷新工作台" disabled={workbenchLoading} onClick={workbench.refresh} className="rounded-md border p-2 text-blue-600 disabled:opacity-50"><RefreshCw size={15} /></button>
                   </div>
                   <h1 className="text-[32px] leading-tight font-black text-slate-950 tracking-tight">早上好，{currentUser.name}</h1>
                   <p className="text-[14px] font-bold text-slate-500 mt-3 max-w-[760px]">
-                    {roleMeta.summary} 今日共归集 <span className="text-blue-600 font-black">{workbenchDashboard?.todoTotal ?? 0}</span> 项岗位待办与 <span className="text-rose-500 font-black">{workbenchDashboard?.alertTotal ?? 0}</span> 项业务与 AI 风险提醒。
+                    {roleMeta.summary} 今日共归集 <span className="text-blue-600 font-black">{workbenchDashboard?.todoTotal ?? '-'}</span> 项岗位待办与 <span className="text-rose-500 font-black">{workbenchDashboard?.alertTotal ?? '-'}</span> 项业务与 AI 风险提醒。
                   </p>
                 </div>
               </section>
+              <form onSubmit={event => { event.preventDefault(); setWorkbenchSearch(workbenchSearchInput.trim()); }} className="flex flex-wrap items-center gap-2">
+                <input aria-label="搜索工作台事项" maxLength={50} value={workbenchSearchInput} onChange={event => setWorkbenchSearchInput(event.target.value)} placeholder="搜索待办、预警、业务动态" className="min-w-0 rounded-md border px-3 py-2 text-sm" />
+                <button disabled={!hasPermission(currentUser?.permissions, 'workbench.search.read')} className="rounded-md border bg-white px-3 py-2 text-sm disabled:opacity-50">查询</button>
+                {(workbench.stale || workbench.businessStale) && <span role="status" className="text-sm text-amber-700">{workbench.expired ? '数据已失效，请刷新' : '数据已过期，业务事项待核对'}</span>}
+              </form>
+              {workbenchError && <p role="alert" className="text-sm text-rose-700">{workbenchError} <button onClick={workbench.refresh} className="underline">重试</button></p>}
+              {workbench.sourceWarnings.length > 0 && <p role="status" className="text-sm text-amber-700">{workbench.sourceWarnings.join('；')}</p>}
 
               <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
-                {workbenchError ? (
+                {workbench.metricError && workbenchMetrics.length === 0 ? (
                   <div className="md:col-span-2 xl:col-span-4 bg-white border border-rose-100 rounded-xl p-8 text-center">
                     <AlertTriangle size={22} className="mx-auto text-rose-500" />
                     <div className="mt-3 text-[15px] font-black text-slate-900">工作台数据读取失败</div>
@@ -10441,10 +10450,11 @@ export default function App() {
                             <h3 className="text-[15px] font-black text-slate-900 leading-snug">{item.title}</h3>
                             <p className="mt-3 text-[12px] text-slate-500 leading-relaxed font-bold">{item.detail}</p>
                           </div>
-                          <button onClick={() => setActiveModule(item.module, { query: { focusId: item.sourceId || '', focusNo: item.sourceNo || '' } })} className={`mt-5 h-10 rounded-lg text-[12px] font-black flex items-center justify-center gap-2 transition-colors ${actionTone}`}><Activity size={14} /> 前往处理</button>
+                          <button disabled={!sourceDestination(item) || workbench.businessStale} title={!sourceDestination(item) ? '来源类型或ID尚未提供' : undefined} onClick={() => openSource(item)} className={`mt-5 h-10 rounded-lg text-[12px] font-black flex items-center justify-center gap-2 transition-colors disabled:opacity-50 ${actionTone}`}><Activity size={14} /> 前往处理</button>
                         </div>
                       );
                     })}
+                    {(workbenchDashboard?.alerts ?? []).length === 0 && <p className="col-span-full py-8 text-center text-sm text-slate-500">{workbench.businessError ? '预警读取失败，请重试' : !workbench.businessReady ? '正在读取业务预警' : '暂无业务预警'}</p>}
                   </div>
                 </div>
 
@@ -10452,15 +10462,15 @@ export default function App() {
                   <div className="text-[18px] font-black text-slate-900 flex items-center gap-2.5 mb-5"><Layers size={20} className="text-emerald-500" /> 常用快捷功能</div>
                   <div className="grid grid-cols-2 gap-4">
                     {[
-                      { label: '快速开单', icon: Plus, module: '销售管理', tone: 'blue' },
-                      { label: '手工入库', icon: ArrowDownToLine, module: '库存管理', tone: 'emerald' },
-                      { label: '提报PR', icon: FilePlus, module: '采购管理', tone: 'purple' },
-                      { label: '报工', icon: ScanLine, module: '生产管理', tone: 'amber' },
+                      { label: '快速开单', icon: Plus, module: '销售管理', tone: 'blue', permission: 'sales.order.create', query: { tab: 'orders', quickCreate: 'order' }, available: true },
+                      { label: '手工入库', icon: ArrowDownToLine, module: '库存管理', tone: 'emerald', permission: 'inventory.inbound.create', query: {}, available: false },
+                      { label: '提报PR', icon: FilePlus, module: '采购管理', tone: 'purple', permission: 'procurement.request.create', query: {}, available: false },
+                      { label: '报工', icon: ScanLine, module: '生产管理', tone: 'amber', permission: 'production.work-order.report', query: { production: 'execution' }, available: true },
                     ].map(item => {
                       const Icon = item.icon;
                       const tone = item.tone === 'blue' ? 'text-blue-600 bg-blue-50' : item.tone === 'emerald' ? 'text-emerald-600 bg-emerald-50' : item.tone === 'purple' ? 'text-purple-600 bg-purple-50' : 'text-amber-600 bg-amber-50';
                       return (
-                        <button key={item.label} onClick={() => setActiveModule(item.module)} className="h-[112px] rounded-xl bg-slate-50 border border-slate-100 hover:bg-blue-50 hover:border-blue-100 transition-all hover:-translate-y-0.5 flex flex-col items-center justify-center gap-3">
+                        <button key={item.label} disabled={!item.available || !hasPermission(currentUser?.permissions, item.permission)} title={!item.available ? '独立新增契约待补充' : !hasPermission(currentUser?.permissions, item.permission) ? '无操作权限' : undefined} onClick={() => setActiveModule(item.module, { query: item.query })} className="h-[112px] rounded-xl bg-slate-50 border border-slate-100 hover:bg-blue-50 hover:border-blue-100 transition-all disabled:opacity-50 flex flex-col items-center justify-center gap-3">
                           <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${tone}`}><Icon size={20}/></div>
                           <div className="text-[14px] font-black text-slate-800">{item.label}</div>
                         </button>
@@ -10474,10 +10484,10 @@ export default function App() {
                 <div className="bg-white border border-slate-200 rounded-[18px] shadow-[0_10px_28px_rgba(15,23,42,0.055)] overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
                     <div className="text-[18px] font-black text-slate-900 flex items-center gap-2.5"><ListChecks size={20} className="text-blue-600" /> 我的待办事项</div>
-                    <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-500 border border-rose-100 text-[12px] font-black">{(workbenchDashboard?.todos ?? []).filter(item => item.urgent).length} 项高危</span>
+                    <button disabled={!hasPermission(currentUser?.permissions, 'message.read', 'MSG_VIEW')} onClick={() => setActiveModule('消息管理')} className="text-sm text-blue-600 disabled:opacity-50">查看全部</button>
                   </div>
                   <div className="p-5 space-y-2">
-                    {(workbenchDashboard?.todos ?? []).slice(0, 8).map(item => {
+                    {(workbenchDashboard?.todos ?? []).slice(0, 5).map(item => {
                       const visualMap: Record<string, { icon: typeof Factory; tone: string }> = {
                         销售管理: { icon: BadgeDollarSign, tone: 'bg-blue-50 text-blue-600 border-blue-100' },
                         生产管理: { icon: Factory, tone: 'bg-purple-50 text-purple-600 border-purple-100' },
@@ -10489,7 +10499,7 @@ export default function App() {
                       const visual = visualMap[item.module] || { icon: Activity, tone: 'bg-blue-50 text-blue-600 border-blue-100' };
                       const Icon = visual.icon;
                       return (
-                        <button key={`${item.sourceType}:${item.sourceId}`} onClick={() => setActiveModule(item.module, { query: { focusId: item.sourceId, focusNo: item.sourceNo || '' } })} className="w-full flex items-center gap-4 text-left group rounded-xl p-2.5 hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                        <button key={`${item.sourceType}:${item.sourceId}`} disabled={!sourceDestination(item) || workbench.businessStale} onClick={() => openSource(item)} className="w-full flex items-center gap-4 text-left group rounded-xl p-2.5 hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100 disabled:opacity-50">
                           <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${visual.tone}`}><Icon size={19}/></div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3">
@@ -10503,7 +10513,7 @@ export default function App() {
                       );
                     })}
                     {(workbenchDashboard?.todos ?? []).length === 0 && (
-                      <div className="py-10 text-center text-[13px] font-bold text-slate-400">当前岗位没有待处理业务</div>
+                      <div className="py-10 text-center text-[13px] font-bold text-slate-400">{workbench.businessError ? '待办读取失败，请重试' : !workbench.businessReady ? '正在读取待办事项' : '当前岗位没有待处理业务'}</div>
                     )}
                   </div>
                 </div>
@@ -10511,6 +10521,7 @@ export default function App() {
                 <div className="bg-white border border-slate-200 rounded-[18px] shadow-[0_10px_28px_rgba(15,23,42,0.055)] overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100">
                     <div className="text-[18px] font-black text-slate-900 flex items-center gap-2.5"><Activity size={20} className="text-blue-600" /> 实时业务流动态</div>
+                    <select aria-label="业务事件范围" value={workbenchEventScope} onChange={event => setWorkbenchEventScope(event.target.value as 'KEY' | 'ALL')} className="mt-3 max-w-full rounded-md border p-2 text-sm"><option value="KEY">关键事件</option><option value="ALL">全部业务事件</option></select>
                   </div>
                   <div className="p-6 min-h-[360px]">
                     <div className="relative pl-7 space-y-7 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200">
@@ -10529,9 +10540,10 @@ export default function App() {
                         );
                       })}
                       {(workbenchDashboard?.activities ?? []).length === 0 && (
-                        <div className="py-20 text-center text-[13px] font-bold text-slate-400">暂无业务动态</div>
+                        <div className="py-20 text-center text-[13px] font-bold text-slate-400">{workbench.businessError ? '动态读取失败，请重试' : !workbench.businessReady ? '正在读取业务动态' : '暂无业务动态'}</div>
                       )}
                     </div>
+                    {workbench.hasMore && <button disabled={workbenchLoading} onClick={workbench.loadMore} className="mt-4 text-sm text-blue-600">加载更多动态</button>}
                   </div>
                 </div>
               </section>
@@ -10548,7 +10560,7 @@ export default function App() {
         {activeModule === '产业链管理' && <SupplyChainManagement currentTenant={currentTenant} currentUser={currentUser} />}
         {activeModule === 'AI智能中枢' && <AIHubManagementV2 apiContext={formalContext} onOpenAssistant={() => setIsGlobalAssistantOpen(true)} />}
         {activeModule === 'AI数据分析' && <AIDataAnalysisManagement apiContext={formalContext} />}
-        {activeModule === '消息管理' && <MessageManagement onNavigateModule={setActiveModule} msgs={messages} onReadMessage={markMessageRead} focusMsgId={focusedMessageId} focusTick={messageFocusTick} />}
+        {activeModule === '消息管理' && <MessageManagement onNavigateModule={setActiveModule} msgs={messages} onReadMessage={markMessageRead} onArchiveMessage={archiveMessage} focusMsgId={focusedMessageId} focusTick={messageFocusTick} query={messageQuery} onQuery={value => { setMessageQuery(value); setMessagePage(1); }} category={messageCategory} onCategory={value => { setMessageCategory(value); setMessagePage(1); }} page={messagePage} total={messageTotal} onPage={setMessagePage} loading={messageLoading} error={messageError} onRetry={() => void refreshMessages()} />}
         {activeModule === '平台管理' && <PlatformManagementV2 currentTenant={currentTenant} currentUser={currentUser} onToast={showFlowToast} />}
         {activeModule === '问题反馈' && <FeedbackManagement currentTenant={currentTenant} currentUser={currentUser} onToast={showFlowToast} />}
         

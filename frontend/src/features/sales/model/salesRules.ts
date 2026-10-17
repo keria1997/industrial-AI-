@@ -1,4 +1,4 @@
-export const salesTabs = ['dashboard', 'quotes', 'orders', 'customers', 'basic-data'] as const;
+export const salesTabs = ['dashboard', 'quotes', 'orders', 'rma', 'receipts', 'customers', 'basic-data'] as const;
 
 export type SalesTab = (typeof salesTabs)[number];
 

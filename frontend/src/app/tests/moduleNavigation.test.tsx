@@ -19,6 +19,11 @@ vi.mock('react', async (importOriginal) => ({
     }];
   },
   useCallback: (callback: unknown) => callback,
+  useRef: (initial: unknown) => {
+    const index = hooks.cursor++;
+    if (!(index in hooks.values)) hooks.values[index] = { current: initial };
+    return hooks.values[index];
+  },
   useMemo: (factory: () => unknown) => factory(),
   useEffect: (effect: () => unknown) => { hooks.effects.push(effect); },
 }));

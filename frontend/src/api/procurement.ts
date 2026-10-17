@@ -61,13 +61,13 @@ export const procurementApi = {
     method: 'POST', expectedVersion: order.version, idempotencyKey: operationKey(`purchase-cancel:${order.id}`),
     body: JSON.stringify({ reason }),
   }),
-  receiveOrder: (context: ApiContext, order: PurchaseOrderDto, options?: { receivedQty?: string; requireInspection?: boolean }) => apiRequest<{ order: PurchaseOrderDto; receipt: PurchaseReceiptDto; availability: { productId: string; warehouseId: string; fulfillableQty: string; factVersion: number } }>(`/api/v1/procurement/purchase-orders/${order.id}/receipts`, context, {
-    method: 'POST', expectedVersion: order.version, idempotencyKey: operationKey(`purchase-receipt:${order.id}`),
-    body: JSON.stringify({ externalTransactionId: `WEB-PRCV-${order.id}`, receivedAt: new Date().toISOString(), ...options }),
+  receiveOrder: (context: ApiContext, order: PurchaseOrderDto, options: { receivedQty: string; requireInspection: boolean; externalTransactionId: string; receivedAt: string }, idempotencyKey = operationKey(`purchase-receipt:${order.id}`)) => apiRequest<{ order: PurchaseOrderDto; receipt: PurchaseReceiptDto; availability?: { productId: string; warehouseId: string; fulfillableQty: string; factVersion: number } }>(`/api/v1/procurement/purchase-orders/${order.id}/receipts`, context, {
+    method: 'POST', expectedVersion: order.version, idempotencyKey,
+    body: JSON.stringify(options),
   }),
   listReceipts: (context: ApiContext) => apiRequest<{ items: PurchaseReceiptDto[]; total: number }>('/api/v1/procurement/purchase-receipts', context),
-  inspectReceipt: (context: ApiContext, receiptId: string, result: 'ACCEPTED' | 'REJECTED', remark?: string) => apiRequest<{ receipt: PurchaseReceiptDto }>(`/api/v1/procurement/purchase-receipts/${receiptId}/inspect`, context, {
-    method: 'POST', idempotencyKey: operationKey(`purchase-inspect:${receiptId}`),
+  inspectReceipt: (context: ApiContext, receiptId: string, result: 'ACCEPTED' | 'REJECTED', remark?: string, idempotencyKey = operationKey(`purchase-inspect:${receiptId}`)) => apiRequest<{ receipt: PurchaseReceiptDto }>(`/api/v1/procurement/purchase-receipts/${receiptId}/inspect`, context, {
+    method: 'POST', idempotencyKey,
     body: JSON.stringify({ result, remark }),
   }),
   // Supplier management
@@ -83,12 +83,12 @@ export const procurementApi = {
   }),
   // Purchase returns
   listReturns: (context: ApiContext) => apiRequest<{ items: PurchaseReturnDto[]; total: number }>('/api/v1/procurement/purchase-returns', context),
-  createReturn: (context: ApiContext, input: { purchaseReceiptId: string; reason: string; returnQty?: string; remark?: string }) => apiRequest<PurchaseReturnDto>('/api/v1/procurement/purchase-returns', context, {
-    method: 'POST', idempotencyKey: operationKey(`return-create:${input.purchaseReceiptId}`),
+  createReturn: (context: ApiContext, input: { purchaseReceiptId: string; reason: string; returnQty?: string; remark?: string }, idempotencyKey = operationKey(`return-create:${input.purchaseReceiptId}`)) => apiRequest<PurchaseReturnDto>('/api/v1/procurement/purchase-returns', context, {
+    method: 'POST', idempotencyKey,
     body: JSON.stringify(input),
   }),
-  processReturn: (context: ApiContext, ret: PurchaseReturnDto, externalTransactionId: string) => apiRequest<{ ret: PurchaseReturnDto }>(`/api/v1/procurement/purchase-returns/${ret.id}/process`, context, {
-    method: 'POST', expectedVersion: ret.version, idempotencyKey: operationKey(`return-process:${ret.id}`),
+  processReturn: (context: ApiContext, ret: PurchaseReturnDto, externalTransactionId: string, idempotencyKey = operationKey(`return-process:${ret.id}`)) => apiRequest<{ ret: PurchaseReturnDto }>(`/api/v1/procurement/purchase-returns/${ret.id}/process`, context, {
+    method: 'POST', expectedVersion: ret.version, idempotencyKey,
     body: JSON.stringify({ externalTransactionId }),
   }),
 };

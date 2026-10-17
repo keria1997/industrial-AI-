@@ -77,16 +77,16 @@ const key = (scope: string) => `${scope}:${crypto.randomUUID()}`;
 export const createFulfillmentOrder = (context: ApiContext, input: Record<string, unknown>, idempotencyKey?: string) =>
   apiRequest<FulfillmentOrder>('/api/v1/sales/sales-orders', context, { method: 'POST', idempotencyKey: idempotencyKey || key('sales-order'), body: JSON.stringify(input) });
 
-export const listFulfillmentOrders = (context: ApiContext) =>
-  apiRequest<{ items: FulfillmentOrder[]; total: number }>('/api/v1/sales/sales-orders?page=1&pageSize=200', context);
+export const listFulfillmentOrders = (context: ApiContext, filter: { page: number; pageSize: number } = { page: 1, pageSize: 200 }) =>
+  apiRequest<{ items: FulfillmentOrder[]; total: number }>(`/api/v1/sales/sales-orders?page=${filter.page}&pageSize=${filter.pageSize}`, context);
 
 export const getFulfillmentOrder = (context: ApiContext, id: string) =>
   apiRequest<FulfillmentOrder>(`/api/v1/sales/sales-orders/${id}`, context);
 
-export const approveFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder) =>
+export const approveFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder, decision: 'APPROVE' | 'RETURN' | 'REJECT' = 'APPROVE', comment?: string, idempotencyKey = key(`review:${order.id}`)) =>
   apiRequest<FulfillmentOrder>(`/api/v1/sales/sales-orders/${order.id}/review-decisions`, context, {
-    method: 'POST', idempotencyKey: key(`review:${order.id}`), expectedVersion: order.version,
-    body: JSON.stringify({ decision: 'APPROVE' }),
+    method: 'POST', idempotencyKey, expectedVersion: order.version,
+    body: JSON.stringify({ decision, ...(comment ? { comment } : {}) }),
   });
 
 export const confirmFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder, requestedDeliveryDate: string) =>
@@ -95,9 +95,9 @@ export const confirmFulfillmentOrder = (context: ApiContext, order: FulfillmentO
     body: JSON.stringify({ requestedDeliveryDate }),
   });
 
-export const cancelFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder, reason: string) =>
+export const cancelFulfillmentOrder = (context: ApiContext, order: FulfillmentOrder, reason: string, idempotencyKey = key(`cancel:${order.id}`)) =>
   apiRequest<FulfillmentOrder>(`/api/v1/sales/sales-orders/${order.id}/cancel`, context, {
-    method: 'POST', idempotencyKey: key(`cancel:${order.id}`), expectedVersion: order.version,
+    method: 'POST', idempotencyKey, expectedVersion: order.version,
     body: JSON.stringify({ reason }),
   });
 

@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -17,7 +18,8 @@ import {
   type RoleName,
 } from './moduleRegistry';
 import { createModuleUrl, resolveModuleFromLocation } from './routing';
-import { clearAuthenticatedSession, loadAuthenticatedSession } from '../api/session';
+import { clearAuthenticatedSession, loadAuthenticatedSession, saveAuthenticatedSession, type AuthenticatedUser } from '../api/session';
+import { apiRequest } from '../api/client';
 
 export type AppUser = {
   account?: string;
@@ -101,6 +103,10 @@ type AppRuntimeContextValue = {
   setActiveRole: Dispatch<SetStateAction<RoleName>>;
   setCurrentTenantId: Dispatch<SetStateAction<string>>;
   setCurrentUser: Dispatch<SetStateAction<AppUser | null>>;
+  permissionsReady: boolean;
+  permissionError: string;
+  permissionRefreshing: boolean;
+  refreshPermissions: () => Promise<void>;
 };
 
 const AppRuntimeContext = createContext<AppRuntimeContextValue | null>(null);
@@ -111,6 +117,61 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
   const [moduleNavigationRevision, setModuleNavigationRevision] = useState(0);
   const [currentTenantId, setCurrentTenantId] = useState(() => resolvePreferredTenantId(currentUser));
   const [activeRole, setActiveRole] = useState<RoleName>(() => resolveSessionRole(currentUser));
+  const scope = `${currentTenantId}:${currentUser?.accessToken || ''}`;
+  const [permissionScope, setPermissionScope] = useState(scope);
+  const [permissionError, setPermissionError] = useState('');
+  const [permissionRefreshing, setPermissionRefreshing] = useState(false);
+  const requestGeneration = useRef(0);
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const refreshPermissions = useCallback(async () => {
+    if (!currentUser?.accessToken || !currentTenantId) return;
+    const generation = ++requestGeneration.current;
+    const requestedScope = scope;
+    setPermissionRefreshing(true); setPermissionError('');
+    try {
+      const result = await apiRequest<{ permissions: string[]; permissionVersion?: string }>(
+        '/api/v1/production/readiness',
+        { tenantId: currentTenantId, accessToken: currentUser.accessToken },
+      );
+      if (generation !== requestGeneration.current || requestedScope !== scopeRef.current) return;
+      if (!Array.isArray(result.permissions) || result.permissions.some(code => typeof code !== 'string')) throw new Error('未取得有效权限集合');
+      setCurrentUser(previous => {
+        if (!previous || previous.accessToken !== currentUser.accessToken) return previous;
+        const unchanged = previous.permissions?.length === result.permissions.length
+          && previous.permissions.every(code => result.permissions.includes(code));
+        const updated = { ...previous, permissions: unchanged ? previous.permissions : result.permissions, ...(result.permissionVersion ? { permissionVersion: result.permissionVersion } : {}) };
+        saveAuthenticatedSession(updated as AuthenticatedUser);
+        return updated;
+      });
+      setPermissionScope(requestedScope);
+    } catch (cause) {
+      if (generation === requestGeneration.current && requestedScope === scopeRef.current) {
+        setPermissionScope('');
+        setPermissionError(cause instanceof Error ? cause.message : '权限读取失败');
+      }
+    } finally {
+      if (generation === requestGeneration.current && requestedScope === scopeRef.current) setPermissionRefreshing(false);
+    }
+  }, [scope, currentUser?.accessToken, currentTenantId]);
+
+  useEffect(() => {
+    if (scope !== permissionScope && currentUser?.accessToken) void refreshPermissions();
+  }, [scope]);
+
+  useEffect(() => {
+    const invalidate = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && (detail.tenantId !== currentTenantId || detail.accessToken !== currentUser?.accessToken)) return;
+      void refreshPermissions();
+    };
+    window.addEventListener('industrial-ai-permissions-invalid', invalidate);
+    window.addEventListener('industrial-ai-permissions-changed', invalidate);
+    return () => {
+      window.removeEventListener('industrial-ai-permissions-invalid', invalidate);
+      window.removeEventListener('industrial-ai-permissions-changed', invalidate);
+    };
+  }, [refreshPermissions]);
 
   const allTenantOptions = useMemo(() => allowedTenantIds(currentUser).map((id, index) => ({
     id, name: index === 0 && currentUser?.tenantName ? String(currentUser.tenantName) : id,
@@ -181,7 +242,11 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
     setActiveRole,
     setCurrentTenantId,
     setCurrentUser,
-  }), [activeModule, moduleNavigationRevision, activeRole, currentTenant, currentTenantId, currentUser, navigateModule]);
+    permissionsReady: permissionScope === scope,
+    permissionError,
+    permissionRefreshing,
+    refreshPermissions,
+  }), [activeModule, moduleNavigationRevision, activeRole, currentTenant, currentTenantId, currentUser, navigateModule, permissionScope, scope, permissionError, permissionRefreshing, refreshPermissions]);
 
   return <AppRuntimeContext.Provider value={value}>{children}</AppRuntimeContext.Provider>;
 };

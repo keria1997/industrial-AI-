@@ -44,6 +44,9 @@ export async function apiRequest<T>(path: string, context: ApiContext | null, op
     if (response.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("industrial-ai-session-expired"));
     }
+    if (response.status === 403 && context && typeof window !== "undefined" && !path.startsWith('/api/v1/production/readiness')) {
+      window.dispatchEvent(new CustomEvent("industrial-ai-permissions-invalid", { detail: context }));
+    }
     throw new ApiError(
       error.message ?? `请求失败 (${response.status})`,
       response.status,

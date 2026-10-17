@@ -20,8 +20,6 @@ interface ReceiptRecord {
   signedAt: string;
 }
 
-const receipts: ReceiptRecord[] = [];
-
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: '待签收', color: 'amber' },
   PARTIALLY_SIGNED: { label: '部分签收', color: 'blue' },
@@ -42,5 +40,8 @@ export function CustomerReceiptPanel() {
     { key: 'signedAt', label: '签收时间' },
   ];
 
-  return <DataTable columns={cols} data={receipts} emptyText="暂无签收记录" />;
+  return <section className="space-y-4">
+    <div role="status" className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">客户签收服务尚未接入，当前无法查询或登记签收。签收与订单完成是独立状态；签收、应收结清及退货争议全部闭合后才可完成订单。</div>
+    <DataTable columns={cols} data={[]} emptyText="尚未取得客户签收记录" />
+  </section>;
 }

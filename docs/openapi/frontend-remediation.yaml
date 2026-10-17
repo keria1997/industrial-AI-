@@ -1,0 +1,157 @@
+openapi: 3.0.3
+info:
+  title: ERP frontend remediation integration contract
+  version: '2026-10-17'
+  description: |
+    Integration of existing client contracts, not backend acceptance.
+    Existing client paths take precedence here. RMA, customer receipts, reversals and
+    grant-version review stay blocked until conflicting paths and schemas are resolved.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /sales/sales-orders/{id}/cancel:
+    post:
+      summary: Cancel an authorized sales order with the user's reason
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/CommandKey'
+        - $ref: '#/components/parameters/Version'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1 }
+      responses:
+        '200': { description: Authoritative sales order projection }
+        '403': { description: Cancellation permission denied }
+        '409': { description: Order state or version changed }
+  /finance/payments:
+    get:
+      summary: Query payment records with server pagination and search
+      responses:
+        '200': { description: 'items[], total; payment has id, status, version, createdBy' }
+    post:
+      summary: Register a payment awaiting separate confirmation
+      parameters:
+        - $ref: '#/components/parameters/CommandKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [direction, counterpartyId, counterpartyName, amount, currency, paymentMethod, paymentDate]
+              properties:
+                direction: { type: string, enum: [INBOUND, OUTBOUND] }
+                receivableId: { type: string }
+                payableId: { type: string }
+                counterpartyId: { type: string }
+                counterpartyName: { type: string }
+                amount: { type: string, pattern: '^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$' }
+                currency: { type: string }
+                paymentMethod: { type: string, enum: [bank_transfer, cash, check, offset, other] }
+                paymentDate: { type: string, format: date }
+                referenceNo: { type: string }
+                remark: { type: string }
+      responses:
+        '200': { description: 'payment with id/status/version; registration does not imply allocation' }
+        '409': { description: Version or idempotency conflict }
+        '422': { description: Amount, currency or source validation rejected }
+  /finance/payments/{id}/confirm:
+    post:
+      summary: Confirm payment under separation of duties
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/CommandKey'
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '200': { description: 'payment and optional receivable/payable projection' }
+        '403': { description: Permission or separation of duties rejected }
+        '409': { description: State or version changed }
+  /procurement/purchase-orders/{id}/receipts:
+    post:
+      summary: Register one delivery batch bounded by the remaining quantity
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/CommandKey'
+        - $ref: '#/components/parameters/Version'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [externalTransactionId, receivedAt, receivedQty, requireInspection]
+              properties:
+                externalTransactionId: { type: string, description: Unique delivery reference retained on retry }
+                receivedAt: { type: string, format: date-time }
+                receivedQty: { type: string }
+                requireInspection: { type: boolean }
+      responses:
+        '200': { description: 'order, receipt, optional availability; never assume POSTED' }
+        '409': { description: Over-receipt, concurrent modification or duplicate reference conflict }
+  /procurement/purchase-receipts/{id}/inspect:
+    post:
+      summary: Submit the supported whole-batch inspection result
+      description: Partial accepted/rejected quantities and evidence require an extended backend contract.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/CommandKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties:
+                result: { type: string, enum: [ACCEPTED, REJECTED] }
+                remark: { type: string }
+      responses:
+        '200': { description: receipt with actual status }
+  /procurement/purchase-returns:
+    get:
+      summary: Query authorized purchase returns
+      responses:
+        '200': { description: 'items[], total' }
+    post:
+      summary: Register a return against a purchase receipt
+      parameters:
+        - $ref: '#/components/parameters/CommandKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purchaseReceiptId, returnQty, reason]
+              properties:
+                purchaseReceiptId: { type: string }
+                returnQty: { type: string }
+                reason: { type: string }
+                remark: { type: string }
+      responses:
+        '200': { description: PurchaseReturnDto; approval is not simulated }
+  /workbench/dashboard:
+    get:
+      summary: Read workbench sections independently
+      parameters:
+        - { name: role, in: query, schema: { type: string }, description: Display role from the signed session; never grants access }
+        - { name: sections, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string, maxLength: 50 } }
+        - { name: eventScope, in: query, schema: { type: string, enum: [KEY, ALL] } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: todoLimit, in: query, schema: { type: integer, default: 5, maximum: 50 } }
+        - { name: activityLimit, in: query, schema: { type: integer, default: 10, maximum: 50 } }
+      responses:
+        '200': { description: Requested sections and generation timestamps; missing fields stay unavailable }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string } }
+    CommandKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+    Version: { name: If-Match, in: header, required: true, schema: { type: string } }

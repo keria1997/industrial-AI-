@@ -59,11 +59,11 @@ describe('procurement API client', () => {
       headers: { 'Content-Type': 'application/json' },
     }));
 
-    await procurementApi.receiveOrder(context, order);
+    await procurementApi.receiveOrder(context, order, { receivedQty: '8', requireInspection: true, externalTransactionId: 'DELIVERY-BATCH-001', receivedAt: '2026-10-17T00:00:00.000Z' }, 'receipt-retry-key');
 
     const [path, request] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe('/api/v1/procurement/purchase-orders/po-1/receipts');
-    expect(request.headers).toMatchObject({ 'If-Match': '"2"' });
-    expect(JSON.parse(String(request.body))).toMatchObject({ externalTransactionId: 'WEB-PRCV-po-1' });
+    expect(request.headers).toMatchObject({ 'If-Match': '"2"', 'X-Idempotency-Key': 'receipt-retry-key' });
+    expect(JSON.parse(String(request.body))).toMatchObject({ receivedQty: '8', requireInspection: true, externalTransactionId: 'DELIVERY-BATCH-001' });
   });
 });

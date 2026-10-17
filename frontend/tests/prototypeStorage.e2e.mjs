@@ -56,7 +56,7 @@ try {
           return route.fulfill({ status: 503, json: { error: { code: 'TEST_UNAVAILABLE', message: 'API unavailable' } } });
         }
         if (path.endsWith('/platform/snapshot')) return route.fulfill({ status: 200, json: snapshot });
-        if (path.endsWith('/production/readiness')) return route.fulfill({ status: 200, json: { permissions: [] } });
+        if (path.endsWith('/production/readiness')) return route.fulfill({ status: 200, json: { permissions: ['*'] } });
         const arrayPaths = ['/inventory/availability', '/production/inspections', '/production/completions',
           '/production/work-order-closes', '/production/bom-snapshots'];
         return route.fulfill({ status: 200, json: arrayPaths.some(item => path.endsWith(item)) ? [] : { items: [], total: 0 } });
@@ -135,7 +135,7 @@ try {
         uom: 'PCS', unitPrice: '12', safetyStockQty: '3', status: 'active', version: 4,
       }], total: 1 } });
       if (path.endsWith('/platform/snapshot')) return route.fulfill({ json: snapshot });
-      if (path.endsWith('/production/readiness')) return route.fulfill({ json: { permissions: [] } });
+      if (path.endsWith('/production/readiness')) return route.fulfill({ json: { permissions: ['*'] } });
       if (path.includes('/workbench/')) return route.fulfill({ status: 503, json: { error: { message: 'TEST_UNAVAILABLE' } } });
       const arrayPaths = ['/inventory/availability', '/production/inspections', '/production/completions',
         '/production/work-order-closes', '/production/bom-snapshots'];
