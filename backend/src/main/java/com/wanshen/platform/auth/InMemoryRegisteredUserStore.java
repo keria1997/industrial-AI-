@@ -31,7 +31,7 @@ public class InMemoryRegisteredUserStore implements RegisteredUserStore {
                 input.tenantName() == null ? "" : input.tenantName(),
                 input.industry() == null ? "" : input.industry(),
                 input.role() == null || input.role().isBlank() ? input.isTenantAdmin() ? "老板" : "员工" : input.role(),
-                input.isTenantAdmin(), !input.isTenantAdmin(), input.department(), input.position(), input.employeeNo(),
+                input.isTenantAdmin(), !input.isTenantAdmin(), input.department(), input.employeeNo(),
                 "active", input.isTenantAdmin() ? List.of("*") : List.of(), java.time.Instant.now().toString(), 1);
         users.put(user.account(), user);
         return copy(user);
@@ -145,7 +145,7 @@ public class InMemoryRegisteredUserStore implements RegisteredUserStore {
     private RegisteredUser replace(RegisteredUser current, String password, boolean firstLogin, String status, boolean invalidate) {
         return new RegisteredUser(current.id(), current.account(), password, current.name(), current.phone(),
                 current.email(), current.tenantId(), current.tenantName(), current.industry(), current.role(),
-                current.isTenantAdmin(), firstLogin, current.department(), current.position(),
+                current.isTenantAdmin(), firstLogin, current.department(),
                 current.employeeNo(), status, current.permissions(), current.createdAt(),
                 current.sessionVersion() + (invalidate ? 1 : 0));
     }

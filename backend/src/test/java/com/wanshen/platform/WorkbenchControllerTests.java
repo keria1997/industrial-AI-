@@ -178,7 +178,7 @@ class WorkbenchControllerTests {
     }
 
     private Employee employee(String id) {
-        return new Employee(id, "TENANT-SHWS", id, "员工", "部门", "岗位", "", "",
+        return new Employee(id, "TENANT-SHWS", id, "员工", "部门", "", "",
                 "active", "2020-01-01", null, Map.of(), "", 1,
                 Instant.now().toString(), Instant.now().toString(), "admin");
     }

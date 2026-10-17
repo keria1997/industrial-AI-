@@ -34,8 +34,8 @@ public class JdbcRegisteredUserStore implements RegisteredUserStore {
             try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO registered_users
                   (account, password_hash, name, phone, email, tenant_id, tenant_name, industry,
-                   is_tenant_admin, first_login, department, position, employee_no, role, permissions)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                   is_tenant_admin, first_login, department, employee_no, role, permissions)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 RETURNING *
                 """)) {
             bind(statement, 1, input.account()); bind(statement, 2, input.encodedPassword());
@@ -44,11 +44,10 @@ public class JdbcRegisteredUserStore implements RegisteredUserStore {
             bind(statement, 7, input.tenantName()); bind(statement, 8, input.industry());
             statement.setBoolean(9, input.isTenantAdmin());
             statement.setBoolean(10, !input.isTenantAdmin());
-            bind(statement, 11, input.department()); bind(statement, 12, input.position());
-            bind(statement, 13, input.employeeNo());
-            bind(statement, 14, input.role() == null || input.role().isBlank()
+            bind(statement, 11, input.department()); bind(statement, 12, input.employeeNo());
+            bind(statement, 13, input.role() == null || input.role().isBlank()
                     ? input.isTenantAdmin() ? "老板" : "员工" : input.role());
-            statement.setString(15, input.isTenantAdmin() ? "[\"*\"]" : "[]");
+            statement.setString(14, input.isTenantAdmin() ? "[\"*\"]" : "[]");
             try (ResultSet result = statement.executeQuery()) {
                 result.next();
                 RegisteredUser user = map(result);
@@ -375,7 +374,7 @@ public class JdbcRegisteredUserStore implements RegisteredUserStore {
                 row.getString("name"), row.getString("phone"), row.getString("email"), row.getString("tenant_id"),
                 row.getString("tenant_name"), row.getString("industry"), row.getString("role"),
                 row.getBoolean("is_tenant_admin"), row.getBoolean("first_login"), row.getString("department"),
-                row.getString("position"), row.getString("employee_no"), row.getString("status"),
+                row.getString("employee_no"), row.getString("status"),
                 readPermissions(row), row.getTimestamp("created_at").toInstant().toString(), row.getLong("session_version"));
     }
     private List<String> readPermissions(ResultSet row) throws SQLException {

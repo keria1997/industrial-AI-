@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-10-17",
   "source": "Spring controller annotations",
-  "total": 308,
+  "total": 304,
   "routes": [
     {
       "method": "GET",
@@ -1056,30 +1056,6 @@
     {
       "method": "GET",
       "path": "/api/v1/platform/permissions",
-      "controller": "PlatformController",
-      "classification": "public"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/platform/positions",
-      "controller": "PlatformController",
-      "classification": "public"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/platform/positions",
-      "controller": "PlatformController",
-      "classification": "public"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/platform/positions/{id}",
-      "controller": "PlatformController",
-      "classification": "public"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/platform/positions/{id}",
       "controller": "PlatformController",
       "classification": "public"
     },

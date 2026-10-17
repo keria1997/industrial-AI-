@@ -20,14 +20,13 @@ public class PersonnelStore extends AbstractPersonnelStore {
     @Override
     public synchronized Page<Employee> employees(
             String tenantId, Integer page, Integer pageSize, String status,
-            String department, String position, String search
+            String department, String search
     ) {
         List<Employee> values = employees.values().stream()
                 .filter(item -> item.tenantId().equals(tenantId))
                 .filter(item -> status == null || item.status().equals(status))
                 .filter(item -> department == null || item.department().equals(department))
-                .filter(item -> position == null || item.position().equals(position))
-                .filter(item -> matches(search, item.employeeNo(), item.name(), item.department(), item.position(), item.phone(), item.email()))
+                .filter(item -> matches(search, item.employeeNo(), item.name(), item.department(), item.phone(), item.email()))
                 .sorted(Comparator.comparing(Employee::createdAt).reversed())
                 .collect(Collectors.toList());
         return page(values, page, pageSize);

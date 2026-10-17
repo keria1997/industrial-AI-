@@ -110,10 +110,8 @@ class ResourceScopeTests {
             InMemoryPlatformProvisioningStore store, String roleCode, String dataScope, List<String> scopeValues
     ) {
         store.save("account", "A", Map.of("tenantId", "T", "id", "A", "loginName", "planner",
-                "employeeId", "E", "status", "enabled", "directRoleIds", List.of("R")));
-        store.save("employee", "E", Map.of("tenantId", "T", "id", "E", "status", "active", "primaryPositionId", "P"));
-        store.save("position", "P", Map.of("tenantId", "T", "id", "P", "status", "enabled",
-                "defaultRoleIds", List.of()));
+                "employeeId", "E", "status", "enabled", "roleId", "R"));
+        store.save("employee", "E", Map.of("tenantId", "T", "id", "E", "status", "active"));
         store.save("role", "R", Map.of("tenantId", "T", "id", "R", "code", roleCode, "status", "enabled",
                 "dataScope", dataScope, "scopeValues", scopeValues));
         store.save("orgUnit", "ORG-FAC-01", Map.of("tenantId", "T", "id", "ORG-FAC-01", "code", "FAC-SH-01",

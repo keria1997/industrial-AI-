@@ -42,7 +42,7 @@ class PlatformControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenant.id").value("TENANT-SHWS"))
                 .andExpect(jsonPath("$.orgUnits", hasSize(2)))
-                .andExpect(jsonPath("$.permissions", hasSize(72)))
+                .andExpect(jsonPath("$.permissions", hasSize(71)))
                 .andExpect(jsonPath("$.permissions[?(@.code == 'production.work-order.read')]").isNotEmpty());
 
         mockMvc.perform(get("/api/v1/platform/org-units").header("Authorization", "Bearer " + token()))
@@ -88,6 +88,46 @@ class PlatformControllerTests {
         mockMvc.perform(get("/api/v1/platform/roles/ROLE-ADMIN/grants").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    void createsSingleRoleAccountAndRejectsDuplicateEmployeeBinding() throws Exception {
+        String token = token();
+        mockMvc.perform(post("/api/v1/platform/employees")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("""
+                                {"id":"EMP-I035","employeeNo":"E035","name":"单角色员工",
+                                 "primaryOrgId":"ORG-ROOT","mobile":"13800000000",
+                                 "email":"e035@example.test","status":"active"}
+                                """))
+                .andExpect(status().isCreated());
+
+        String accountBody = """
+                {"loginName":"single-role","employeeId":"EMP-I035","roleId":"ROLE-SALE",
+                 "authType":"password","status":"enabled"}
+                """;
+        mockMvc.perform(post("/api/v1/platform/accounts")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json").content(accountBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.roleId").value("ROLE-SALE"))
+                .andExpect(jsonPath("$.directRoleIds").doesNotExist());
+
+        mockMvc.perform(post("/api/v1/platform/accounts")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json").content(accountBody.replace("single-role", "second-login")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("PLATFORM_409_EMPLOYEE_ACCOUNT_EXISTS"));
+
+        mockMvc.perform(post("/api/v1/platform/accounts")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json").content("""
+                                {"loginName":"legacy-multi-role","employeeId":"EMP-ADMIN",
+                                 "directRoleIds":["ROLE-SALE","ROLE-FIN"],"authType":"password",
+                                 "status":"enabled"}
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

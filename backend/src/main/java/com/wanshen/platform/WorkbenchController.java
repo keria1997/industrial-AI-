@@ -98,7 +98,7 @@ public class WorkbenchController {
         require(context, "workbench.dashboard.read");
         if (!ROLES.contains(role)) {
             throw new ApiException(400, "WORKBENCH_400_INVALID_ROLE", "不支持的工作台角色：" + role,
-                    "请从页面角色列表中选择有效岗位");
+                    "请从页面角色列表中选择有效角色");
         }
         validateLimits(todoLimit, activityLimit);
         if (!Set.of("KEY", "ALL").contains(eventScope)) {

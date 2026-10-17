@@ -16,7 +16,7 @@ class AuthSecurityRealJdbcTests {
         String id = UUID.randomUUID().toString();
         return users.createUser(new RegisteredUserStore.CreateUserInput("user-" + id, "old-hash", "User",
                 id.substring(0, 18), id + "@example.test", tenant, "Tenant", "manufacturing", admin,
-                "Department", "Position", "Employee", "viewer"));
+                "Department", "Employee", "viewer"));
     }
     private HikariDataSource data() {
         var config = new HikariConfig();

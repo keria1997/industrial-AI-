@@ -34,7 +34,7 @@ class SessionSecurityTests {
     @BeforeEach void setup() {
         employee = users.createUser(new RegisteredUserStore.CreateUserInput("employee", passwords.hash("Password123"),
                 "Employee", "13800138000", "employee@example.test", "T", "Tenant", "manufacturing",
-                false, "Production", "Planner", "E1", "viewer"));
+                false, "Production", "E1", "viewer"));
         users.updateFirstLogin(employee.account(), false);
         var controller = new AuthController(users, new CaptchaService(), passwords, tokens,
                 new TenantProvisioningService(platform), false, "test01", "123456",

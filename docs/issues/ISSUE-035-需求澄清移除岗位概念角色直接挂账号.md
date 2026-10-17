@@ -4,7 +4,7 @@
 - 模块：平台管理
 - 层级：L4 基础层
 - 影响范围：前端, 后端, PRD, 设计文档
-- 状态：🔴 待修复
+- 状态：后端和文档已修复；前端待接入
 
 ## 问题
 
@@ -76,5 +76,16 @@
 
 ## 进展
 
-🔴 待修复（模型变更影响范围广，需 P0 优先处理）
+### 2026-10-18 后端与文档修复
+
+- 移除平台岗位种子、岗位 CRUD API、`platform.position.manage` 权限和 `iam_position` 结构化表；快照与文档中的历史岗位投影一并清理。
+- 员工模型改为归属组织/部门，移除 `primaryPositionId` 和人员档案岗位字段。
+- 平台账号改为必填 `roleId` 单角色；授权解析只读取账号直挂角色，不再叠加 `directRoleIds` 和岗位默认角色。
+- 新增账号服务校验：员工必须在职、角色必须启用、员工与账号 1:1、登录名唯一；提交 `directRoleIds` 返回 400。
+- 新增迁移：
+  - `038_remove_position_single_account_role.sql`：删除岗位表/权限/投影，员工移除岗位字段，账号 `directRoleIds` 转为 `roleId`。
+  - `039_backfill_account_single_role.sql`：为旧平台管理员账号补齐 `roleId=ROLE-ADMIN`。
+- PRD、UI 设计说明书和技术设计说明书已更新为“组织/部门 → 员工 → 账号 → 唯一角色”，并移除岗位授权中间层。
+- 后端测试：`mvn clean test` 167 项通过、0 失败、18 项跳过；OpenAPI 路由与实现为 304:304。
+- 前端仍需单独接入 `roleId` 单选并移除岗位 UI；本轮未修改前端代码。
 

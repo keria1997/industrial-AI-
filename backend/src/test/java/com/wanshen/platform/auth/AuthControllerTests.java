@@ -109,7 +109,7 @@ class AuthControllerTests {
         InMemoryRegisteredUserStore users = new InMemoryRegisteredUserStore();
         users.createUser(new RegisteredUserStore.CreateUserInput(
                 "locked-user", "encoded", "Locked", "13800000001", "locked@example.com",
-                null, "Lock Ltd", "制造", true, null, null, null, null
+                null, "Lock Ltd", "制造", true, null, null, null
         ));
         for (int index = 0; index < 4; index++) users.registerLoginFailure("locked-user");
         org.junit.jupiter.api.Assertions.assertFalse(users.isLoginLocked("locked-user"));

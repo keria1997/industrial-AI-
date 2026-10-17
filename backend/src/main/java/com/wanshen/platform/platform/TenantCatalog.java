@@ -7,7 +7,6 @@ import java.util.Map;
 
 public final class TenantCatalog {
     public static final String ADMIN_EMPLOYEE_ID = "EMP-ADMIN";
-    public static final String ADMIN_POSITION_ID = "POS-ADMIN";
     public static final String ADMIN_ACCOUNT_ID = "ACC-ADMIN";
     public static final String ADMIN_ROLE_ID = "ROLE-ADMIN";
     public static final String ROOT_ORG_ID = "ORG-ROOT";
@@ -18,7 +17,6 @@ public final class TenantCatalog {
             perm("PERM-ORG-VIEW", "platform.org.view", "组织架构查看", "平台管理", "page", "normal"),
             perm("PERM-ORG-MANAGE", "platform.org.manage", "组织架构维护", "平台管理", "button", "sensitive"),
             perm("PERM-RESOURCE-MANAGE", "platform.resource.manage", "企业资源维护", "平台管理", "button", "sensitive"),
-            perm("PERM-POSITION-MANAGE", "platform.position.manage", "岗位维护", "平台管理", "button", "sensitive"),
             perm("PERM-EMPLOYEE-MANAGE", "platform.employee.manage", "员工维护", "平台管理", "button", "sensitive"),
             perm("PERM-ACCOUNT-MANAGE", "platform.account.manage", "账号维护", "平台管理", "button", "sensitive"),
             perm("PERM-ACCOUNT-DISABLE", "platform.account.disable", "账号停用", "平台管理", "api", "critical"),

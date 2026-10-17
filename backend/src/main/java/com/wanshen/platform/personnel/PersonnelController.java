@@ -48,12 +48,11 @@ public class PersonnelController {
             @RequestParam(required = false) Integer pageSize,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String department,
-            @RequestParam(required = false) String position,
             @RequestParam(required = false) String search
     ) {
         require(context(request), "hr.employee.read");
         validatePage(page, pageSize);
-        return store.employees(context(request).tenantId(), page, pageSize, status, department, position, search);
+        return store.employees(context(request).tenantId(), page, pageSize, status, department, search);
     }
 
     @GetMapping("/employees/{id}")
@@ -79,7 +78,7 @@ public class PersonnelController {
             String timestamp = Instant.now().toString();
             Employee employee = new Employee(
                     id, context.tenantId(), value.employeeNo(), value.name(), value.department(),
-                    value.position(), value.phone(), value.email(), value.status() == null ? "active" : value.status(),
+                    value.phone(), value.email(), value.status() == null ? "active" : value.status(),
                     value.hireDate(), null, value.metadata() == null ? Map.of() : value.metadata(),
                     value.remark() == null ? "" : value.remark(), 1, timestamp, timestamp, context.actorId()
             );
@@ -94,7 +93,7 @@ public class PersonnelController {
     public ResponseEntity<?> updateEmployee(@PathVariable String id, @RequestBody JsonNode patch, HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "hr.employee.update");
-        validatePatch(patch, "name", "department", "position", "phone", "email", "status", "hireDate", "leaveDate", "metadata", "remark");
+        validatePatch(patch, "name", "department", "phone", "email", "status", "hireDate", "leaveDate", "metadata", "remark");
         validateUuid(id);
         return command(context, "hr.employee.update", Map.of("id", id, "patch", patch), 200, () -> {
             Employee current = store.employee(context.tenantId(), id)
@@ -104,7 +103,6 @@ public class PersonnelController {
                     current.id(), current.tenantId(), current.employeeNo(),
                     text(patch, "name", current.name()),
                     text(patch, "department", current.department()),
-                    text(patch, "position", current.position()),
                     text(patch, "phone", current.phone()),
                     text(patch, "email", current.email()),
                     text(patch, "status", current.status()),
@@ -307,7 +305,7 @@ public class PersonnelController {
     public Map<String, Object> dashboard(HttpServletRequest request) {
         RequestContext context = context(request);
         require(context, "hr.employee.read");
-        Page<Employee> employees = store.employees(context.tenantId(), 1, 1000, null, null, null, null);
+        Page<Employee> employees = store.employees(context.tenantId(), 1, 1000, null, null, null);
         String today = LocalDate.now().toString();
         Page<Attendance> attendances = store.attendances(context.tenantId(), 1, 1000, null, null, null, today, null);
         Page<Skill> skills = store.skills(context.tenantId(), 1, 1000, null, null, null, null);
@@ -435,7 +433,6 @@ public class PersonnelController {
         requireText(value.employeeNo(), "employeeNo", 100);
         requireText(value.name(), "name", 200);
         requireText(value.department(), "department", 200);
-        requireText(value.position(), "position", 200);
         requireText(value.phone(), "phone", 50);
         requireText(value.email(), "email", 200);
         if (value.status() != null && !Set.of("active", "transferring", "leave", "resigned").contains(value.status())) {
