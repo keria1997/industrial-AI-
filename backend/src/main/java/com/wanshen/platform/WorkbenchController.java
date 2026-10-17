@@ -87,19 +87,29 @@ public class WorkbenchController {
     @GetMapping("/api/v1/workbench/dashboard")
     public Map<String, Object> dashboard(HttpServletRequest request, @RequestParam String role,
             @RequestParam(required = false) String search,
-            @RequestParam(required = false) String sections) {
+            @RequestParam(required = false) String date,
+            @RequestParam(required = false) String sections,
+            @RequestParam(defaultValue = "KEY") String eventScope,
+            @RequestParam(defaultValue = "5") int todoLimit,
+            @RequestParam(defaultValue = "10") int activityLimit,
+            @RequestParam(required = false) String cursor) {
         RequestContext context = contexts.from(request);
         require(context, "workbench.dashboard.read");
         if (!ROLES.contains(role)) {
             throw new ApiException(400, "WORKBENCH_400_INVALID_ROLE", "不支持的工作台角色：" + role,
                     "请从页面角色列表中选择有效岗位");
         }
+        validateLimits(todoLimit, activityLimit);
+        if (!Set.of("KEY", "ALL").contains(eventScope)) {
+            throw new ApiException(400, "WORKBENCH_400_INVALID_EVENT_SCOPE",
+                    "eventScope只支持KEY或ALL", "使用默认KEY事件范围");
+        }
+        int activityOffset = decodeActivityCursor(cursor);
+        String today = businessDate(date);
+        String month = today.substring(0, 7);
+        String horizon = LocalDate.parse(today).plusDays(7).toString();
 
         String tenantId = context.tenantId();
-        String today = LocalDate.now(ZONE).toString();
-        String month = today.substring(0, 7);
-        String horizon = LocalDate.now(ZONE).plusDays(7).toString();
-
         var receivables = financeStore.receivables(tenantId, financeFilter()).items().stream().map(this::json).toList();
         var payables = financeStore.payables(tenantId, financeFilter()).items().stream().map(this::json).toList();
         var demands = productionStore.demands(tenantId, null, null, null, Integer.MAX_VALUE, 0);
@@ -260,7 +270,10 @@ public class WorkbenchController {
         List<AbstractMessageStore.MessageRecord> messageRecords = messageStore.records(
                 tenantId, 1, 50, tenantWide ? null : context.actorId(), null, null, false, null, null, null
         ).items().stream().filter(item -> !item.isArchived() || tenantWide).toList();
-        List<Activity> activities = messageRecords.stream().limit(8).map(item -> new Activity(
+        List<AbstractMessageStore.MessageRecord> scopedMessages = messageRecords.stream()
+                .filter(item -> eventScope == null || "ALL".equals(eventScope) || isKeyEvent(item))
+                .toList();
+        List<Activity> activities = scopedMessages.stream().map(item -> new Activity(
                 item.id(), item.title(), item.body(), messageModule(item.category()), item.sourceType(),
                 item.sourceId(), item.sourceDocNo() == null || item.sourceDocNo().isBlank() ? item.msgNo() : item.sourceDocNo(),
                 item.sentAt() == null ? item.createdAt() : item.sentAt()
@@ -270,7 +283,11 @@ public class WorkbenchController {
         String keyword = (search != null && !search.isBlank()) ? search.trim().toLowerCase(Locale.ROOT) : null;
         List<String> sectionList = (sections != null && !sections.isBlank())
                 ? Arrays.asList(sections.split(","))
-                : List.of("todos", "alerts", "activities");
+                : List.of("metrics", "todos", "alerts", "activities");
+        if (sectionList.stream().anyMatch(item -> !Set.of("metrics", "todos", "alerts", "activities").contains(item))) {
+            throw new ApiException(400, "WORKBENCH_400_INVALID_SECTION",
+                    "sections包含不支持的工作台分区", "使用 metrics,todos,alerts,activities");
+        }
 
         List<Todo> filteredTodos = keyword == null ? todos : todos.stream().filter(item -> matchesSearch(keyword,
                 item.title(), item.module(), item.sourceType(), item.sourceId(), item.sourceNo(), item.dueDate()))
@@ -281,23 +298,84 @@ public class WorkbenchController {
         List<Activity> filteredActivities = keyword == null ? activities : activities.stream().filter(item ->
                 matchesSearch(keyword, item.title(), item.detail(), item.module(), item.sourceType(), item.sourceId(),
                         item.sourceNo(), item.occurredAt())).collect(Collectors.toList());
+        int safeOffset = Math.min(activityOffset, Math.max(filteredActivities.size() - 1, 0));
+        int activityTo = Math.min(safeOffset + activityLimit, filteredActivities.size());
+        List<Activity> activityPage = safeOffset >= filteredActivities.size()
+                ? List.of() : filteredActivities.subList(safeOffset, activityTo);
+        boolean activitiesHasMore = activityTo < filteredActivities.size();
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("role", role);
-        response.put("metrics", metrics);
+        if (sectionList.contains("metrics")) response.put("metrics", metrics);
         if (sectionList.contains("todos"))
-            response.put("todos", filteredTodos.size() > 20 ? filteredTodos.subList(0, 20) : filteredTodos);
+            response.put("todos", filteredTodos.size() > todoLimit
+                    ? filteredTodos.subList(0, todoLimit) : filteredTodos);
         if (sectionList.contains("alerts"))
             response.put("alerts", filteredAlerts.size() > 9 ? filteredAlerts.subList(0, 9) : filteredAlerts);
         if (sectionList.contains("activities"))
-            response.put("activities", filteredActivities);
+            response.put("activities", activityPage);
+        response.put("schemaVersion", "1.1");
+        response.put("requestedSections", sectionList);
+        response.put("businessDate", today);
+        response.put("timeZone", ZONE.getId());
+        response.put("eventScope", eventScope);
         response.put("todoTotal", filteredTodos.size());
         response.put("alertTotal", filteredAlerts.size());
+        response.put("activitiesHasMore", activitiesHasMore);
+        response.put("nextCursor", activitiesHasMore ? encodeActivityCursor(activityTo) : null);
         response.put("generatedAt", Instant.now().toString());
         response.put("dataAsOf", Instant.now().minusSeconds(30).toString());
         response.put("sourceVersion", "wb-v1");
         response.put("dataScope", Map.of("tenantId", tenantId));
         return response;
+    }
+
+    private String businessDate(String value) {
+        if (value == null || value.isBlank()) return LocalDate.now(ZONE).toString();
+        try {
+            LocalDate parsed = LocalDate.parse(value);
+            LocalDate today = LocalDate.now(ZONE);
+            if (parsed.isAfter(today) || parsed.isBefore(today.minusDays(365))) {
+                throw new ApiException(400, "WORKBENCH_400_INVALID_DATE",
+                        "业务日期只允许当天或过去365天", "调整date后重试");
+            }
+            return parsed.toString();
+        } catch (java.time.format.DateTimeParseException exception) {
+            throw new ApiException(400, "WORKBENCH_400_INVALID_DATE",
+                    "date必须是YYYY-MM-DD格式", "使用合法业务日期重试");
+        }
+    }
+
+    private void validateLimits(int todoLimit, int activityLimit) {
+        if (todoLimit < 1 || todoLimit > 50 || activityLimit < 1 || activityLimit > 50) {
+            throw new ApiException(400, "WORKBENCH_400_INVALID_LIMIT",
+                    "todoLimit和activityLimit必须是1-50", "调整分页参数后重试");
+        }
+    }
+
+    private boolean isKeyEvent(AbstractMessageStore.MessageRecord item) {
+        return "high".equalsIgnoreCase(item.priority())
+                || item.metadata() != null && Boolean.TRUE.equals(item.metadata().get("keyEvent"));
+    }
+
+    private String encodeActivityCursor(int offset) {
+        return java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(("wb-activity-v1:" + offset).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private int decodeActivityCursor(String value) {
+        if (value == null || value.isBlank()) return 0;
+        try {
+            String decoded = new String(java.util.Base64.getUrlDecoder().decode(value),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            if (!decoded.startsWith("wb-activity-v1:")) throw new IllegalArgumentException();
+            int offset = Integer.parseInt(decoded.substring("wb-activity-v1:".length()));
+            if (offset < 0) throw new IllegalArgumentException();
+            return offset;
+        } catch (RuntimeException exception) {
+            throw new ApiException(400, "WORKBENCH_400_INVALID_CURSOR",
+                    "cursor无效或已过期", "从第一页重新读取动态");
+        }
     }
 
     

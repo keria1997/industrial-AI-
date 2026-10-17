@@ -111,7 +111,7 @@ class SalesFulfillmentControllerTests {
         assertEquals("SIGNED", receipt.get("receiptStatus"));
         assertEquals("SIGNED", receipt.get("status"));
 
-        Map<String, Object> check = controller.completeCheck("so-2", request);
+        Map<String, Object> check = controller.completeCheck("so-2", Map.of("version", 2), request);
         assertEquals(true, check.get("canComplete"));
         Map<String, Object> completed = controller.completeOrder("so-2",
                 Map.of("version", 2, "comment", "closed"), request);

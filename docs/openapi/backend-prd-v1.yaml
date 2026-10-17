@@ -136,6 +136,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Tenant'
         - { name: orderId, in: path, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: { type: integer, minimum: 1 }
       responses:
         '200':
           description: Check result; canComplete may be false with missingConditions

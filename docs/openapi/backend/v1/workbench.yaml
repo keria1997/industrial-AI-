@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info:
+  title: Workbench dashboard contract
+  version: '1.1.0'
+servers:
+  - url: /api/v1
+paths:
+  /workbench/dashboard:
+    get:
+      summary: Read workbench sections
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { type: string } }
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: sections, in: query, schema: { type: string, example: metrics,todos,alerts,activities } }
+        - { name: search, in: query, schema: { type: string, maxLength: 50 } }
+        - { name: eventScope, in: query, schema: { type: string, enum: [KEY, ALL], default: KEY } }
+        - { name: todoLimit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 5 } }
+        - { name: activityLimit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Workbench projection schema 1.1 }
+        '400': { description: Invalid role, date, section, scope, limit or cursor }
+        '401': { description: Missing or expired session }
+        '403': { description: Dashboard permission denied }

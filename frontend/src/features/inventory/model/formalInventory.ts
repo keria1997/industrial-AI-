@@ -31,11 +31,6 @@ export const buildFormalInventory = (
   products: ProductDto[],
   materials: MaterialDto[],
 ): { masterData: InventoryMasterData; stockData: InventoryStockFact[] } => {
-  const singleWarehouse = (id: string, code: string) => {
-    const ids = [...new Set(facts.filter(fact => [id, code].includes(fact.productId))
-      .map(fact => fact.warehouseId))];
-    return ids.length === 1 ? ids[0] : '';
-  };
   // API metadata and facts replace browser snapshots, including empty collections.
   const masterData: InventoryMasterData = {
     schemaVersion: 1, stockSource: 'formal', warehouses: warehouses.map(mapFormalWarehouse),
@@ -51,7 +46,8 @@ export const buildFormalInventory = (
     materials: materials.map(material => ({
       id: material.id, code: material.code, serverVersion: material.version, name: material.name, specification: material.specification || '',
       materialType: material.materialType || '', unit: material.uom || '', unitPrice: Number(material.unitPrice || 0),
-      defaultWarehouseId: singleWarehouse(material.id, material.code),
+      defaultWarehouseId: material.defaultWarehouseId
+        ? resolveWarehouse(warehouses, material.defaultWarehouseId)?.code || material.defaultWarehouseId : '',
       safetyStock: Number(material.safetyStockQty || 0), procurementType: '',
       status: material.status === 'active' ? '启用' : '停用', updatedAt: material.updatedAt || '',
     })),

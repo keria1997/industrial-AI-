@@ -375,8 +375,12 @@ public class SalesAftercareService {
         });
     }
 
-    public Map<String, Object> completeCheck(RequestContext ctx, String orderId) {
+    public Map<String, Object> completeCheck(RequestContext ctx, String orderId, Map<String, Object> input) {
         JsonNode order = requireOrder(ctx, orderId);
+        if (expectedVersion(ctx, input) != order.path("version").asInt(1)) {
+            throw conflict("SALES_409_VERSION_CONFLICT", "订单已被他人修改",
+                    "刷新后使用版本 " + order.path("version").asInt(1) + " 检查");
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         List<String> missing = completionMissings(ctx, order);
         result.put("orderId", orderId);

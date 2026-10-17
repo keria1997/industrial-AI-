@@ -36,6 +36,35 @@ public class PlatformService {
         return result;
     }
 
+    public Map<String, Object> tenant(RequestContext context) {
+        require(context, "platform.org.view");
+        return store.get(context.tenantId(), "tenant", context.tenantId())
+                .orElseThrow(() -> notFound("租户"));
+    }
+
+    public Map<String, Object> saveTenant(RequestContext context, Map<String, Object> input) {
+        require(context, "platform.tenant.manage");
+        return store.transaction(() -> {
+            Map<String, Object> current = tenant(context);
+            int expected = context.expectedVersion() == null
+                    ? Integer.parseInt(String.valueOf(input.getOrDefault("version", current.get("version"))))
+                    : context.expectedVersion();
+            if (expected != ((Number) current.get("version")).intValue()) {
+                throw new ApiException(409, "PRODUCTION_409_VERSION_CONFLICT",
+                        "租户信息已被更新", "刷新租户信息后重试");
+            }
+            Map<String, Object> value = new LinkedHashMap<>(current);
+            for (String field : List.of("name", "edition", "status", "expireAt")) {
+                if (input.containsKey(field)) value.put(field, input.get(field));
+            }
+            value.put("version", ((Number) current.get("version")).intValue() + 1);
+            value.put("updatedAt", LocalDateTime.now().format(AUDIT_TIME));
+            store.save("tenant", context.tenantId(), value);
+            audit(context, "更新租户信息", target(value), value.get("updatedAt").toString());
+            return value;
+        });
+    }
+
     public Map<String, Object> actorPermissions(RequestContext context, String loginName, String activeRole) {
         require(context, "platform.actor.view");
         String tenantId = context.tenantId();
@@ -206,7 +235,16 @@ public class PlatformService {
 
     public List<Map<String, Object>> roleGrants(RequestContext context, String roleId) {
         require(context, "platform.org.view");
+        if (roleId == null || roleId.isBlank()) return allRoleGrants(context.tenantId());
         return roleGrants(context.tenantId(), roleId);
+    }
+
+    public List<Map<String, Object>> allRoleGrants(String tenantId) {
+        List<Map<String, Object>> grants = new ArrayList<>();
+        for (Map<String, Object> role : store.list(tenantId, "role")) {
+            grants.addAll(roleGrants(tenantId, role.get("id").toString()));
+        }
+        return grants;
     }
 
     public List<Map<String, Object>> saveRoleGrants(RequestContext context, String roleId, List<Map<String, Object>> input) {
@@ -267,6 +305,64 @@ public class PlatformService {
             store.save("capability", value.get("id").toString(), value);
             audit(context, Boolean.TRUE.equals(input.get("enabled")) ? "启用能力" : "禁用能力", target(value), value.get("updatedAt").toString());
             return value;
+        });
+    }
+
+    public Map<String, Object> syncAdapter(RequestContext context, String id) {
+        require(context, "platform.adapter.manage");
+        return store.transaction(() -> {
+            Map<String, Object> value = store.get(context.tenantId(), "adapter", id)
+                    .orElseThrow(() -> notFound("权限适配器"));
+            requireVersion(context, ((Number) value.get("version")).intValue());
+            value.put("status", "synced");
+            value.put("lastSyncAt", LocalDateTime.now().format(AUDIT_TIME));
+            value.put("errorMessage", "");
+            value.put("version", ((Number) value.get("version")).intValue() + 1);
+            value.put("updatedAt", LocalDateTime.now().format(AUDIT_TIME));
+            store.save("adapter", id, value);
+            audit(context, "同步权限适配器", target(value), value.get("updatedAt").toString());
+            return value;
+        });
+    }
+
+    public Map<String, Object> saveSecurityParameters(RequestContext context, Map<String, Object> input) {
+        require(context, "platform.security.manage");
+        return store.transaction(() -> {
+            String timestamp = LocalDateTime.now().format(AUDIT_TIME);
+            Map<String, String> codes = Map.of(
+                    "loginMaxFailures", "security.login.maxFailures",
+                    "sessionHours", "security.session.hours",
+                    "passwordMinLength", "security.password.minLength",
+                    "passwordRequireUppercase", "security.password.requireUppercase",
+                    "passwordRequireLowercase", "security.password.requireLowercase",
+                    "passwordRequireDigit", "security.password.requireDigit",
+                    "passwordRequireSpecial", "security.password.requireSpecial"
+            );
+            codes.forEach((bodyField, code) -> {
+                if (!input.containsKey(bodyField)) return;
+                Map<String, Object> parameter = store.list(context.tenantId(), "parameter").stream()
+                        .filter(item -> code.equals(item.get("code"))).findFirst()
+                        .orElseGet(() -> {
+                            Map<String, Object> value = new LinkedHashMap<>();
+                            value.put("id", UUID.randomUUID().toString());
+                            value.put("tenantId", context.tenantId());
+                            value.put("category", "security");
+                            value.put("code", code);
+                            value.put("name", code);
+                            value.put("valueType", bodyField.toLowerCase().contains("require") ? "boolean" : "integer");
+                            value.put("effectiveMode", "immediate");
+                            value.put("version", 0);
+                            value.put("createdAt", timestamp);
+                            return value;
+                        });
+                Map<String, Object> value = new LinkedHashMap<>(parameter);
+                value.put("value", String.valueOf(input.get(bodyField)));
+                value.put("version", ((Number) value.get("version")).intValue() + 1);
+                value.put("updatedAt", timestamp);
+                store.save("parameter", value.get("id").toString(), value);
+            });
+            audit(context, "更新安全参数", context.tenantId(), timestamp);
+            return securityParameters(context);
         });
     }
 

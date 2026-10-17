@@ -31,6 +31,16 @@ public class PlatformController {
         return service.snapshot(context(request));
     }
 
+    @GetMapping("/tenant")
+    public Map<String, Object> tenant(HttpServletRequest request) {
+        return service.tenant(context(request));
+    }
+
+    @PutMapping("/tenant")
+    public Map<String, Object> updateTenant(@RequestBody JsonNode body, HttpServletRequest request) {
+        return service.saveTenant(context(request), map(body));
+    }
+
     @GetMapping("/actor-permissions")
     public Map<String, Object> actorPermissions(
             HttpServletRequest request,
@@ -55,6 +65,9 @@ public class PlatformController {
 
     @GetMapping("/resources")
     public List<Map<String, Object>> resources(HttpServletRequest request) { return read(request, "resource", "platform.org.view"); }
+    // Platform client compatibility alias; resource is the canonical aggregate.
+    @GetMapping("/permissions")
+    public List<Map<String, Object>> permissions(HttpServletRequest request) { return resources(request); }
     @PostMapping("/resources")
     public ResponseEntity<Object> createResource(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "resource", "platform.resource.manage", "企业资源", "新增企业资源", body, 201);
@@ -135,6 +148,12 @@ public class PlatformController {
     public List<Map<String, Object>> roleGrants(@PathVariable String id, HttpServletRequest request) {
         return service.roleGrants(context(request), id);
     }
+    @GetMapping("/role-grants")
+    public List<Map<String, Object>> roleGrantList(
+            @RequestParam(required = false) String roleId, HttpServletRequest request
+    ) {
+        return service.roleGrants(context(request), roleId);
+    }
     @PutMapping("/roles/{id}/grants")
     public ResponseEntity<Object> saveRoleGrants(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
         RequestContext context = context(request);
@@ -145,6 +164,13 @@ public class PlatformController {
 
     @GetMapping("/adapters")
     public List<Map<String, Object>> adapters(HttpServletRequest request) { return read(request, "adapter", "platform.org.view"); }
+    // Platform client compatibility alias; adapter is the canonical aggregate.
+    @GetMapping("/permission-adapters")
+    public List<Map<String, Object>> permissionAdapters(HttpServletRequest request) { return adapters(request); }
+    @PostMapping("/permission-adapters/{id}/sync")
+    public Map<String, Object> syncPermissionAdapter(@PathVariable String id, HttpServletRequest request) {
+        return service.syncAdapter(context(request), id);
+    }
     @PostMapping("/adapters")
     public ResponseEntity<Object> createAdapter(@RequestBody JsonNode body, HttpServletRequest request) {
         return write(request, "adapter", "platform.adapter.manage", "权限适配器", "新增权限适配器", body, 201);
@@ -206,6 +232,10 @@ public class PlatformController {
     public Map<String, Object> securityParameters(HttpServletRequest request) {
         return service.securityParameters(context(request));
     }
+    @PutMapping("/parameters/security")
+    public Map<String, Object> updateSecurityParameters(@RequestBody JsonNode body, HttpServletRequest request) {
+        return service.saveSecurityParameters(context(request), map(body));
+    }
 
     @GetMapping("/audit-logs")
     public List<Map<String, Object>> auditLogs(
@@ -221,6 +251,27 @@ public class PlatformController {
         validatePage(page, pageSize);
         return service.auditLogs(context(request), module, result, operator, startTime, endTime, page, pageSize);
     }
+    @GetMapping("/audits")
+    public Map<String, Object> audits(
+            HttpServletRequest request,
+            @RequestParam(required = false) String module,
+            @RequestParam(required = false) String result,
+            @RequestParam(required = false) String operator,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "50") Integer pageSize
+    ) {
+        validatePage(page, pageSize);
+        List<Map<String, Object>> items = service.auditLogs(context(request), module, result, operator,
+                startTime, endTime, page, pageSize);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("items", items);
+        response.put("total", items.size() == pageSize ? page * pageSize + 1 : (page - 1) * pageSize + items.size());
+        response.put("page", page);
+        response.put("pageSize", pageSize);
+        return response;
+    }
 
     @GetMapping("/capabilities")
     public List<Map<String, Object>> capabilities(HttpServletRequest request) { return read(request, "capability", "platform.org.view"); }
@@ -230,6 +281,15 @@ public class PlatformController {
         if (!body.hasNonNull("code") || body.path("code").asText().isBlank() || !body.hasNonNull("enabled")) bad();
         Map<String, Object> value = service.saveCapability(context, map(body));
         return ResponseEntity.ok().header("X-Trace-Id", context.traceId()).body(value);
+    }
+    @PutMapping("/capabilities/{code}")
+    public Map<String, Object> updateCapability(
+            @PathVariable String code, @RequestBody JsonNode body, HttpServletRequest request
+    ) {
+        Map<String, Object> input = map(body);
+        input.put("code", code);
+        if (!input.containsKey("enabled") || code.isBlank()) bad();
+        return service.saveCapability(context(request), input);
     }
 
     @PostMapping("/session-revocation")

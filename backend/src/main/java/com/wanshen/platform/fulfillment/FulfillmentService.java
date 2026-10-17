@@ -1337,6 +1337,14 @@ public class FulfillmentService {
                     "unitPrice", "remark", "productCode", "productName"}) {
                 copyIfPresent(value, input, field);
             }
+            if ("Product".equals(aggregateType) || "Material".equals(aggregateType)) {
+                if ("Product".equals(aggregateType)
+                        && (input.path("defaultWarehouseId").isNull() || text(input, "defaultWarehouseId").isBlank())) {
+                    value.putNull("defaultWarehouseId");
+                } else {
+                    value.put("defaultWarehouseId", defaultWarehouseId(context, input, repository));
+                }
+            }
             if ("Warehouse".equals(aggregateType)) {
                 value.put("type", text(input, "type", "standard"))
                         .put("status", text(input, "status", "active"));
@@ -1378,6 +1386,12 @@ public class FulfillmentService {
             ObjectNode updated = current.deepCopy();
             for (String field : allowed) {
                 if (!input.hasNonNull(field)) continue;
+                if ("defaultWarehouseId".equals(field)
+                        && ("Product".equals(aggregateType) || "Material".equals(aggregateType))) {
+                    String warehouseId = defaultWarehouseId(context, input, repository);
+                    updated.put(field, warehouseId);
+                    continue;
+                }
                 if (field.endsWith("Qty") || field.equals("unitPrice")
                         || field.equals("unitWeight") || field.equals("unitVolume")) {
                     requireDecimal(input, field, false);
@@ -2811,6 +2825,32 @@ public class FulfillmentService {
                     "刷新数据并携带最新 If-Match 后重试");
         }
         return context.expectedVersion();
+    }
+
+    private String defaultWarehouseId(
+            RequestContext context, JsonNode input, FulfillmentStore repository
+    ) {
+        String requested = text(input, "defaultWarehouseId");
+        if (requested.isBlank()) {
+            throw badRequest("默认仓库不能为空",
+                    List.of(new ApiException.FieldError("defaultWarehouseId", "required")));
+        }
+        JsonNode warehouse = repository.get(context.tenantId(), requested, repository.warehouses)
+                .or(() -> repository.getByCode(context.tenantId(), requested, repository.warehouses))
+                .orElseThrow(() -> badRequest("默认仓库不存在",
+                        List.of(new ApiException.FieldError("defaultWarehouseId", "not_found"))));
+        if (!"active".equals(text(warehouse, "status"))) {
+            throw badRequest("默认仓库已停用",
+                    List.of(new ApiException.FieldError("defaultWarehouseId", "inactive")));
+        }
+        String warehouseId = text(warehouse, "id");
+        String warehouseCode = text(warehouse, "code");
+        if (!context.canAccessWarehouse(requested) && !context.canAccessWarehouse(warehouseId)
+                && !context.canAccessWarehouse(warehouseCode)) {
+            throw new ApiException(403, "INVENTORY_403_WAREHOUSE_FORBIDDEN",
+                    "无权使用所选默认仓库", "选择授权范围内的启用仓库");
+        }
+        return warehouseId;
     }
 
     private void validateOrder(JsonNode input, boolean patch) {

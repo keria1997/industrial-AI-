@@ -1,0 +1,1813 @@
+{
+  "generatedAt": "2026-10-17",
+  "source": "Spring controller annotations",
+  "total": 301,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/action-plans",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/action-plans/submit",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/action-plans/{id}/review",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/analyze-production",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/chat",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/conversations",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/conversations/{id}",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/dashboard",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/insights",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/insights",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/insights/{id}",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/insights/{id}/dismiss",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/map-columns",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/messages",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/messages/{id}/feedback",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/models",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/models",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/ai/models/{id}",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/models/{id}",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/ai/models/{id}",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/nl2sql",
+      "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/cost-accounting",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/cost-accounting",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/dashboard",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/invoices",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/invoices",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/payables",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/payables/{id}",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/payables/{id}/settlement",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/payments",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/payments",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/payments/{id}/confirm",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/receivables",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/receivables/{id}",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/receivables/{id}/settlement",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/vouchers",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/vouchers",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/vouchers/{id}/post",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fulfillment/customer-receipts",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fulfillment/customer-receipts",
+      "controller": "SalesFulfillmentController",
+      "classification": "retired"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fulfillment/customers",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fulfillment/quotes",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fulfillment/quotes",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fulfillment/rmas",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fulfillment/rmas",
+      "controller": "SalesFulfillmentController",
+      "classification": "retired"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/fulfillment/rmas/{id}/approve",
+      "controller": "SalesFulfillmentController",
+      "classification": "retired"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/fulfillment/rmas/{id}/close",
+      "controller": "SalesFulfillmentController",
+      "classification": "retired"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/fulfillment/rmas/{id}/inspect",
+      "controller": "SalesFulfillmentController",
+      "classification": "retired"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/availability",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/import/availability",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/internal/availability-events",
+      "controller": "FulfillmentController",
+      "classification": "internal"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/internal/completion-results",
+      "controller": "FulfillmentController",
+      "classification": "internal"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/materials",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/materials",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/materials/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/inventory/materials/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/outbounds/query/{idempotencyKey}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/outbounds/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/outbounds/{id}/post",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/products",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/products",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/products/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/inventory/products/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/releases/query/{idempotencyKey}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/reservations/query/{idempotencyKey}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/reservations/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/reservations/{id}/release",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/shipment-tasks",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/shipment-tasks/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/shipment-tasks/{id}/check-and-reserve",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/shipment-tasks/{id}/production-requests",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/stocktake-tasks",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/stocktake-tasks",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/stocktake-tasks/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/stocktake-tasks/{id}/adjust",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/stocktake-tasks/{id}/approve",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/stocktake-tasks/{id}/count",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/stocktake-tasks/{id}/start",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/transactions",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/transfer-orders",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/transfer-orders",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/transfer-orders/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/transfer-orders/{id}/approve",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/transfer-orders/{id}/cancel",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/transfer-orders/{id}/receive",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/transfer-orders/{id}/ship",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/warehouses",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/warehouses",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/inventory/warehouses/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/warehouses/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/inventory/warehouses/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/message/dashboard",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/message/messages",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages/batch",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages/mark-all-read",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/message/messages/{id}",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages/{id}/archive",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages/{id}/read",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages/{id}/star",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/message/preferences",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/message/preferences",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/message/subscriptions",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/subscriptions",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/message/subscriptions/{id}",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/message/templates",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/templates",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/message/templates/{id}",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/message/templates/{id}",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/message/templates/{id}",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/personnel/attendances",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/personnel/attendances",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/personnel/attendances/{id}",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/personnel/attendances/{id}",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/personnel/dashboard",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/personnel/employees",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/personnel/employees",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/personnel/employees/{id}",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/personnel/employees/{id}",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/personnel/employees/{id}",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/personnel/skills",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/personnel/skills",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/personnel/skills/{id}",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/personnel/skills/{id}",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/personnel/skills/{id}/renew",
+      "controller": "PersonnelController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/accounts",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/accounts",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/accounts/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/accounts/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/actor-permissions",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/adapters",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/adapters",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/adapters/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/adapters/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/approval-rules",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/approval-rules",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/approval-rules/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/approval-rules/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/audit-logs",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/audits",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/capabilities",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/capabilities",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/capabilities/{code}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/dictionaries",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/dictionaries",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/dictionaries/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/dictionaries/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/employee-accounts",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/employee-accounts",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/employee-accounts/{id}/reset-password",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/employee-accounts/{id}/status",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/employees",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/employees",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/employees/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/employees/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/org-units",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/org-units",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/org-units/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/org-units/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/outreach-settings",
+      "controller": "SalesFulfillmentController",
+      "classification": "retired"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/outreach-settings",
+      "controller": "SalesFulfillmentController",
+      "classification": "retired"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/parameters",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/parameters",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/parameters/security",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/parameters/security",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/parameters/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/parameters/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/permission-adapters",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/permission-adapters/{id}/sync",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/permissions",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/positions",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/positions",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/positions/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/positions/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/resources",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/resources",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/resources/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/resources/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/role-grants",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/roles",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/roles",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/platform/roles/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/roles/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/roles/{id}/grants",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/roles/{id}/grants",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/session-revocation",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/snapshot",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/tenant",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/tenant",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platform/tenants/self-provision",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/procurement/purchase-orders",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-orders/{id}/cancel",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-orders/{id}/receipts",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/procurement/purchase-receipts",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-receipts/{id}/inspect",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/procurement/purchase-requests",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-requests",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-requests/{id}/approve",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-requests/{id}/reject",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/procurement/purchase-returns",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-returns",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/purchase-returns/{id}/process",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/procurement/suppliers",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/procurement/suppliers",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/procurement/suppliers/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/procurement/suppliers/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/procurement/suppliers/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/bom-snapshots",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/bom-snapshots",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/completions",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/completions/{id}",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/completions/{id}/retry",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/dashboard/kpis",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/demands",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/{id}/approve",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/{id}/claim",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/demands/{id}/validate",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/inspections",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/inspections",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/inspections/{id}/result",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/inspections/{id}/rework",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/inspections/{id}/scrap",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/internal/completions/{id}/inventory-result",
+      "controller": "ProductionController",
+      "classification": "internal"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/internal/inventory-availability-events",
+      "controller": "ProductionController",
+      "classification": "internal"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/mrp-runs",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/readiness",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/rework-orders/{id}/complete",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/sales-order-intakes",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/sales-order-intakes/{salesOrderId}",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/schedule-runs",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/tasks/{id}",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/work-order-closes",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-order-closes/{id}/approve",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/work-orders",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/production/work-orders/{id}",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/close-check",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/close-submit",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/completion-allocation-preview",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/completions",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/kitting-check",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/pause",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/release",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/release-impact",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/reports",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/resume",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-orders/{id}/start",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/production/work-reports/{id}/corrections",
+      "controller": "ProductionController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/rmas",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/rmas/{id}/transition",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales-orders/{orderId}/complete",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales-orders/{orderId}/complete-check",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales-orders/{orderId}/receipts",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sales/ai-insights",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sales/sales-orders",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sales/sales-orders/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/sales/sales-orders/{id}",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/{id}/cancel",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/{id}/confirm",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sales/sales-orders/{id}/fulfillment-trace",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/{id}/review-decisions",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/{id}/review-submit",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sales-orders/{id}/shipment-requests",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sales/sla-notifications",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sales/sla-rules",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sales/sla-rules",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/sales/sla-rules/{id}",
+      "controller": "SalesFulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/captcha",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/change-password",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/complete-first-login",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/login",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/logout",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/session/me",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/password/forgot",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/password/reset",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/refresh",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/register",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/sms/login",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/session/sms/send-code",
+      "controller": "AuthController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/company-verifications",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/customers",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/supply-chain/customers",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/supply-chain/customers/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/customers/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/supply-chain/customers/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/dashboard",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/risk-events",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/supply-chain/risk-events",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/risk-events/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/supply-chain/risk-events/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/supply-chain/risk-events/{id}/resolve",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/suppliers",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/supply-chain/suppliers",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/supply-chain/suppliers/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/supply-chain/suppliers/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/supply-chain/suppliers/{id}",
+      "controller": "SupplyChainController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/workbench/dashboard",
+      "controller": "WorkbenchController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/healthz",
+      "controller": "HealthController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/readyz",
+      "controller": "HealthController",
+      "classification": "public"
+    }
+  ]
+}

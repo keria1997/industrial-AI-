@@ -1,0 +1,169 @@
+openapi: 3.0.3
+info:
+  title: Inventory master data contract
+  version: '1.0.0'
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /inventory/products:
+    get:
+      summary: List product master data
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+      responses:
+        '200': { description: Product page; historical products may have defaultWarehouseId=null }
+    post:
+      summary: Create a product with its default warehouse
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductWrite' }
+      responses:
+        '201': { description: Created product }
+        '422': { description: Missing or invalid default warehouse }
+  /inventory/products/{id}:
+    get:
+      summary: Get product detail
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Product detail with ETag version }
+    patch:
+      summary: Update product fields or default warehouse
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductPatch' }
+      responses:
+        '200': { description: Updated product }
+        '422': { description: Missing or invalid default warehouse }
+  /inventory/materials:
+    get:
+      summary: List material master data
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+      responses:
+        '200': { description: Material page; historical materials may have defaultWarehouseId=null }
+    post:
+      summary: Create a material with its default warehouse
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaterialWrite' }
+      responses:
+        '201': { description: Created material }
+  /inventory/materials/{id}:
+    get:
+      summary: Get material detail
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Material detail with ETag version }
+    patch:
+      summary: Update material fields or default warehouse
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaterialPatch' }
+      responses:
+        '200': { description: Updated material }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    IdempotencyKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+    TraceId: { name: X-Trace-Id, in: header, required: false, schema: { type: string } }
+  schemas:
+    ProductWrite:
+      type: object
+      required: [code, name, category, uom, safetyStockQty, status]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        specification: { type: string }
+        category: { type: string }
+        uom: { type: string }
+        unitPrice: { type: string }
+        defaultWarehouseId:
+          type: string
+          nullable: true
+          description: >
+            Product creation may omit this field to record an unassigned product.
+            When present it must be an enabled warehouse server ID in authorized scope.
+            Material creation currently requires it.
+        safetyStockQty: { type: string }
+        maxStockQty: { type: string }
+        productType: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        remark: { type: string }
+    ProductPatch:
+      type: object
+      properties:
+        name: { type: string }
+        specification: { type: string }
+        category: { type: string }
+        uom: { type: string }
+        unitPrice: { type: string }
+        defaultWarehouseId: { type: string }
+        safetyStockQty: { type: string }
+        maxStockQty: { type: string }
+        productType: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        remark: { type: string }
+    MaterialWrite:
+      type: object
+      required: [code, name, materialType, uom, defaultWarehouseId, safetyStockQty, status]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        specification: { type: string }
+        materialType: { type: string }
+        uom: { type: string }
+        unitPrice: { type: string }
+        defaultWarehouseId: { type: string }
+        safetyStockQty: { type: string }
+        maxStockQty: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        remark: { type: string }
+    MaterialPatch:
+      type: object
+      properties:
+        name: { type: string }
+        specification: { type: string }
+        materialType: { type: string }
+        uom: { type: string }
+        unitPrice: { type: string }
+        defaultWarehouseId: { type: string }
+        safetyStockQty: { type: string }
+        maxStockQty: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        remark: { type: string }

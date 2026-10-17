@@ -1,0 +1,79 @@
+openapi: 3.0.3
+info:
+  title: Platform management compatibility contract
+  version: '1.0.0'
+  description: Aligns current platform client calls with PlatformController aggregates.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /platform/tenant:
+    get:
+      summary: Get tenant settings
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses: { '200': { description: Tenant settings } }
+    put:
+      summary: Update tenant settings
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses: { '200': { description: Updated tenant } }
+  /platform/permissions:
+    get:
+      summary: List permission resources
+      description: Compatibility projection over canonical platform resources.
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses: { '200': { description: Permission resource list } }
+  /platform/role-grants:
+    get:
+      summary: List role grants
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: roleId, in: query, schema: { type: string } }
+      responses: { '200': { description: Grants for one role or all roles } }
+  /platform/permission-adapters:
+    get:
+      summary: List permission adapters
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses: { '200': { description: Adapter list } }
+  /platform/permission-adapters/{id}/sync:
+    post:
+      summary: Synchronize one permission adapter
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses: { '200': { description: Synced adapter } }
+  /platform/audits:
+    get:
+      summary: Query audit logs
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 50 } }
+      responses: { '200': { description: Paged audit result } }
+  /platform/capabilities/{code}:
+    put:
+      summary: Update capability status
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - { name: code, in: path, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses: { '200': { description: Updated capability } }
+  /platform/parameters/security:
+    put:
+      summary: Update security parameters
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses: { '200': { description: Effective security parameters } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    IdempotencyKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }

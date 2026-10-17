@@ -414,7 +414,7 @@ public class FulfillmentController {
         return command(service.updateMaster(contexts.from(request), id, body, service.repository().products,
                 "inventory.product.update", "inventory.product.update", "Product",
                 Set.of("name", "specification", "category", "uom", "unitPrice", "safetyStockQty", "maxStockQty",
-                        "productType", "status", "remark")));
+                        "productType", "status", "remark", "defaultWarehouseId")));
     }
 
     @GetMapping("/api/v1/inventory/materials")
@@ -443,7 +443,7 @@ public class FulfillmentController {
         return command(service.updateMaster(contexts.from(request), id, body, service.repository().materials,
                 "inventory.material.update", "inventory.material.update", "Material",
                 Set.of("name", "specification", "category", "uom", "unitPrice", "safetyStockQty", "maxStockQty",
-                        "materialType", "status", "remark")));
+                        "materialType", "status", "remark", "defaultWarehouseId")));
     }
 
     @GetMapping("/api/v1/inventory/transfer-orders")

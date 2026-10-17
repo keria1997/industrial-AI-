@@ -220,6 +220,7 @@ export type ProductDto = {
 export type MaterialDto = {
   id: string; code: string; name: string; specification: string; category: string; uom: string;
   unitPrice: string; safetyStockQty: string; maxStockQty: string; materialType: string; status: string; remark: string;
+  defaultWarehouseId?: string | null;
   version: number; createdAt: string; updatedAt: string;
 };
 
@@ -269,8 +270,8 @@ export const inventoryApi = {
 
   // Material
   listMaterials: (context: ApiContext) => apiRequest<{ items: MaterialDto[]; total: number }>('/api/v1/inventory/materials', context),
-  createMaterial: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; materialType?: string; remark?: string }) => apiRequest<{ material: MaterialDto }>('/api/v1/inventory/materials', context, { method: 'POST', idempotencyKey: key(`material-create:${input.code}`), body: JSON.stringify(input) }),
-  updateMaterial: (context: ApiContext, id: string, version: number, input: Partial<Pick<MaterialDto, 'name' | 'specification' | 'category' | 'uom' | 'unitPrice' | 'safetyStockQty' | 'maxStockQty' | 'materialType' | 'status' | 'remark'>>) =>
+  createMaterial: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; materialType?: string; remark?: string; defaultWarehouseId?: string }) => apiRequest<{ material: MaterialDto }>('/api/v1/inventory/materials', context, { method: 'POST', idempotencyKey: key(`material-create:${input.code}`), body: JSON.stringify(input) }),
+  updateMaterial: (context: ApiContext, id: string, version: number, input: Partial<Pick<MaterialDto, 'name' | 'specification' | 'category' | 'uom' | 'unitPrice' | 'safetyStockQty' | 'maxStockQty' | 'materialType' | 'status' | 'remark' | 'defaultWarehouseId'>>) =>
     apiRequest<{ material: MaterialDto }>(`/api/v1/inventory/materials/${encodeURIComponent(id)}`, context,
       { method: 'PATCH', expectedVersion: version, idempotencyKey: key(`material-update:${id}`), body: JSON.stringify(input) }),
 

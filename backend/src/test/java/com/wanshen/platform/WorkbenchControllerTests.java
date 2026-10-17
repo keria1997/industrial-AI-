@@ -68,7 +68,7 @@ class WorkbenchControllerTests {
                 new SupplyChainStore(), new AiStore(), new MessageStore(), contexts, mapper
         );
 
-        Map<String, Object> response = controller.dashboard(request, "老板", null, null);
+        Map<String, Object> response = controller.dashboard(request, "老板", null, null, null, "ALL", 5, 10, null);
         assertEquals("老板", response.get("role"));
         assertEquals(1, response.get("todoTotal"));
         assertEquals(1, response.get("alertTotal"));
@@ -80,15 +80,15 @@ class WorkbenchControllerTests {
         assertEquals("1", metric(metrics, "lowStockItems").value());
         assertEquals("50.00", metric(metrics, "attendanceRate").value());
 
-        Map<String, Object> adminResponse = controller.dashboard(request, "管理员", null, null);
+        Map<String, Object> adminResponse = controller.dashboard(request, "管理员", null, null, null, "ALL", 5, 10, null);
         assertEquals("管理员", adminResponse.get("role"));
         assertEquals(response.get("metrics"), adminResponse.get("metrics"));
         assertEquals(response.get("todoTotal"), adminResponse.get("todoTotal"));
         assertEquals(response.get("alertTotal"), adminResponse.get("alertTotal"));
 
-        Map<String, Object> unmatchedSearch = controller.dashboard(request, "老板", "NO-MATCH", null);
+        Map<String, Object> unmatchedSearch = controller.dashboard(request, "老板", "NO-MATCH", null, null, "ALL", 5, 10, null);
         assertEquals(0, unmatchedSearch.get("todoTotal"));
-        Map<String, Object> matchedSearch = controller.dashboard(request, "老板", "AR-2", null);
+        Map<String, Object> matchedSearch = controller.dashboard(request, "老板", "AR-2", null, null, "ALL", 5, 10, null);
         assertEquals(1, matchedSearch.get("todoTotal"));
     }
 
@@ -104,7 +104,7 @@ class WorkbenchControllerTests {
                 new SupplyChainStore(), new AiStore(), new MessageStore(), contexts, mapper
         );
 
-        assertThrows(com.wanshen.platform.web.ApiException.class, () -> controller.dashboard(request, "访客", null, null));
+        assertThrows(com.wanshen.platform.web.ApiException.class, () -> controller.dashboard(request, "访客", null, null, null, "ALL", 5, 10, null));
     }
 
     private WorkbenchController.Metric metric(List<WorkbenchController.Metric> values, String key) {

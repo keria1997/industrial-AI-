@@ -465,19 +465,39 @@ class FulfillmentControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deleted").value(true));
 
+        MvcResult productWarehouseResult = mockMvc.perform(post("/api/v1/inventory/warehouses")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .header("X-Idempotency-Key", "product-warehouse-create")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"WH-PRODUCT\",\"name\":\"产品默认仓\",\"type\":\"standard\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String productWarehouseId = objectMapper.readTree(productWarehouseResult.getResponse().getContentAsString())
+                .path("warehouse").path("id").asText();
         MvcResult productResult = mockMvc.perform(post("/api/v1/inventory/products")
                         .header("Authorization", "Bearer " + token)
                         .header("X-Tenant-Id", "TENANT-SHWS")
                         .header("X-Idempotency-Key", "product-create")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"code\":\"FG-MASTER\",\"name\":\"主数据产品\",\"uom\":\"PCS\",\"unitPrice\":\"1200\"}"))
+                        .content("{\"code\":\"FG-MASTER\",\"name\":\"主数据产品\",\"uom\":\"PCS\",\"unitPrice\":\"1200\",\"defaultWarehouseId\":\"" + productWarehouseId + "\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.product.uom").value("PCS"))
+                .andExpect(jsonPath("$.product.defaultWarehouseId").value(productWarehouseId))
                 .andExpect(jsonPath("$.product.unitPrice").value("1200"))
                 .andExpect(header().string("ETag", "\"1\""))
                 .andReturn();
         String productId = objectMapper.readTree(productResult.getResponse().getContentAsString())
                 .path("product").path("id").asText();
+
+        mockMvc.perform(post("/api/v1/inventory/products")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .header("X-Idempotency-Key", "product-create-unassigned")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"FG-UNASSIGNED\",\"name\":\"未关联产品\",\"uom\":\"PCS\",\"unitPrice\":\"100\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.product.defaultWarehouseId").value((Object) null));
 
         mockMvc.perform(patch("/api/v1/inventory/products/" + productId)
                         .header("Authorization", "Bearer " + token)

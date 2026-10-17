@@ -271,8 +271,12 @@ public class SalesFulfillmentController {
     }
 
     @PostMapping("/api/v1/sales-orders/{orderId}/complete-check")
-    public Map<String, Object> completeCheck(@PathVariable String orderId, HttpServletRequest request) {
-        return aftercare.completeCheck(auth(request), orderId);
+    public Map<String, Object> completeCheck(
+            @PathVariable String orderId,
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        return aftercare.completeCheck(auth(request), orderId, body == null ? Map.of() : body);
     }
 
     @PostMapping("/api/v1/sales-orders/{orderId}/complete")
