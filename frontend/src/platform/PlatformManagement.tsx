@@ -609,10 +609,12 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     const identity = identityRef.current;
     const snapshot = await platformApi.getSnapshot({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken });
     if (identity !== identityRef.current) return;
-    setState(migratePlatformState(snapshot));
+    const normalized = migratePlatformState(snapshot);
+    setState(normalized);
     setRoleVersions(Object.fromEntries(snapshot.roles.map(role => [role.id, role.version])));
     setPermissionLoaded(true); setPermissionError('');
     window.dispatchEvent(new CustomEvent(PLATFORM_STATE_CHANGED_EVENT, { detail: { tenantId: tenantIdentity.id } }));
+    return normalized;
   };
   const commit = async (updater: (previous: PlatformState) => PlatformState, message: string, action: string, target: string, type = 'success') => {
     if (mutationRunning.current) { toast('正在保存，请勿重复提交', 'error'); return false; }
@@ -622,12 +624,21 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     let submitted = false;
     try {
       const next = updater(state);
-      const accountRoleChanged = next.accounts.some(account => account.loginName === currentUser.account
-        && account.roleId !== state.accounts.find(previous => previous.id === account.id)?.roleId);
+      const changedAccountRoles = next.accounts.filter(account =>
+        account.roleId !== state.accounts.find(previous => previous.id === account.id)?.roleId);
+      const accountRoleChanged = changedAccountRoles.some(account => account.loginName === currentUser.account);
       const notice = await persistPlatformChange({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, state, next);
       submitted = true;
       if (identityRef.current !== submittedIdentity) return true;
-      await reloadSnapshot();
+      const refreshed = await reloadSnapshot();
+      if (identityRef.current !== submittedIdentity) return true;
+      if (changedAccountRoles.some(expected => {
+        const matching = refreshed?.accounts.filter(account => account.loginName === expected.loginName && account.employeeId === expected.employeeId) || [];
+        return matching.length !== 1 || matching[0].roleIssue || matching[0].roleId !== expected.roleId;
+      })) {
+        toast('操作已提交，但角色绑定未确认，请刷新核对并维护已有账号，勿重复创建', 'warning');
+        return true;
+      }
       window.dispatchEvent(new CustomEvent('industrial-ai-permissions-changed', {
         detail: { tenantId: tenantIdentity.id, accessToken: currentUser.accessToken, accountRoleChanged },
       }));
@@ -1297,7 +1308,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
         <EmployeeAccountManagement key={`${tenantIdentity.id}:${currentUser?.accessToken}`}
           apiContext={{ tenantId: tenantIdentity.id, accessToken: currentUser?.accessToken ?? '' }}
           orgUnits={state.orgUnits} roles={state.roles} employees={state.employees} platformAccounts={state.accounts}
-          onChanged={reloadSnapshot}
+          onChanged={() => reloadSnapshot().then(() => {})}
           onEditRole={account => {
             const employee = employeeById[account.employeeId];
             if (employee) openAccountFor(employee, account);

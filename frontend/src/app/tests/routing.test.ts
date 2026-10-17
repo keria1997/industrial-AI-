@@ -88,8 +88,7 @@ describe('application module registry', () => {
     expect(canRoleAccessModule('销售', '销售管理')).toBe(true);
     expect(canRoleAccessModule('销售', '平台管理')).toBe(false);
     expect(getModulesForRole('超级管理员')).toHaveLength(moduleRegistry.length);
-    expect(getModulesForRole('未知角色').map((item) => item.label)).toEqual(
-      getModulesForRole('老板').map((item) => item.label),
-    );
+    expect(getModulesForRole('未知角色')).toEqual([]);
+    expect(getModulesForRole(null)).toEqual([]);
   });
 });

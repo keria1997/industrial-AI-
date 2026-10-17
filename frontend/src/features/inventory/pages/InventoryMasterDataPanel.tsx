@@ -484,7 +484,7 @@ export const InventoryMasterDataPanel = ({
         }
       }
     }
-    onToast('未删除：当前入口尚未接入主数据删除接口', 'danger');
+    onToast('该功能即将上线', 'info');
   };
 
   const openEditor = (entity: MasterEntity, mode: EditorMode, record?: InventoryWarehouse | InventoryProduct | InventoryMaterial) => setEditor({ entity, mode, record: (record ? { ...record } : newRecord(entity)) as Record<string, string | number> });

@@ -47,7 +47,7 @@ export function workbenchProjection(response: any, query: WorkbenchQuery): Workb
     metrics.push({
       key, title, value: available ? unavailable(fact.value) : '-', unit: available ? fact.currency : '',
       definition: fact.availability === 'UNAVAILABLE'
-        ? `数据待接入（${fact.unavailableReason || '来源事实缺失'}）`
+        ? '数据待接入'
         : available ? `${fact.taxBasis}；来源事实金额，不跨币种合计` : '金额币种或税口径未提供，待服务端补齐',
     });
   });

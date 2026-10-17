@@ -10728,8 +10728,8 @@ export default function App() {
                     <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-black shadow-sm">{todayLabel}</span>
                     <span aria-label="工作台账号角色" className="min-w-0 max-w-full break-words px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">账号角色：{accountRole}</span>
                     <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[12px] font-black">工作台视图：{roleMeta.title}</span>
-                  <span role="status" aria-label="工作台数据状态" className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : workbenchOutdated ? 'bg-amber-50 text-amber-700 border-amber-200' : workbenchLoading ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${workbenchError ? 'bg-rose-500' : workbenchOutdated ? 'bg-amber-500' : workbenchLoading ? 'bg-slate-400 animate-pulse' : 'bg-emerald-500'}`}></span>
+                  <span role="status" aria-label="工作台数据状态" className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${!activeRole ? 'bg-slate-50 text-slate-600 border-slate-200' : workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : workbenchOutdated ? 'bg-amber-50 text-amber-700 border-amber-200' : workbenchLoading ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${!activeRole ? 'bg-slate-400' : workbenchError ? 'bg-rose-500' : workbenchOutdated ? 'bg-amber-500' : workbenchLoading ? 'bg-slate-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                     {!activeRole ? '未匹配工作台视图' : workbenchError ? '数据读取异常' : workbench.expired ? '数据已失效' : workbench.stale || workbench.businessStale ? '数据已过期' : workbenchLoading ? '实时取数中' : '数据已更新'}
                   </span>
                   <button type="button" aria-label="刷新工作台" title="刷新工作台" disabled={!activeRole || workbenchLoading} onClick={workbench.refresh} className="rounded-md border p-2 text-blue-600 disabled:opacity-50"><RefreshCw size={15} /></button>
@@ -10759,8 +10759,8 @@ export default function App() {
                 ) : workbenchMetrics.length === 0 ? (
                   <div className="md:col-span-2 xl:col-span-4 bg-white border border-slate-100 rounded-xl p-8 text-center">
                     <RefreshCcw size={22} className={`mx-auto text-blue-500 ${workbenchLoading ? 'animate-spin' : ''}`} />
-                    <div className="mt-3 text-[15px] font-black text-slate-900">{workbenchLoading ? '正在读取角色指标' : '暂无角色指标'}</div>
-                    <div className="mt-1 text-[12px] font-bold text-slate-500">{workbenchLoading ? '正在聚合业务单据与人员事实' : '当前角色暂无可统计的业务事实'}</div>
+                    <div className="mt-3 text-[15px] font-black text-slate-900">{!activeRole ? '指标暂不可用' : workbenchLoading ? '正在读取角色指标' : '暂无角色指标'}</div>
+                    <div className="mt-1 text-[12px] font-bold text-slate-500">{!activeRole ? '当前账号角色尚未匹配工作台展示分组' : workbenchLoading ? '正在聚合业务单据与人员事实' : '当前角色暂无可统计的业务事实'}</div>
                   </div>
                 ) : workbenchMetrics.map(item => {
                   const Icon = item.icon;
@@ -10814,7 +10814,7 @@ export default function App() {
                         </div>
                       );
                     })}
-                    {(workbenchDashboard?.alerts ?? []).length === 0 && <p className="col-span-full py-8 text-center text-sm text-slate-500">{workbench.businessError ? '预警读取失败，请重试' : !workbench.businessReady ? '正在读取业务预警' : '暂无业务预警'}</p>}
+                    {(workbenchDashboard?.alerts ?? []).length === 0 && <p className="col-span-full py-8 text-center text-sm text-slate-500">{!activeRole ? '尚未匹配工作台展示分组，预警暂不可用' : workbench.businessError ? '预警读取失败，请重试' : !workbench.businessReady ? '正在读取业务预警' : '暂无业务预警'}</p>}
                   </div>
                 </div>
 
@@ -10900,7 +10900,7 @@ export default function App() {
                         );
                       })}
                       {(workbenchDashboard?.activities ?? []).length === 0 && (
-                        <div className="py-20 text-center text-[13px] font-bold text-slate-400">{workbench.businessError ? '动态读取失败，请重试' : !workbench.businessReady ? '正在读取业务动态' : '暂无业务动态'}</div>
+                        <div className="py-20 text-center text-[13px] font-bold text-slate-400">{!activeRole ? '尚未匹配工作台展示分组，动态暂不可用' : workbench.businessError ? '动态读取失败，请重试' : !workbench.businessReady ? '正在读取业务动态' : '暂无业务动态'}</div>
                       )}
                     </div>
                     {workbench.hasMore && <button disabled={workbenchLoading} onClick={workbench.loadMore} className="mt-4 text-sm text-blue-600">加载更多动态</button>}

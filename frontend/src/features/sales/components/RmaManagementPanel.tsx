@@ -62,11 +62,11 @@ export function RmaManagementPanel({ apiContext, permissions, onOpenOrder }: {
     <section aria-label="退货记录" className="space-y-4">
       <div className="flex justify-end gap-3">
         <button type="button" title="刷新退货记录" disabled={records.loading} onClick={() => page === 1 ? records.reload() : setPage(1)} className="rounded-md border bg-white p-2 disabled:opacity-40"><RefreshCw size={16} /><span className="sr-only">刷新退货记录</span></button>
-        <button disabled title="原出库行、回入库与红字AR闭环尚未通过验收" className="flex items-center gap-1.5 h-9 px-4 rounded-lg bg-slate-100 text-slate-500 text-[13px] font-medium cursor-not-allowed">
+        <button disabled title="该功能即将上线" className="flex items-center gap-1.5 h-9 px-4 rounded-lg bg-slate-100 text-slate-500 text-[13px] font-medium cursor-not-allowed">
           <Plus size={15} />创建 RMA
         </button>
       </div>
-      <div role="status" className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">可查询退货记录。退货办理暂不可用，原出库行、检验、回入库和红字 AR 的业务校验待完善。金额缺少币种时显示“-”。</div>
+      <div role="status" className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">退货管理功能即将上线，敬请期待。</div>
       {records.loading || records.error
         ? <ApiDataState loading={records.loading} error={records.error} onRetry={records.reload} />
         : <><div className="[&_table]:min-w-[1320px] [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap"><DataTable columns={cols} data={records.data?.items ?? []} emptyText="暂无退货记录" /></div>

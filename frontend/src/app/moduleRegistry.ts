@@ -100,8 +100,8 @@ export const findModuleByLabel = (label: string | null | undefined) =>
   moduleRegistry.find((item) => item.label === label);
 
 export const getModulesForRole = (role: string | null | undefined) => {
-  const normalizedRole = isRoleName(role) ? role : defaultRole;
-  const allowedIds = new Set(roleModuleAccess[normalizedRole]);
+  if (!isRoleName(role)) return [];
+  const allowedIds = new Set(roleModuleAccess[role]);
   return moduleRegistry.filter((item) => allowedIds.has(item.id));
 };
 
