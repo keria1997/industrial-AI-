@@ -20,6 +20,8 @@ export type InventoryWarehouse = {
 
 export type InventoryProduct = {
   id: string;
+  code?: string;
+  serverVersion?: number;
   name: string;
   specification: string;
   category: string;
@@ -34,6 +36,8 @@ export type InventoryProduct = {
 
 export type InventoryMaterial = {
   id: string;
+  code?: string;
+  serverVersion?: number;
   name: string;
   specification: string;
   materialType: string;
@@ -112,47 +116,6 @@ export const createInventoryMasterDataSeed = (): InventoryMasterData => ({
   materials: [],
 });
 
-export const inventoryMasterDataStorageKey = (tenantId?: string) =>
-  `industrial-ai-inventory-master-data:v1:${tenantId || 'default'}`;
-
-export const loadInventoryMasterData = (
-  storage: Pick<Storage, 'getItem'>,
-  tenantId?: string,
-): InventoryMasterData => {
-  try {
-    const raw = storage.getItem(inventoryMasterDataStorageKey(tenantId));
-    if (!raw) return createInventoryMasterDataSeed();
-    const parsed = JSON.parse(raw) as Partial<InventoryMasterData>;
-    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.warehouses)
-      || !Array.isArray(parsed.products) || !Array.isArray(parsed.materials)) {
-      return createInventoryMasterDataSeed();
-    }
-    return {
-      ...parsed,
-      products: parsed.products.map((item) => ({
-        ...item,
-        unitPrice: item.unitPrice == null
-          ? 0
-          : Number(item.unitPrice),
-      })),
-      materials: parsed.materials.map((item) => ({
-        ...item,
-        unitPrice: item.unitPrice == null
-          ? 0
-          : Number(item.unitPrice),
-      })),
-    } as InventoryMasterData;
-  } catch {
-    return createInventoryMasterDataSeed();
-  }
-};
-
-export const saveInventoryMasterData = (
-  storage: Pick<Storage, 'setItem'>,
-  tenantId: string | undefined,
-  data: InventoryMasterData,
-) => storage.setItem(inventoryMasterDataStorageKey(tenantId), JSON.stringify(data));
-
 export const normalizeInventoryCode = (value: string) => value.trim().toUpperCase();
 
 export const isInventoryCodeAvailable = (
@@ -164,8 +127,8 @@ export const isInventoryCodeAvailable = (
   if (normalized === normalizeInventoryCode(currentCode || '')) return true;
   return ![
     ...data.warehouses.map((item) => item.id),
-    ...data.products.map((item) => item.id),
-    ...data.materials.map((item) => item.id),
+    ...data.products.map((item) => item.code || item.id),
+    ...data.materials.map((item) => item.code || item.id),
   ].some((item) => normalizeInventoryCode(item) === normalized);
 };
 

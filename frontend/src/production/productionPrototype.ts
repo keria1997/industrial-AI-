@@ -151,8 +151,6 @@ export const initialPrototypeState: PrototypeState = {
   tasks: taskSeed,
 };
 
-export const productionStorageKey = (tenantId = 'TENANT-SHWS') => `industrial-ai-production-v2:${tenantId}`;
-
 export const createTenantProductionState = (factory: FactoryId): PrototypeState => ({
   demands: initialPrototypeState.demands.filter((item) => item.factory === factory).map((item) => ({ ...item })),
   orders: initialPrototypeState.orders.filter((item) => item.factory === factory).map((item) => ({ ...item })),
@@ -162,31 +160,9 @@ export const createTenantProductionState = (factory: FactoryId): PrototypeState 
   tasks: initialPrototypeState.tasks.filter((item) => item.factory === factory).map((item) => ({ ...item })),
 });
 
-export const loadTenantProductionState = (tenantId: string, factory: FactoryId): PrototypeState => {
-  if (typeof window === 'undefined') return createTenantProductionState(factory);
-  try {
-    const saved = window.sessionStorage.getItem(productionStorageKey(tenantId));
-    if (!saved) return createTenantProductionState(factory);
-    const value = JSON.parse(saved) as Partial<PrototypeState>;
-    const scopedState = {
-      demands: (value.demands || []).filter((item) => item.factory === factory),
-      orders: (value.orders || []).filter((item) => item.factory === factory),
-      quality: (value.quality || []).filter((item) => item.factory === factory),
-      reports: (value.reports || []).filter((item) => item.factory === factory),
-      completions: (value.completions || []).filter((item) => item.factory === factory),
-      tasks: (value.tasks || []).filter((item) => item.factory === factory),
-    };
-    const scopedRecordCount = Object.values(scopedState).reduce((total, items) => total + items.length, 0);
-    return scopedRecordCount === 0 ? createTenantProductionState(factory) : scopedState;
-  } catch {
-    return createTenantProductionState(factory);
-  }
-};
-
-export const saveTenantProductionState = (tenantId: string, state: PrototypeState) => {
-  if (typeof window === 'undefined') return;
-  window.sessionStorage.setItem(productionStorageKey(tenantId), JSON.stringify(state));
-};
+// Retained layout starts empty; business records must come from formal APIs.
+export const loadTenantProductionState = (_tenantId: string, factory: FactoryId): PrototypeState =>
+  createTenantProductionState(factory);
 
 export const makeId = (prefix: string) => `${prefix}-${Date.now().toString().slice(-8)}`;
 

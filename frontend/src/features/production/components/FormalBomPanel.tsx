@@ -3,15 +3,8 @@ import { Check, Plus, RefreshCw, Trash2, Upload, X } from "lucide-react";
 import type { ApiContext } from "../../../api/client";
 import { productionOperationsApi, type BomSnapshot } from "../../../api/production/operations";
 
-const initialLines: BomSnapshot["lines"] = [
-  { materialId: "RM201", materialName: "AI算力芯片", warehouseId: "WH-RM-01", qtyPer: "2.1", uom: "PCS" },
-  { materialId: "RM202", materialName: "12层空PCB板", warehouseId: "WH-RM-01", qtyPer: "1.02", uom: "PCS" },
-  { materialId: "RM305", materialName: "铝合金防护外壳", warehouseId: "WH-RM-01", qtyPer: "1", uom: "PCS" },
-];
-const initialOperations: BomSnapshot["routingSnapshot"]["operations"] = [
-  { sequence: 10, code: "SMT", name: "SMT 贴片加工", workCenterResourceId: "WC-SH-ASSY-01", standardMinutes: "30" },
-  { sequence: 20, code: "ASSEMBLY", name: "总装组装", workCenterResourceId: "WC-SH-ASSY-01", standardMinutes: "72" },
-];
+const initialLines: BomSnapshot["lines"] = [];
+const initialOperations: BomSnapshot["routingSnapshot"]["operations"] = [];
 const fieldClass = "w-full min-w-0 rounded border border-slate-200 px-2 py-1.5 text-xs text-slate-800";
 
 export function FormalBomPanel({ context }: { context: ApiContext }) {
@@ -21,8 +14,8 @@ export function FormalBomPanel({ context }: { context: ApiContext }) {
   const [message, setMessage] = useState("");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [productId, setProductId] = useState("FG001");
-  const [productName, setProductName] = useState("工业控制器顶配版");
+  const [productId, setProductId] = useState("");
+  const [productName, setProductName] = useState("");
   const [lines, setLines] = useState(initialLines);
   const [operations, setOperations] = useState(initialOperations);
   const key = useRef("");
@@ -36,19 +29,21 @@ export function FormalBomPanel({ context }: { context: ApiContext }) {
       const result = await productionOperationsApi.listBoms(context);
       if (scope.current === requestedScope) { setBoms(result); setError(""); setLoaded(true); }
     } catch (cause) {
-      if (scope.current === requestedScope) setError(cause instanceof Error ? cause.message : "生效版本加载失败");
+      if (scope.current === requestedScope) { setBoms([]); setError(cause instanceof Error ? cause.message : "生效版本加载失败"); }
     }
   };
   useEffect(() => { setBoms([]); setOpen(false); setMessage(""); void refresh(); }, [currentScope]);
   const edit = (bom?: BomSnapshot) => {
-    setProductId(bom?.productId || "FG001");
-    setProductName(bom?.productName || "工业控制器顶配版");
+    setProductId(bom?.productId || "");
+    setProductName(bom?.productName || "");
     setLines(bom?.lines.map(line => ({ ...line })) || initialLines.map(line => ({ ...line })));
     setOperations(bom?.routingSnapshot?.operations.map(operation => ({ ...operation })) || initialOperations.map(operation => ({ ...operation })));
     key.current = crypto.randomUUID();
     setError(""); setMessage(""); setOpen(true);
   };
   const publish = async () => {
+    if (busy) return;
+    if (!lines.length || !operations.length) { setError("请填写物料和工序后再发布"); return; }
     setBusy(true); setError("");
     const requestedScope = currentScope;
     const current = boms.find(bom => bom.productId === productId.trim());
@@ -101,7 +96,7 @@ export function FormalBomPanel({ context }: { context: ApiContext }) {
               <label className="text-xs text-slate-600">产品名称<input aria-label="产品名称" required className={fieldClass} value={productName} onChange={event => { setProductName(event.target.value); key.current = crypto.randomUUID(); }}/></label>
             </div>
             <div className="flex items-center justify-between"><h4 className="text-xs font-bold">单位产品物料用量</h4>
-              <button type="button" title="添加物料" onClick={() => { setLines([...lines, { materialId: "", qtyPer: "1", warehouseId: "WH-RM-01", uom: "PCS" }]); key.current = crypto.randomUUID(); }}><Plus size={16}/></button></div>
+              <button type="button" title="添加物料" onClick={() => { setLines([...lines, { materialId: "", qtyPer: "1", warehouseId: "", uom: "" }]); key.current = crypto.randomUUID(); }}><Plus size={16}/></button></div>
             {lines.map((line, index) => <div key={index} className="grid grid-cols-[1fr_1fr_1fr_90px_70px_24px] items-end gap-2">
               {(["materialId", "materialName", "warehouseId", "qtyPer", "uom"] as const).map((field, fieldIndex) => <label key={field} className="text-[11px] text-slate-500">
                 {["物料编码", "物料名称", "仓库", "用量", "单位"][fieldIndex]}
@@ -111,7 +106,7 @@ export function FormalBomPanel({ context }: { context: ApiContext }) {
               <button type="button" title="删除物料" disabled={lines.length === 1} onClick={() => { setLines(lines.filter((_, row) => row !== index)); key.current = crypto.randomUUID(); }} className="py-2 text-rose-600"><Trash2 size={14}/></button>
             </div>)}
             <div className="flex items-center justify-between"><h4 className="text-xs font-bold">关联工艺工序</h4>
-              <button type="button" title="添加工序" onClick={() => { setOperations([...operations, { sequence: (operations[operations.length - 1]?.sequence || 0) + 10, code: "", name: "", workCenterResourceId: "WC-SH-ASSY-01", standardMinutes: "1" }]); key.current = crypto.randomUUID(); }}><Plus size={16}/></button></div>
+              <button type="button" title="添加工序" onClick={() => { setOperations([...operations, { sequence: (operations[operations.length - 1]?.sequence || 0) + 10, code: "", name: "", workCenterResourceId: "", standardMinutes: "1" }]); key.current = crypto.randomUUID(); }}><Plus size={16}/></button></div>
             {operations.map((operation, index) => <div key={index} className="grid grid-cols-[60px_1fr_1fr_1fr_90px_24px] items-end gap-2">
               {(["sequence", "code", "name", "workCenterResourceId", "standardMinutes"] as const).map((field, fieldIndex) => <label key={field} className="text-[11px] text-slate-500">
                 {["顺序", "工序编码", "工序名称", "工作中心", "分钟/件"][fieldIndex]}

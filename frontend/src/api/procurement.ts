@@ -48,9 +48,9 @@ export const procurementApi = {
       method: 'POST', body: JSON.stringify(input), idempotencyKey: operationKey(`purchase-request:${input.mrpTaskId}:${input.demandId}:${input.materialId}`),
     }),
   listRequests: (context: ApiContext) => apiRequest<{ items: PurchaseRequestDto[]; total: number }>('/api/v1/procurement/purchase-requests', context),
-  approveRequest: (context: ApiContext, request: PurchaseRequestDto, options?: { unitPrice?: string; taxRate?: string; currency?: string }) => apiRequest<{ request: PurchaseRequestDto; order: PurchaseOrderDto }>(`/api/v1/procurement/purchase-requests/${request.id}/approve`, context, {
+  approveRequest: (context: ApiContext, request: PurchaseRequestDto, options: { supplierId: string; supplierName: string; unitPrice?: string; taxRate?: string; currency?: string }) => apiRequest<{ request: PurchaseRequestDto; order: PurchaseOrderDto }>(`/api/v1/procurement/purchase-requests/${request.id}/approve`, context, {
     method: 'POST', expectedVersion: request.version, idempotencyKey: operationKey(`purchase-approve:${request.id}`),
-    body: JSON.stringify({ supplierId: 'SUP-001', supplierName: '深圳华芯科技', promisedDate: request.requiredDate, ...options }),
+    body: JSON.stringify({ promisedDate: request.requiredDate, ...options }),
   }),
   rejectRequest: (context: ApiContext, request: PurchaseRequestDto, reason: string) => apiRequest<{ request: PurchaseRequestDto }>(`/api/v1/procurement/purchase-requests/${request.id}/reject`, context, {
     method: 'POST', expectedVersion: request.version, idempotencyKey: operationKey(`purchase-reject:${request.id}`),

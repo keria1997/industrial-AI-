@@ -3,36 +3,14 @@ import {
   createInventoryMasterDataSeed as createEmptyInventoryMasterData,
   getInventoryStockQueryRows,
   getWarehouseInventoryRows,
-  inventoryMasterDataStorageKey,
   isInventoryCodeAvailable,
-  loadInventoryMasterData,
   queryInventoryStock,
-  saveInventoryMasterData,
 } from '../../features/inventory/model/inventoryMasterData';
 import { createInventoryMasterDataSeed } from './fixtures/inventoryMasterData';
 
-class MemoryStorage {
-  private readonly values = new Map<string, string>();
-
-  getItem(key: string) {
-    return this.values.get(key) ?? null;
-  }
-
-  setItem(key: string, value: string) {
-    this.values.set(key, value);
-  }
-}
-
-describe('inventory master data workspace', () => {
-  it('keeps warehouse, product and material data isolated by tenant', () => {
-    const storage = new MemoryStorage();
-    const first = createInventoryMasterDataSeed();
-    first.warehouses[0].name = '租户甲原料仓';
-    saveInventoryMasterData(storage, 'TENANT-A', first);
-
-    expect(loadInventoryMasterData(storage, 'TENANT-A').warehouses[0].name).toBe('租户甲原料仓');
-    expect(loadInventoryMasterData(storage, 'TENANT-B')).toEqual(createEmptyInventoryMasterData());
-    expect(storage.getItem(inventoryMasterDataStorageKey('TENANT-A'))).not.toBeNull();
+describe('inventory master data queries', () => {
+  it('starts empty without generating business records', () => {
+    expect(createEmptyInventoryMasterData()).toEqual({ schemaVersion: 1, warehouses: [], products: [], materials: [] });
   });
 
   it('rejects duplicate codes across warehouses, products and materials', () => {
@@ -57,34 +35,6 @@ describe('inventory master data workspace', () => {
       expect.objectContaining({ id: 'FG001', kind: '产品', stockQty: 3500, availQty: 2300, unitPrice: 500 }),
       expect.objectContaining({ id: 'FG002', kind: '产品', stockQty: 0, status: '未入库', unitPrice: 1200 }),
     ]));
-  });
-
-  it('never fills missing prices with hardcoded reference prices', () => {
-    const storage = new MemoryStorage();
-    const legacy = createInventoryMasterDataSeed();
-    delete (legacy.products[0] as { unitPrice?: number }).unitPrice;
-    delete (legacy.materials[0] as { unitPrice?: number }).unitPrice;
-    saveInventoryMasterData(storage, 'TENANT-A', legacy);
-
-    const loaded = loadInventoryMasterData(storage, 'TENANT-A');
-    expect(loaded.products[0].unitPrice).toBe(0);
-    expect(loaded.materials[0].unitPrice).toBe(0);
-
-    legacy.products[0].unitPrice = 0;
-    saveInventoryMasterData(storage, 'TENANT-A', legacy);
-    expect(loadInventoryMasterData(storage, 'TENANT-A').products[0].unitPrice).toBe(0);
-  });
-
-  it('returns empty collections for absent, invalid and inaccessible storage', () => {
-    const storage = new MemoryStorage();
-    const empty = { schemaVersion: 1, warehouses: [], products: [], materials: [] };
-    expect(createEmptyInventoryMasterData()).toEqual(empty);
-    expect(loadInventoryMasterData(storage, 'TENANT-A')).toEqual(empty);
-    for (const raw of ['{broken', '{"schemaVersion":0}', 'null']) {
-      storage.setItem(inventoryMasterDataStorageKey('TENANT-A'), raw);
-      expect(loadInventoryMasterData(storage, 'TENANT-A')).toEqual(empty);
-    }
-    expect(loadInventoryMasterData({ getItem() { throw new Error('denied'); } })).toEqual(empty);
   });
 
   it('queries everything assigned to one warehouse, including zero-stock records', () => {

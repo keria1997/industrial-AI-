@@ -3,6 +3,7 @@ export const isPrototypeBusinessKey = (key: string): boolean =>
   /^industrial-ai-(?:sales(?=[:_-]|$)|inventory(?=[:_-]|$)|production-(?:legacy(?=[:_-]|$)|v\d+(?=:|$))|platform(?:-v\d+)?(?=:|$))/.test(key);
 
 type StorageHost = Pick<Window, 'localStorage' | 'sessionStorage'>;
+const guardedPrototypes = new WeakSet<object>();
 
 export function clearPrototypeBusinessData(host: StorageHost): void {
   for (const name of ['localStorage', 'sessionStorage'] as const) {
@@ -19,6 +20,7 @@ export function clearPrototypeBusinessData(host: StorageHost): void {
 }
 
 export function installPrototypeStoragePolicy(prototype: Pick<Storage, 'getItem' | 'setItem'>): void {
+  if (guardedPrototypes.has(prototype)) return;
   const getItem = prototype.getItem;
   const setItem = prototype.setItem;
   Object.defineProperties(prototype, {
@@ -40,4 +42,5 @@ export function installPrototypeStoragePolicy(prototype: Pick<Storage, 'getItem'
       },
     },
   });
+  guardedPrototypes.add(prototype);
 }

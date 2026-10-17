@@ -35,13 +35,13 @@ describe('procurement API client', () => {
       headers: { 'Content-Type': 'application/json' },
     }));
 
-    await procurementApi.approveRequest(context, requestDto);
+    await procurementApi.approveRequest(context, requestDto, { supplierId: 'API-SUPPLIER', supplierName: '接口供应商' });
 
     const [path, request] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe('/api/v1/procurement/purchase-requests/pr-1/approve');
     expect(request.headers).toMatchObject({ 'If-Match': '"3"' });
     expect(JSON.parse(String(request.body))).toEqual({
-      supplierId: 'SUP-001', supplierName: '深圳华芯科技', promisedDate: '2026-08-01',
+      supplierId: 'API-SUPPLIER', supplierName: '接口供应商', promisedDate: '2026-08-01',
     });
   });
 

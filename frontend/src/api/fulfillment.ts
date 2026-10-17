@@ -262,10 +262,16 @@ export const inventoryApi = {
   // Product
   listProducts: (context: ApiContext) => apiRequest<{ items: ProductDto[]; total: number }>('/api/v1/inventory/products', context),
   createProduct: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; productType?: string; remark?: string }) => apiRequest<{ product: ProductDto }>('/api/v1/inventory/products', context, { method: 'POST', idempotencyKey: key(`product-create:${input.code}`), body: JSON.stringify(input) }),
+  updateProduct: (context: ApiContext, id: string, version: number, input: Partial<Pick<ProductDto, 'name' | 'specification' | 'category' | 'uom' | 'unitPrice' | 'safetyStockQty' | 'maxStockQty' | 'productType' | 'status' | 'remark'>>) =>
+    apiRequest<{ product: ProductDto }>(`/api/v1/inventory/products/${encodeURIComponent(id)}`, context,
+      { method: 'PATCH', expectedVersion: version, idempotencyKey: key(`product-update:${id}`), body: JSON.stringify(input) }),
 
   // Material
   listMaterials: (context: ApiContext) => apiRequest<{ items: MaterialDto[]; total: number }>('/api/v1/inventory/materials', context),
   createMaterial: (context: ApiContext, input: { code: string; name: string; specification?: string; category?: string; uom?: string; unitPrice?: string; safetyStockQty?: string; maxStockQty?: string; materialType?: string; remark?: string }) => apiRequest<{ material: MaterialDto }>('/api/v1/inventory/materials', context, { method: 'POST', idempotencyKey: key(`material-create:${input.code}`), body: JSON.stringify(input) }),
+  updateMaterial: (context: ApiContext, id: string, version: number, input: Partial<Pick<MaterialDto, 'name' | 'specification' | 'category' | 'uom' | 'unitPrice' | 'safetyStockQty' | 'maxStockQty' | 'materialType' | 'status' | 'remark'>>) =>
+    apiRequest<{ material: MaterialDto }>(`/api/v1/inventory/materials/${encodeURIComponent(id)}`, context,
+      { method: 'PATCH', expectedVersion: version, idempotencyKey: key(`material-update:${id}`), body: JSON.stringify(input) }),
 
   // Transfer orders
   listTransferOrders: (context: ApiContext) => apiRequest<{ items: TransferOrderDto[]; total: number }>('/api/v1/inventory/transfer-orders', context),

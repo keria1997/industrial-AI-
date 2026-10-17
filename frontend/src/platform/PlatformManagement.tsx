@@ -46,6 +46,8 @@ import {
 import EmployeeAccountManagement from './EmployeeAccountManagement';
 import { platformApi } from '../api/platform/client';
 import { ApiError } from '../api/client';
+import { persistPlatformChange } from './persistPlatformChange';
+import { PLATFORM_STATE_CHANGED_EVENT } from './platformSeed';
 
 type Props = {
   currentTenant?: { id?: string; code?: string; name?: string };
@@ -84,7 +86,7 @@ type DrawerConfig = {
   fields: FormField[];
   initial: Record<string, string>;
   validate?: (draft: Record<string, string>) => ValidationError | null;
-  onSubmit: (draft: Record<string, string>) => void;
+  onSubmit: (draft: Record<string, string>) => void | boolean | Promise<void | boolean>;
 };
 type ImpactConfig = {
   eyebrow?: string;
@@ -95,7 +97,7 @@ type ImpactConfig = {
   confirmLabel: string;
   hideSecondary?: boolean;
   tone?: 'default' | 'danger';
-  onConfirm: () => void;
+  onConfirm: () => void | boolean | Promise<void | boolean>;
 };
 
 const NAV_GROUPS = [
@@ -331,6 +333,7 @@ function SearchableSelect({ id, value, options, placeholder = '请选择', searc
 function EditorDrawer({ config, onClose }: { config: DrawerConfig | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState<ValidationError | null>(null);
+  const [saving, setSaving] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => { setDraft(config?.initial || {}); setError(null); }, [config]);
@@ -359,7 +362,8 @@ function EditorDrawer({ config, onClose }: { config: DrawerConfig | null; onClos
     };
   }, [config]);
   if (!config) return null;
-  const submit = () => {
+  const submit = async () => {
+    if (saving) return;
     const normalizedDraft = Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, String(value ?? '').trim()]));
     const visibleFields = config.fields.filter((field) => !field.visibleWhen || field.visibleWhen(normalizedDraft));
     const missing = visibleFields.find((field) => (field.required || field.requiredWhen?.(normalizedDraft)) && !normalizedDraft[field.key]);
@@ -374,8 +378,13 @@ function EditorDrawer({ config, onClose }: { config: DrawerConfig | null; onClos
       requestAnimationFrame(() => document.getElementById(`editor-${validationError.key}`)?.focus());
       return;
     }
-    config.onSubmit(normalizedDraft);
-    onClose();
+    setSaving(true);
+    try {
+      if (await config.onSubmit(normalizedDraft) === false) return;
+      onClose();
+    } catch (reason) {
+      setError({ key: '', message: reason instanceof Error ? reason.message : '保存失败，请重试' });
+    } finally { setSaving(false); }
   };
   return (
     <div className="fixed inset-0 z-[160] flex justify-end bg-slate-950/30" role="dialog" aria-modal="true" aria-label={config.title}>
@@ -420,13 +429,14 @@ function EditorDrawer({ config, onClose }: { config: DrawerConfig | null; onClos
           </div>
           {error && <div id="drawer-form-error" role="alert" aria-live="assertive" className="mt-5 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12px] font-bold text-rose-700"><CircleAlert size={15} className="mt-0.5 shrink-0" />{error.message}</div>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4"><Button onClick={onClose}>暂不保存</Button><Button variant="primary" onClick={submit} icon={Save}>{config.submitLabel}</Button></div>
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4"><Button disabled={saving} onClick={onClose}>暂不保存</Button><Button disabled={saving} variant="primary" onClick={submit} icon={Save}>{saving ? '保存中' : config.submitLabel}</Button></div>
       </aside>
     </div>
   );
 }
 
 function ImpactDialog({ config, onClose }: { config: ImpactConfig | null; onClose: () => void }) {
+  const [saving, setSaving] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -461,7 +471,12 @@ function ImpactDialog({ config, onClose }: { config: ImpactConfig | null; onClos
           {config.impacts?.length ? <div className="mt-5 border-y border-slate-100 py-2">{config.impacts.map((impact) => <div key={impact} className="flex gap-2.5 py-2 text-[12px] leading-5 text-slate-600"><span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${danger ? 'bg-rose-500' : 'bg-[#1e5fbf]'}`} />{impact}</div>)}</div> : null}
           {config.blockers?.length ? <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3"><div className="flex items-center gap-2 text-[12px] font-black text-rose-800"><CircleAlert size={15} />需要先处理以下阻断项</div><ul className="mt-2 space-y-1.5 pl-5 text-[11px] leading-5 text-rose-700">{config.blockers.map((blocker) => <li key={blocker} className="list-disc">{blocker}</li>)}</ul></div> : null}
         </div>
-        <div className="flex justify-end gap-2 bg-slate-50 px-6 py-4">{!config.hideSecondary && <Button onClick={onClose}>{blocked ? '返回处理' : '返回检查'}</Button>}<Button disabled={blocked} title={blocked ? '请先处理阻断项' : undefined} variant={danger ? 'danger' : 'primary'} onClick={() => { config.onConfirm(); onClose(); }}>{blocked ? '存在阻断项' : config.confirmLabel}</Button></div>
+        <div className="flex justify-end gap-2 bg-slate-50 px-6 py-4">{!config.hideSecondary && <Button disabled={saving} onClick={onClose}>{blocked ? '返回处理' : '返回检查'}</Button>}<Button disabled={blocked || saving} title={blocked ? '请先处理阻断项' : undefined} variant={danger ? 'danger' : 'primary'} onClick={async () => {
+          if (saving) return;
+          setSaving(true);
+          try { if (await config.onConfirm() !== false) onClose(); }
+          finally { setSaving(false); }
+        }}>{saving ? '处理中' : blocked ? '存在阻断项' : config.confirmLabel}</Button></div>
       </div>
     </div>
   );
@@ -512,11 +527,6 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     }
     const context = { tenantId: tenantIdentity.id, accessToken: currentUser.accessToken };
     platformApi.getSnapshot(context)
-      .catch(async error => {
-        if (!(error instanceof ApiError) || error.status !== 404 || !active) throw error;
-        await platformApi.selfProvision(context);
-        return platformApi.getSnapshot(context);
-      })
       .then(snapshot => {
         if (!active) return;
         setState(migratePlatformState(snapshot));
@@ -581,12 +591,31 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   }, [auditDetail]);
 
   const toast = (message: string, type = 'success') => onToast?.(message, type);
-  const appendAudit = (previous: PlatformState, action: string, target: string, result: AuditRecord['result'] = 'success') => ({
-    ...previous,
-    audits: [{ id: makeId('AUD'), time: nowText(), operator: currentUser?.name || '操作员 01', module: '平台管理', action, target, result, traceId: `TRACE-${Date.now()}` }, ...previous.audits],
-  });
-  const commit = (updater: (previous: PlatformState) => PlatformState, message: string, action: string, target: string, type = 'success') => {
-    toast('未保存：当前入口尚未接入业务保存接口', 'error');
+  const mutationRunning = useRef(false);
+  const identityRef = useRef('');
+  identityRef.current = `${tenantIdentity.id}:${currentUser?.accessToken || ''}`;
+  const reloadSnapshot = async () => {
+    if (!currentUser?.accessToken) throw new Error('请登录后管理平台数据');
+    const identity = identityRef.current;
+    const snapshot = await platformApi.getSnapshot({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken });
+    if (identity !== identityRef.current) return;
+    setState(migratePlatformState(snapshot));
+    setRoleVersions(Object.fromEntries(snapshot.roles.map(role => [role.id, role.version])));
+    setPermissionLoaded(true); setPermissionError('');
+    window.dispatchEvent(new CustomEvent(PLATFORM_STATE_CHANGED_EVENT, { detail: { tenantId: tenantIdentity.id } }));
+  };
+  const commit = async (updater: (previous: PlatformState) => PlatformState, message: string, action: string, target: string, type = 'success') => {
+    if (mutationRunning.current) { toast('正在保存，请勿重复提交', 'error'); return false; }
+    if (!permissionLoaded || !currentUser?.accessToken) { toast('平台数据未加载，请刷新后重试', 'error'); return false; }
+    mutationRunning.current = true;
+    try {
+      await persistPlatformChange({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, state, updater(state));
+      await reloadSnapshot();
+      toast(message, type);
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : '保存失败，请重试', 'error');
+      return false;
+    } finally { mutationRunning.current = false; }
   };
 
   const orgById = useMemo(() => Object.fromEntries(state.orgUnits.map((item) => [item.id, item])), [state.orgUnits]);
@@ -728,11 +757,12 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
         if (draft.type === 'department' && !['company', 'department'].includes(parent.type)) return { key: 'parentId', message: '部门只能归属于公司或部门。' };
         return null;
       },
-      onSubmit: (draft) => {
-        if (editing) commit((prev) => ({ ...prev, orgUnits: prev.orgUnits.map((item) => item.id === editing.id ? { ...item, name: draft.name, code: draft.code, type: draft.type as any, parentId: editing.id === 'ORG-ROOT' ? null : draft.parentId, managerEmployeeId: draft.managerEmployeeId || null } : item) }), '组织信息已更新', '编辑组织', draft.name);
+      onSubmit: async (draft) => {
+        if (editing) return commit((prev) => ({ ...prev, orgUnits: prev.orgUnits.map((item) => item.id === editing.id ? { ...item, name: draft.name, code: draft.code, type: draft.type as any, parentId: editing.id === 'ORG-ROOT' ? null : draft.parentId, managerEmployeeId: draft.managerEmployeeId || null } : item) }), '组织信息已更新', '编辑组织', draft.name);
         else {
           const id = makeId('ORG');
-          commit((prev) => ({ ...prev, orgUnits: [...prev.orgUnits, { id, name: draft.name, code: draft.code, type: draft.type as any, parentId: draft.parentId, managerEmployeeId: draft.managerEmployeeId || null, status: 'enabled' }] }), '下级组织已创建', '创建组织', draft.name);
+          const saved = await commit((prev) => ({ ...prev, orgUnits: [...prev.orgUnits, { id, name: draft.name, code: draft.code, type: draft.type as any, parentId: draft.parentId, managerEmployeeId: draft.managerEmployeeId || null, status: 'enabled' }] }), '下级组织已创建', '创建组织', draft.name);
+          if (saved === false) return false;
           setSelectedOrgId(id);
         }
       },
@@ -813,8 +843,8 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       },
       onSubmit: (draft) => {
         const values = { name: draft.name, code: draft.code, type: draft.type as any, ownerOrgId: ['line', 'work_center'].includes(draft.type) ? draft.workshopOrgId : draft.ownerOrgId, factoryOrgId: draft.factoryOrgId || null, workshopOrgId: draft.workshopOrgId || null, managerEmployeeId: draft.managerEmployeeId || null, specification: draft.specification };
-        if (item) commit((prev) => ({ ...prev, resources: prev.resources.map((resource) => resource.id === item.id ? { ...resource, ...values } : resource) }), '企业资源已更新', '编辑企业资源', draft.name);
-        else commit((prev) => ({ ...prev, resources: [...prev.resources, { id: makeId('RES'), ...values, status: 'enabled' }] }), '企业资源已创建', '创建企业资源', draft.name);
+        if (item) return commit((prev) => ({ ...prev, resources: prev.resources.map((resource) => resource.id === item.id ? { ...resource, ...values } : resource) }), '企业资源已更新', '编辑企业资源', draft.name);
+        return commit((prev) => ({ ...prev, resources: [...prev.resources, { id: makeId('RES'), ...values, status: 'enabled' }] }), '企业资源已创建', '创建企业资源', draft.name);
       },
     });
   };
@@ -856,9 +886,12 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       if (draft.primaryPositionId && !isSameOrAncestorOrg(positionById[draft.primaryPositionId]?.orgId, draft.primaryOrgId)) return { key: 'primaryPositionId', message: '所选岗位不属于该组织或其上级组织。' };
       return null;
     },
-    onSubmit: (draft) => {
-      if (employee) commit((prev) => ({ ...prev, employees: prev.employees.map((item) => item.id === employee.id ? { ...item, ...draft } : item) }), '员工档案已保存', '编辑员工档案', draft.name);
-      else { const id = makeId('EMP'); commit((prev) => ({ ...prev, employees: [...prev.employees, { id, ...draft, status: 'active' } as any] }), '员工档案已创建，可按需开通账号', '创建员工档案', draft.name); setSelectedEmployeeId(id); }
+    onSubmit: async (draft) => {
+      if (employee) return commit((prev) => ({ ...prev, employees: prev.employees.map((item) => item.id === employee.id ? { ...item, ...draft } : item) }), '员工档案已保存', '编辑员工档案', draft.name);
+      const id = makeId('EMP');
+      const saved = await commit((prev) => ({ ...prev, employees: [...prev.employees, { id, ...draft, status: 'active' } as any] }), '员工档案已创建，可按需开通账号', '创建员工档案', draft.name);
+      if (saved === false) return false;
+      setSelectedEmployeeId(id);
     },
   });
 
@@ -884,7 +917,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
         <PageHeader eyebrow="人员与权限" title="员工与账号" description="员工是人员档案，账号是登录身份；未开通账号的员工不会被误标为停用。" actions={<Button variant="primary" icon={UserPlus} onClick={() => openEmployeeEditor()}>新建员工档案</Button>} />
         <Panel>
           <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between"><Segmented value={identityMode} onChange={setIdentityMode} items={[{ value: 'employee', label: '员工档案', count: state.employees.length }, { value: 'account', label: '登录账号', count: state.accounts.length }]} /><div className="relative w-full sm:w-72"><Search size={14} className="absolute left-3 top-3 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索员工或账号" placeholder="搜索姓名、工号或账号" className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-[12px] outline-none focus:border-[#1e5fbf]" /></div></div>
-          {identityMode === 'employee' ? <div className="platform-identity-layout grid min-h-[570px]"><div className="overflow-x-auto border-b border-slate-200 lg:border-b-0 lg:border-r"><table className="w-full min-w-[620px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">员工</th><th className="px-4 py-3.5">组织 / 主岗</th><th className="px-4 py-3.5">账号</th><th className="px-4 py-3.5">状态</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredEmployees.map((item) => { const itemAccount = accountByEmployee[item.id]; return <tr key={item.id} onClick={() => setSelectedEmployeeId(item.id)} className={`cursor-pointer text-[12px] ${selectedEmployeeId === item.id ? 'bg-blue-50/70' : 'hover:bg-slate-50'}`}><td className="px-5 py-4"><div className="font-black text-slate-900">{item.name}</div><div className="mt-1 text-[10px] text-slate-400">{item.employeeNo}</div></td><td className="px-4 py-4"><div className="font-bold text-slate-700">{orgById[item.primaryOrgId]?.name}</div><div className="mt-1 text-[10px] text-slate-400">{positionById[item.primaryPositionId]?.name}</div></td><td className="px-4 py-4">{itemAccount ? <span className="font-bold text-slate-600">{itemAccount.loginName}</span> : <span className="text-amber-700">未开通账号</span>}</td><td className="px-4 py-4"><StatusPill value={item.status} label={employeeStatusLabel[item.status]} /></td></tr>; })}</tbody></table></div><aside className="bg-[#fbfcfe] p-5"><div className="flex items-start justify-between"><div><h2 className="text-[17px] font-black text-slate-950">{selectedEmployee?.name}</h2><p className="mt-1 text-[11px] font-bold text-slate-400">{selectedEmployee?.employeeNo}</p></div><Button variant="quiet" icon={Pencil} onClick={() => openEmployeeEditor(selectedEmployee)}>编辑</Button></div><div className="mt-5 border-y border-slate-200 py-1">{[['所属组织', orgById[selectedEmployee?.primaryOrgId]?.name || '-'], ['主岗位', positionById[selectedEmployee?.primaryPositionId]?.name || '-'], ['工作邮箱', selectedEmployee?.email || '-'], ['手机号', selectedEmployee?.mobile || '-']].map(([label, value]) => <div key={label} className="flex justify-between gap-4 py-3"><span className="text-[11px] text-slate-400">{label}</span><span className="text-right text-[11px] font-bold text-slate-700">{value}</span></div>)}</div><div className="mt-5"><div className="mb-3 text-[11px] font-black text-slate-800">登录账号</div>{account ? <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><div><div className="text-[12px] font-black text-slate-800">{account.loginName}</div><div className="mt-1 text-[10px] text-slate-400">{authTypeLabel[account.authType]}</div></div><StatusPill value={account.status} label={accountStatusLabel[account.status]} /></div><div className="mt-3 text-[10px] text-slate-400">最近登录：{account.lastLoginAt}</div>{account.status === 'locked' && <div className="mt-3"><Button icon={LockKeyhole} onClick={() => commit((prev) => ({ ...prev, accounts: prev.accounts.map((item) => item.id === account.id ? { ...item, status: 'enabled' } : item) }), '账号已解锁', '解锁账号', account.loginName)}>解锁账号</Button></div>}</div> : <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4"><div className="text-[12px] font-bold text-slate-700">尚未开通账号</div><p className="mt-1 text-[11px] leading-5 text-slate-500">员工档案可正常参与组织和任职管理，需要登录平台时再开通。</p><div className="mt-3"><Button variant="primary" icon={KeyRound} onClick={() => openAccountFor(selectedEmployee)}>开通账号</Button></div></div>}</div></aside></div> : <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">登录账号</th><th className="px-4 py-3.5">绑定员工</th><th className="px-4 py-3.5">认证方式</th><th className="px-4 py-3.5">最近登录</th><th className="px-4 py-3.5">状态</th><th className="px-5 py-3.5 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredAccounts.map((item) => <tr key={item.id} className="text-[12px] hover:bg-slate-50"><td className="px-5 py-4 font-black text-slate-900">{item.loginName}</td><td className="px-4 py-4"><div className="font-bold text-slate-700">{employeeById[item.employeeId]?.name}</div><div className="mt-1 text-[10px] text-slate-400">{employeeById[item.employeeId]?.employeeNo}</div></td><td className="px-4 py-4 text-slate-600">{authTypeLabel[item.authType]}</td><td className="px-4 py-4 text-slate-500">{item.lastLoginAt}</td><td className="px-4 py-4"><StatusPill value={item.status} label={accountStatusLabel[item.status]} /></td><td className="px-5 py-4 text-right">{item.status === 'locked' ? <Button variant="quiet" onClick={() => commit((prev) => ({ ...prev, accounts: prev.accounts.map((accountItem) => accountItem.id === item.id ? { ...accountItem, status: 'enabled' } : accountItem) }), '账号已解锁', '解锁账号', item.loginName)}>解锁</Button> : <Button variant="quiet" onClick={() => toast('已撤销该账号的全部登录会话', 'success')}>撤销会话</Button>}</td></tr>)}</tbody></table></div>}
+          {identityMode === 'employee' ? <div className="platform-identity-layout grid min-h-[570px]"><div className="overflow-x-auto border-b border-slate-200 lg:border-b-0 lg:border-r"><table className="w-full min-w-[620px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">员工</th><th className="px-4 py-3.5">组织 / 主岗</th><th className="px-4 py-3.5">账号</th><th className="px-4 py-3.5">状态</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredEmployees.map((item) => { const itemAccount = accountByEmployee[item.id]; return <tr key={item.id} onClick={() => setSelectedEmployeeId(item.id)} className={`cursor-pointer text-[12px] ${selectedEmployeeId === item.id ? 'bg-blue-50/70' : 'hover:bg-slate-50'}`}><td className="px-5 py-4"><div className="font-black text-slate-900">{item.name}</div><div className="mt-1 text-[10px] text-slate-400">{item.employeeNo}</div></td><td className="px-4 py-4"><div className="font-bold text-slate-700">{orgById[item.primaryOrgId]?.name}</div><div className="mt-1 text-[10px] text-slate-400">{positionById[item.primaryPositionId]?.name}</div></td><td className="px-4 py-4">{itemAccount ? <span className="font-bold text-slate-600">{itemAccount.loginName}</span> : <span className="text-amber-700">未开通账号</span>}</td><td className="px-4 py-4"><StatusPill value={item.status} label={employeeStatusLabel[item.status]} /></td></tr>; })}</tbody></table></div><aside className="bg-[#fbfcfe] p-5"><div className="flex items-start justify-between"><div><h2 className="text-[17px] font-black text-slate-950">{selectedEmployee?.name}</h2><p className="mt-1 text-[11px] font-bold text-slate-400">{selectedEmployee?.employeeNo}</p></div><Button variant="quiet" icon={Pencil} onClick={() => openEmployeeEditor(selectedEmployee)}>编辑</Button></div><div className="mt-5 border-y border-slate-200 py-1">{[['所属组织', orgById[selectedEmployee?.primaryOrgId]?.name || '-'], ['主岗位', positionById[selectedEmployee?.primaryPositionId]?.name || '-'], ['工作邮箱', selectedEmployee?.email || '-'], ['手机号', selectedEmployee?.mobile || '-']].map(([label, value]) => <div key={label} className="flex justify-between gap-4 py-3"><span className="text-[11px] text-slate-400">{label}</span><span className="text-right text-[11px] font-bold text-slate-700">{value}</span></div>)}</div><div className="mt-5"><div className="mb-3 text-[11px] font-black text-slate-800">登录账号</div>{account ? <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><div><div className="text-[12px] font-black text-slate-800">{account.loginName}</div><div className="mt-1 text-[10px] text-slate-400">{authTypeLabel[account.authType]}</div></div><StatusPill value={account.status} label={accountStatusLabel[account.status]} /></div><div className="mt-3 text-[10px] text-slate-400">最近登录：{account.lastLoginAt}</div>{account.status === 'locked' && <div className="mt-3"><Button icon={LockKeyhole} onClick={() => commit((prev) => ({ ...prev, accounts: prev.accounts.map((item) => item.id === account.id ? { ...item, status: 'enabled' } : item) }), '账号已解锁', '解锁账号', account.loginName)}>解锁账号</Button></div>}</div> : <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4"><div className="text-[12px] font-bold text-slate-700">尚未开通账号</div><p className="mt-1 text-[11px] leading-5 text-slate-500">员工档案可正常参与组织和任职管理，需要登录平台时再开通。</p><div className="mt-3"><Button variant="primary" icon={KeyRound} onClick={() => openAccountFor(selectedEmployee)}>开通账号</Button></div></div>}</div></aside></div> : <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">登录账号</th><th className="px-4 py-3.5">绑定员工</th><th className="px-4 py-3.5">认证方式</th><th className="px-4 py-3.5">最近登录</th><th className="px-4 py-3.5">状态</th><th className="px-5 py-3.5 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredAccounts.map((item) => <tr key={item.id} className="text-[12px] hover:bg-slate-50"><td className="px-5 py-4 font-black text-slate-900">{item.loginName}</td><td className="px-4 py-4"><div className="font-bold text-slate-700">{employeeById[item.employeeId]?.name}</div><div className="mt-1 text-[10px] text-slate-400">{employeeById[item.employeeId]?.employeeNo}</div></td><td className="px-4 py-4 text-slate-600">{authTypeLabel[item.authType]}</td><td className="px-4 py-4 text-slate-500">{item.lastLoginAt}</td><td className="px-4 py-4"><StatusPill value={item.status} label={accountStatusLabel[item.status]} /></td><td className="px-5 py-4 text-right">{item.status === 'locked' ? <Button variant="quiet" onClick={() => commit((prev) => ({ ...prev, accounts: prev.accounts.map((accountItem) => accountItem.id === item.id ? { ...accountItem, status: 'enabled' } : accountItem) }), '账号已解锁', '解锁账号', item.loginName)}>解锁</Button> : <Button variant="quiet" onClick={() => toast('未撤销：当前接口需要指定登录会话标识，尚不支持撤销该账号的全部会话', 'error')}>撤销会话</Button>}</td></tr>)}</tbody></table></div>}
         </Panel>
       </div>
     );
@@ -923,9 +956,10 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       if (state.roles.some((role) => role.name.trim().toLowerCase() === draft.name.toLowerCase())) return { key: 'name', message: '角色名称已存在，请使用更清晰的名称。' };
       return null;
     },
-    onSubmit: (draft) => {
+    onSubmit: async (draft) => {
       const id = makeId('ROLE');
-      commit((prev) => ({ ...prev, roles: [...prev.roles, { id, name: draft.name, code: draft.code, description: draft.description, dataScope: 'org_tree', scopeValues: [], status: 'enabled' }] }), '角色已创建', '创建角色', draft.name);
+      const saved = await commit((prev) => ({ ...prev, roles: [...prev.roles, { id, name: draft.name, code: draft.code, description: draft.description, dataScope: 'org_tree', scopeValues: [], status: 'enabled' }] }), '角色已创建', '创建角色', draft.name);
+      if (saved === false) return false;
       setSelectedRoleId(id);
     },
   });
@@ -1007,7 +1041,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     const pending = state.adapters.filter((item) => item.status === 'pending_sync');
     return (
       <div data-testid="platform-view-adapter">
-        <PageHeader eyebrow="规则与治理" title="权限适配" description="将平台权限映射到旧 ERP。同步前先预检，冲突和失败需要逐项处理。" actions={<><Button icon={ListChecks} disabled={pending.length === 0} title={pending.length === 0 ? '当前没有待同步映射' : undefined} onClick={() => setImpact({ eyebrow: '同步预检', title: '预检已完成', description: '当前连接和版本可用，可以同步通过检查的待处理映射。', impacts: [`${pending.length} 项待同步映射通过编码与范围检查`, `${issues.length} 项冲突或失败不会参与本次同步`, '同步不会修改或删除旧 ERP 的存量权限'], confirmLabel: `同步 ${pending.length} 项映射`, onConfirm: () => commit((prev) => ({ ...prev, adapters: prev.adapters.map((item) => item.status === 'pending_sync' ? { ...item, status: 'synced', lastSyncAt: nowText() } : item) }), '通过预检的权限映射已同步', '同步权限映射', `${pending.length} 项`) })}>运行预检</Button><Button variant="primary" icon={RefreshCw} onClick={() => toast('映射状态已刷新；未发现新的同步结果', 'success')}>刷新状态</Button></>} />
+        <PageHeader eyebrow="规则与治理" title="权限适配" description="将平台权限映射到旧 ERP。同步前先预检，冲突和失败需要逐项处理。" actions={<><Button icon={ListChecks} disabled={pending.length === 0} title={pending.length === 0 ? '当前没有待同步映射' : undefined} onClick={() => toast('未执行：后端尚未提供权限适配预检/同步接口', 'error')}>运行预检</Button><Button variant="primary" icon={RefreshCw} onClick={() => void reloadSnapshot().catch(error => toast(error.message || '刷新失败', 'error'))}>刷新状态</Button></>} />
         {issues.length > 0 && <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5"><AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-700" /><div className="flex-1"><div className="text-[12px] font-black text-amber-900">有 {issues.length} 项映射需要处理</div><p className="mt-1 text-[11px] leading-5 text-amber-800">已同步项目不受影响。处理冲突或补全旧角色后，可单独重试。</p></div></div>}
         <Panel>
           <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="text-[11px] font-bold text-slate-500">{state.adapters.filter((item) => item.status === 'synced').length} 项已同步 · {issues.length} 项需处理</div><div className="relative w-full sm:w-72"><Search size={14} className="absolute left-3 top-3 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索权限适配" placeholder="搜索本地权限或旧角色" className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-[12px] outline-none focus:border-[#1e5fbf]" /></div></div>
@@ -1055,8 +1089,8 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       return null;
     },
     onSubmit: (draft) => {
-      if (rule) commit((prev) => ({ ...prev, approvalRules: prev.approvalRules.map((item) => item.id === rule.id ? { ...item, module: draft.module, documentType: draft.documentType, resolver: draft.resolver as any, resolverValue: draft.resolverValue, fallback: draft.fallback as any } : item) }), '审批规则已保存', '编辑审批规则', `${draft.module}/${draft.documentType}`);
-      else commit((prev) => ({ ...prev, approvalRules: [...prev.approvalRules, { id: makeId('APR'), module: draft.module, documentType: draft.documentType, resolver: draft.resolver as any, resolverValue: draft.resolverValue, fallback: draft.fallback as any, status: 'enabled' }] }), '审批规则已创建', '创建审批规则', `${draft.module}/${draft.documentType}`);
+      if (rule) return commit((prev) => ({ ...prev, approvalRules: prev.approvalRules.map((item) => item.id === rule.id ? { ...item, module: draft.module, documentType: draft.documentType, resolver: draft.resolver as any, resolverValue: draft.resolverValue, fallback: draft.fallback as any } : item) }), '审批规则已保存', '编辑审批规则', `${draft.module}/${draft.documentType}`);
+      return commit((prev) => ({ ...prev, approvalRules: [...prev.approvalRules, { id: makeId('APR'), module: draft.module, documentType: draft.documentType, resolver: draft.resolver as any, resolverValue: draft.resolverValue, fallback: draft.fallback as any, status: 'enabled' }] }), '审批规则已创建', '创建审批规则', `${draft.module}/${draft.documentType}`);
     },
   });
   const renderGovernance = () => (
@@ -1165,6 +1199,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     <div className="flex h-full min-h-0 w-full flex-col bg-[#f4f6f9]" data-testid="platform-v3-root">
       <EditorDrawer config={drawer} onClose={() => setDrawer(null)} />
       <ImpactDialog config={impact} onClose={() => setImpact(null)} />
+      {permissionError && <div role="alert" className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{permissionError}<button className="ml-3 underline" onClick={() => void reloadSnapshot().catch(error => setPermissionError(error.message || '平台数据加载失败'))}>重新加载</button></div>}
       {auditDetail && <div className="fixed inset-0 z-[160] flex justify-end bg-slate-950/30"><button tabIndex={-1} className="absolute inset-0 cursor-default" aria-label="关闭审计详情" onClick={() => setAuditDetail(null)} /><aside ref={auditPanelRef} role="dialog" aria-modal="true" aria-labelledby="audit-detail-title" className="relative flex h-full w-full max-w-[460px] flex-col bg-white shadow-2xl"><div className="flex items-center justify-between border-b border-slate-200 px-6 py-5"><div><h2 id="audit-detail-title" className="text-[18px] font-black text-slate-950">审计详情</h2><p className="mt-1 text-[11px] text-slate-400">仅在排查问题时使用技术追踪编号</p></div><button ref={auditCloseRef} onClick={() => setAuditDetail(null)} aria-label="关闭" className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><X size={18} /></button></div><dl className="custom-scrollbar flex-1 divide-y divide-slate-100 overflow-y-auto p-6">{[['操作时间', auditDetail.time], ['操作人', auditDetail.operator], ['所属模块', auditDetail.module], ['执行动作', auditDetail.action], ['操作对象', auditDetail.target], ['结果', auditDetail.result === 'success' ? '成功' : auditDetail.result === 'failed' ? '失败' : '已拒绝'], ['技术追踪编号', auditDetail.traceId]].map(([label, value]) => <div key={label} className="py-3"><dt className="text-[11px] font-bold text-slate-400">{label}</dt><dd className="mt-1.5 break-all text-[12px] font-bold text-slate-700">{value}</dd></div>)}</dl></aside></div>}
       <header className="relative z-[80] shrink-0 border-b border-slate-200 bg-[#f7f9fc] px-4 py-4 sm:px-6 xl:px-8">
         <div className="mx-auto w-full max-w-[1440px]">

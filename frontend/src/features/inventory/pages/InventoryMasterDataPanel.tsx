@@ -20,7 +20,7 @@ import {
   getInventoryStockQueryRows,
   getWarehouseInventoryRows,
   isInventoryCodeAvailable,
-  loadInventoryMasterData,
+  createInventoryMasterDataSeed,
   normalizeInventoryCode,
   type InventoryMasterData,
   type InventoryMaterial,
@@ -64,7 +64,6 @@ const entityLabels: Record<MasterEntity, string> = {
   material: '物料',
 };
 
-const nowText = () => new Date().toISOString().slice(0, 16).replace('T', ' ');
 const formatUnitPrice = (value: number) => `¥${Number(value || 0).toLocaleString('zh-CN', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -102,10 +101,11 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
   state: EditorState;
   data: InventoryMasterData;
   onClose: () => void;
-  onSave: (draft: Record<string, string | number>) => void;
+  onSave: (draft: Record<string, string | number>) => Promise<void>;
 }) => {
   const [draft, setDraft] = useState(state.record);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const readOnly = state.mode === 'view';
   const editLocked = state.mode !== 'create';
   const warehouses = data.warehouses.filter((item) => item.status === '启用' || item.id === draft.defaultWarehouseId);
@@ -113,8 +113,8 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
 
   const validate = () => {
     const code = normalizeInventoryCode(String(draft.id || ''));
-    if (!/^[A-Z0-9][A-Z0-9.-]{1,39}$/.test(code)) return '请输入有效编码';
-    if (!isInventoryCodeAvailable(data, code, editLocked ? String(state.record.id) : undefined)) return '编码已存在';
+    if (!editLocked && !/^[A-Z0-9][A-Z0-9.-]{1,39}$/.test(code)) return '请输入有效编码';
+    if (!editLocked && !isInventoryCodeAvailable(data, code)) return '编码已存在';
     if (!String(draft.name || '').trim()) return `请输入${entityLabels[state.entity]}名称`;
     if (state.entity === 'warehouse') {
       if (!String(draft.type || '') || !String(draft.organization || '') || !String(draft.manager || '') || !String(draft.address || '')) return '请填写完整的仓库类型、组织、负责人和地址';
@@ -123,20 +123,25 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
       if (duplicateName) return '仓库名称已存在';
     } else {
       if (!String(draft.specification || '').trim() || !String(draft.unit || '').trim()) return '请填写规格型号和基本单位';
-      if (!String(draft.defaultWarehouseId || '')) return '请选择默认仓库';
       if (Number(draft.unitPrice) < 0) return '价格不能小于 0';
       if (Number(draft.safetyStock) < 0) return '安全库存不能小于 0';
     }
     return '';
   };
 
-  const submit = () => {
+  const submit = async () => {
+    if (saving) return;
     const nextError = validate();
     if (nextError) {
       setError(nextError);
       return;
     }
-    onSave({ ...draft, id: normalizeInventoryCode(String(draft.id)), name: String(draft.name).trim(), updatedAt: nowText() });
+    setSaving(true);
+    try {
+      await onSave({ ...draft, id: editLocked ? String(draft.id) : normalizeInventoryCode(String(draft.id)), name: String(draft.name).trim() });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '保存失败，请重试');
+    } finally { setSaving(false); }
   };
 
   const fieldClass = (locked = false) => `h-10 w-full rounded-md border px-3 text-[13px] outline-none ${readOnly || locked ? 'border-slate-100 bg-slate-50 text-slate-600' : 'border-slate-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'}`;
@@ -146,11 +151,11 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
       <input type={type} step={step} value={draft[name] ?? ''} readOnly={readOnly || locked} onChange={(event) => update(name, type === 'number' ? Number(event.target.value) : event.target.value)} className={fieldClass(locked)} />
     </label>
   );
-  const Select = ({ label, name, options }: { label: string; name: string; options: string[] | Array<{ value: string; label: string }> }) => (
+  const Select = ({ label, name, options, locked = false }: { label: string; name: string; options: string[] | Array<{ value: string; label: string }>; locked?: boolean }) => (
     <label className="block">
       <span className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}</span>
-      <select disabled={readOnly} value={String(draft[name] ?? '')} onChange={(event) => update(name, event.target.value)} className={fieldClass()}>
-        <option value="">请选择</option>
+      <select disabled={readOnly || locked} value={String(draft[name] ?? '')} onChange={(event) => update(name, event.target.value)} className={fieldClass(locked)}>
+        <option value="">{locked ? '未配置' : '请选择'}</option>
         {options.map((option) => typeof option === 'string'
           ? <option key={option} value={option}>{option}</option>
           : <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -169,7 +174,7 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
           <IconButton title="关闭" onClick={onClose}><X size={16} /></IconButton>
         </div>
         <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto px-6 py-5 sm:grid-cols-2">
-          <Field label={`${entityLabels[state.entity]}编码`} name="id" locked={editLocked} />
+          <Field label={`${entityLabels[state.entity]}编码`} name={editLocked && state.record.code ? 'code' : 'id'} locked={editLocked} />
           <Field label={`${entityLabels[state.entity]}名称`} name="name" />
           {state.entity === 'warehouse' ? <>
             <Select label="仓库类型" name="type" options={['原材料仓', '半成品仓', '成品仓', '线边仓', '中转仓']} />
@@ -187,18 +192,18 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
               : <Select label="物料类型" name="materialType" options={['原材料', '辅料', '半成品', '包装材料']} />}
             <Field label="基本单位" name="unit" />
             <Field label="价格 (元)" name="unitPrice" type="number" step="0.01" />
-            <Select label="默认仓库" name="defaultWarehouseId" options={warehouses.map((item) => ({ value: item.id, label: `${item.name} (${item.id})` }))} />
+            <Select label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
             <Field label="安全库存" name="safetyStock" type="number" />
             {state.entity === 'product'
-              ? <Select label="追溯方式" name="traceMode" options={['不追溯', '批次', '序列号']} />
-              : <Select label="采购策略" name="procurementType" options={['外购', '自制', '委外']} />}
-            <Select label="状态" name="status" options={['启用', '停用']} />
+              ? <Select label="追溯方式" name="traceMode" locked options={['不追溯', '批次', '序列号']} />
+              : <Select label="采购策略" name="procurementType" locked options={['外购', '自制', '委外']} />}
+            <Select label="状态" name="status" locked={state.mode === 'create'} options={['启用', '停用']} />
           </>}
           {error && <div className="sm:col-span-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-medium text-rose-700" role="alert">{error}</div>}
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
           <button type="button" onClick={onClose} className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[13px] font-bold text-slate-700 hover:bg-slate-100">{readOnly ? '关闭' : '取消'}</button>
-          {!readOnly && <button type="button" onClick={submit} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[13px] font-bold text-white hover:bg-blue-700"><Check size={15} />保存</button>}
+          {!readOnly && <button type="button" disabled={saving} onClick={submit} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[13px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check size={15} />{saving ? '保存中' : '保存'}</button>}
         </div>
       </div>
     </div>
@@ -206,9 +211,9 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
 };
 
 const newRecord = (entity: MasterEntity): Record<string, string | number> => {
-  if (entity === 'warehouse') return { id: '', name: '', type: '原材料仓', organization: '上海智造工厂', manager: '', phone: '', address: '', capacity: 1000, usedCapacity: 0, status: '启用', remark: '', updatedAt: nowText() };
-  if (entity === 'product') return { id: '', name: '', specification: '', category: '成品', unit: '台', unitPrice: 0, defaultWarehouseId: '', safetyStock: 0, traceMode: '序列号', status: '启用', updatedAt: nowText() };
-  return { id: '', name: '', specification: '', materialType: '原材料', unit: 'PCS', unitPrice: 0, defaultWarehouseId: '', procurementType: '外购', safetyStock: 0, status: '启用', updatedAt: nowText() };
+  if (entity === 'warehouse') return { id: '', name: '', type: '原材料仓', organization: '', manager: '', phone: '', address: '', capacity: '', usedCapacity: 0, status: '启用', remark: '' };
+  if (entity === 'product') return { id: '', name: '', specification: '', category: '成品', unit: '', unitPrice: 0, defaultWarehouseId: '', safetyStock: 0, traceMode: '', status: '启用' };
+  return { id: '', name: '', specification: '', materialType: '原材料', unit: '', unitPrice: 0, defaultWarehouseId: '', procurementType: '', safetyStock: 0, status: '启用' };
 };
 
 const warehouseStatusToServer = (value: string) => value === '启用' ? 'active' : 'inactive';
@@ -219,11 +224,11 @@ const mapWarehouseDto = (dto: WarehouseDto, local?: InventoryWarehouse): Invento
   serverVersion: dto.version,
   name: dto.name,
   type: dto.type,
-  organization: dto.organization || local?.organization || '上海智造工厂',
+  organization: dto.organization || '',
   manager: dto.manager || local?.manager || '',
   phone: dto.phone || local?.phone || '',
   address: dto.address || local?.address || '',
-  capacity: Number(dto.capacity || local?.capacity || 1000),
+  capacity: Number(dto.capacity || 0),
   usedCapacity: Number(dto.usedCapacity || local?.usedCapacity || 0),
   status: dto.status === 'active' ? '启用' : '停用',
   remark: dto.remark || local?.remark || '',
@@ -246,25 +251,23 @@ export const InventoryMasterDataPanel = ({
   stockError,
   onRefreshStock,
 }: Props) => {
-  const [localData, setData] = useState(() => loadInventoryMasterData(localStorage, tenantId));
-  const data = formalMasterData || (stockStatus ? { ...localData, stockSource: 'formal' as const, warehouses: [] } : localData);
+  const data = formalMasterData || createInventoryMasterDataSeed();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('全部');
   const [warehouseKind, setWarehouseKind] = useState('全部');
   const [editor, setEditor] = useState<EditorState | null>(null);
 
   useEffect(() => {
-    setData(loadInventoryMasterData(localStorage, tenantId));
+    setEditor(null);
     setQuery('');
     setStatus('全部');
     setWarehouseKind('全部');
   }, [tenantId]);
 
   const commit = (next: InventoryMasterData) => {
-    setData(next);
     window.dispatchEvent(new CustomEvent('inventory-master-data-changed', { detail: { tenantId } }));
   };
-  const warehouseName = (id: string) => data.warehouses.find((item) => item.id === id)?.name || id;
+  const warehouseName = (id: string) => data.warehouses.find((item) => item.id === id || item.serverId === id)?.name || id || '未配置';
   const selectedWarehouse = data.warehouses.find((item) =>
     item.id === selectedWarehouseId || item.serverId === selectedWarehouseId || item.code === selectedWarehouseId);
   const stockReady = !stockStatus || stockStatus === 'ready';
@@ -275,8 +278,8 @@ export const InventoryMasterDataPanel = ({
   const normalizedQuery = query.trim().toLowerCase();
   const matches = (...values: unknown[]) => !normalizedQuery || values.some((value) => String(value ?? '').toLowerCase().includes(normalizedQuery));
   const warehouses = data.warehouses.filter((item) => (status === '全部' || item.status === status) && matches(item.id, item.name, item.type, item.organization, item.manager, item.address));
-  const products = data.products.filter((item) => (status === '全部' || item.status === status) && matches(item.id, item.name, item.specification, item.category, warehouseName(item.defaultWarehouseId)));
-  const materials = data.materials.filter((item) => (status === '全部' || item.status === status) && matches(item.id, item.name, item.specification, item.materialType, item.procurementType, warehouseName(item.defaultWarehouseId)));
+  const products = data.products.filter((item) => (status === '全部' || item.status === status) && matches(item.id, item.code, item.name, item.specification, item.category, warehouseName(item.defaultWarehouseId)));
+  const materials = data.materials.filter((item) => (status === '全部' || item.status === status) && matches(item.id, item.code, item.name, item.specification, item.materialType, item.procurementType, warehouseName(item.defaultWarehouseId)));
   const detailRows = warehouseRows.filter((item) => (warehouseKind === '全部' || item.kind === warehouseKind) && matches(item.id, item.name, item.specification, item.location));
 
   const warehouseApiPayload = (draft: Record<string, string | number>) => ({
@@ -286,7 +289,7 @@ export const InventoryMasterDataPanel = ({
     manager: String(draft.manager),
     phone: String(draft.phone || ''),
     organization: String(draft.organization),
-    capacity: String(draft.capacity || 1000),
+    capacity: String(draft.capacity),
     usedCapacity: String(draft.usedCapacity || 0),
     status: warehouseStatusToServer(String(draft.status)),
     remark: String(draft.remark || ''),
@@ -294,7 +297,7 @@ export const InventoryMasterDataPanel = ({
 
   const saveRecord = async (draft: Record<string, string | number>) => {
     if (!editor) return;
-    const collection = editor.entity === 'warehouse' ? 'warehouses' : editor.entity === 'product' ? 'products' : 'materials';
+    if (!apiContext) throw new Error('请登录后保存主数据');
 
     if (apiContext && editor.entity === 'warehouse') {
       try {
@@ -332,12 +335,35 @@ export const InventoryMasterDataPanel = ({
         setEditor(null);
         return;
       } catch (error) {
-        onToast(error instanceof Error ? error.message : '仓库保存失败，请稍后重试', 'danger');
-        return;
+        throw error;
       }
     }
 
-    onToast('未保存：当前入口尚未接入主数据保存接口', 'danger');
+    const input = {
+      name: String(draft.name), specification: String(draft.specification || ''),
+      uom: String(draft.unit), unitPrice: String(draft.unitPrice), safetyStockQty: String(draft.safetyStock),
+    };
+    // UI -> inventory API -> persisted master data; unsupported fields are read-only.
+    if (editor.entity === 'product') {
+      const values = { ...input, category: String(draft.category || '') };
+      if (editor.mode === 'create') await inventoryApi.createProduct(apiContext, { code: String(draft.id), ...values });
+      else {
+        const current = data.products.find(item => item.id === editor.record.id);
+        if (!current?.serverVersion) throw new Error('产品版本未加载，请刷新后重试');
+        await inventoryApi.updateProduct(apiContext, current.id, current.serverVersion, { ...values, status: warehouseStatusToServer(String(draft.status)) });
+      }
+    } else {
+      const values = { ...input, materialType: String(draft.materialType || '') };
+      if (editor.mode === 'create') await inventoryApi.createMaterial(apiContext, { code: String(draft.id), ...values });
+      else {
+        const current = data.materials.find(item => item.id === editor.record.id);
+        if (!current?.serverVersion) throw new Error('物料版本未加载，请刷新后重试');
+        await inventoryApi.updateMaterial(apiContext, current.id, current.serverVersion, { ...values, status: warehouseStatusToServer(String(draft.status)) });
+      }
+    }
+    commit(data);
+    setEditor(null);
+    onToast(`${entityLabels[editor.entity]}已保存到服务端`, 'success');
   };
 
   const deleteRecord = async (entity: MasterEntity, id: string) => {
@@ -445,7 +471,7 @@ export const InventoryMasterDataPanel = ({
                     <td className="px-5 py-3"><span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 font-bold text-slate-700">{row.kind}</span></td>
                     <td className="px-5 py-3">
                       <div className="font-bold text-slate-900">{row.name}</div>
-                      <div className="mt-0.5 font-mono text-[11px] text-slate-500">{row.id}</div>
+                      <div className="mt-0.5 font-mono text-[11px] text-slate-500">{'code' in row ? row.code || row.id : row.id}</div>
                     </td>
                     <td className="px-5 py-3">
                       <div className="text-slate-700">{row.specification}</div>
@@ -464,7 +490,7 @@ export const InventoryMasterDataPanel = ({
                         </IconButton>}
                         {actionRow && (row.kind === '产品'
                           ? <IconButton title="补货申请" tone="blue" onClick={() => onCreateProductionRequest(actionRow)}><Factory size={14} /></IconButton>
-                          : <IconButton title="补货申请" tone="amber" onClick={() => onCreatePurchaseRequest({ ...actionRow, procurementType: master?.procurementType })}><FilePlus size={14} /></IconButton>)}
+                          : <IconButton title="补货申请" tone="amber" onClick={() => onCreatePurchaseRequest({ ...actionRow, procurementType: (master as InventoryMaterial)?.procurementType })}><FilePlus size={14} /></IconButton>)}
                       </div>
                     </td>
                   </tr>
@@ -492,7 +518,7 @@ export const InventoryMasterDataPanel = ({
       <div className="flex flex-wrap items-center gap-2"><label className="relative"><Search className="absolute left-3 top-2.5 text-slate-400" size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索编码、名称或规格" className="h-9 w-56 rounded-md border border-slate-200 bg-white pl-9 pr-3 text-[12px] outline-none focus:border-blue-500" /></label><select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 outline-none focus:border-blue-500"><option>全部</option><option>启用</option><option>停用</option></select><button type="button" onClick={() => openEditor(currentEntity, 'create')} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-bold text-white hover:bg-blue-700"><Plus size={15} />新建{entityLabels[currentEntity]}</button></div>
     </div>
     <div className="overflow-x-auto">
-      {activeTab === 'warehouses' && <table className="w-full min-w-[980px] text-left text-[12px]"><thead className="border-b border-slate-200 text-slate-500"><tr><th className="px-5 py-3">仓库编码 / 名称</th><th className="px-5 py-3">类型</th><th className="px-5 py-3">组织 / 地址</th><th className="px-5 py-3">负责人</th><th className="px-5 py-3">库容使用</th><th className="px-5 py-3">状态</th><th className="px-5 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{warehouses.map((row) => { const rate = Math.min(100, Math.round((row.usedCapacity / row.capacity) * 100)); return <tr key={row.id} className="hover:bg-slate-50"><td className="px-5 py-4"><button type="button" onClick={() => onSelectWarehouse(row.id)} className="text-left"><div className="font-bold text-blue-700 hover:underline">{row.name}</div><div className="mt-0.5 font-mono text-[11px] text-slate-500">{row.id}</div></button></td><td className="px-5 py-4"><span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 font-bold text-slate-700">{row.type}</span></td><td className="px-5 py-4"><div className="font-bold text-slate-700">{row.organization}</div><div className="mt-1 max-w-[320px] truncate text-[11px] text-slate-500">{row.address}</div></td><td className="px-5 py-4 text-slate-700">{row.manager}</td><td className="px-5 py-4"><div className="flex items-center gap-2"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100"><div className={`h-full ${rate >= 85 ? 'bg-rose-500' : rate >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${rate}%` }} /></div><span className="font-bold tabular-nums text-slate-700">{rate}%</span></div><div className="mt-1 text-[10px] text-slate-400">{row.usedCapacity} / {row.capacity}</div></td><td className="px-5 py-4"><StatusPill value={row.status} /></td><td className="px-5 py-4"><div className="flex justify-end gap-2"><IconButton title="查看仓库库存" onClick={() => onSelectWarehouse(row.id)}><Eye size={14} /></IconButton><IconButton title="编辑仓库" tone="blue" onClick={() => openEditor('warehouse', 'edit', row)}><Edit2 size={14} /></IconButton><IconButton title="删除仓库" tone="rose" onClick={() => deleteRecord('warehouse', row.id)}><Trash2 size={14} /></IconButton><button type="button" title="进入仓库" aria-label="进入仓库" onClick={() => onSelectWarehouse(row.id)} className="flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50">库存内容<ChevronRight size={13} /></button></div></td></tr>; })}{!warehouses.length && <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">没有符合条件的仓库</td></tr>}</tbody></table>}
+      {activeTab === 'warehouses' && <table className="w-full min-w-[980px] text-left text-[12px]"><thead className="border-b border-slate-200 text-slate-500"><tr><th className="px-5 py-3">仓库编码 / 名称</th><th className="px-5 py-3">类型</th><th className="px-5 py-3">组织 / 地址</th><th className="px-5 py-3">负责人</th><th className="px-5 py-3">库容使用</th><th className="px-5 py-3">状态</th><th className="px-5 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{warehouses.map((row) => { const rate = Math.min(100, Math.round((row.usedCapacity / row.capacity) * 100)); return <tr key={row.id} className="hover:bg-slate-50"><td className="px-5 py-4"><button type="button" onClick={() => onSelectWarehouse(row.id)} className="text-left"><div className="font-bold text-blue-700 hover:underline">{row.name}</div><div className="mt-0.5 font-mono text-[11px] text-slate-500">{'code' in row ? row.code || row.id : row.id}</div></button></td><td className="px-5 py-4"><span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 font-bold text-slate-700">{row.type}</span></td><td className="px-5 py-4"><div className="font-bold text-slate-700">{row.organization}</div><div className="mt-1 max-w-[320px] truncate text-[11px] text-slate-500">{row.address}</div></td><td className="px-5 py-4 text-slate-700">{row.manager}</td><td className="px-5 py-4"><div className="flex items-center gap-2"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100"><div className={`h-full ${rate >= 85 ? 'bg-rose-500' : rate >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${rate}%` }} /></div><span className="font-bold tabular-nums text-slate-700">{rate}%</span></div><div className="mt-1 text-[10px] text-slate-400">{row.usedCapacity} / {row.capacity}</div></td><td className="px-5 py-4"><StatusPill value={row.status} /></td><td className="px-5 py-4"><div className="flex justify-end gap-2"><IconButton title="查看仓库库存" onClick={() => onSelectWarehouse(row.id)}><Eye size={14} /></IconButton><IconButton title="编辑仓库" tone="blue" onClick={() => openEditor('warehouse', 'edit', row)}><Edit2 size={14} /></IconButton><IconButton title="删除仓库" tone="rose" onClick={() => deleteRecord('warehouse', row.id)}><Trash2 size={14} /></IconButton><button type="button" title="进入仓库" aria-label="进入仓库" onClick={() => onSelectWarehouse(row.id)} className="flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50">库存内容<ChevronRight size={13} /></button></div></td></tr>; })}{!warehouses.length && <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">没有符合条件的仓库</td></tr>}</tbody></table>}
       {activeTab === 'products' && (
         <table className="w-full min-w-[1240px] text-left text-[12px]">
           <thead className="border-b border-slate-200 text-slate-500">
@@ -516,7 +542,7 @@ export const InventoryMasterDataPanel = ({
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-5 py-4">
                     <div className="font-bold text-slate-900">{row.name}</div>
-                    <div className="mt-0.5 font-mono text-[11px] text-slate-500">{row.id}</div>
+                    <div className="mt-0.5 font-mono text-[11px] text-slate-500">{'code' in row ? row.code || row.id : row.id}</div>
                   </td>
                   <td className="px-5 py-4 text-slate-700">{row.specification}</td>
                   <td className="px-5 py-4">
@@ -570,7 +596,7 @@ export const InventoryMasterDataPanel = ({
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-5 py-4">
                     <div className="font-bold text-slate-900">{row.name}</div>
-                    <div className="mt-0.5 font-mono text-[11px] text-slate-500">{row.id}</div>
+                    <div className="mt-0.5 font-mono text-[11px] text-slate-500">{'code' in row ? row.code || row.id : row.id}</div>
                   </td>
                   <td className="px-5 py-4 text-slate-700">{row.specification}</td>
                   <td className="px-5 py-4">

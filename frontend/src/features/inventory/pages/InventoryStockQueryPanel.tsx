@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import {
   getInventoryStockQueryRows,
-  loadInventoryMasterData,
+  createInventoryMasterDataSeed,
   queryInventoryStock,
   type InventoryStockFact,
   type InventoryMasterData,
@@ -80,15 +80,13 @@ export const InventoryStockQueryPanel = ({
   stockError,
   onRefreshStock,
 }: Props) => {
-  const [localData, setMasterData] = useState(() => loadInventoryMasterData(localStorage, tenantId));
-  const masterData = formalMasterData || localData;
+  const masterData = formalMasterData || createInventoryMasterDataSeed();
   const [kind, setKind] = useState<InventoryStockQueryKind>('全部');
   const [warehouseId, setWarehouseId] = useState('全部');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('全部');
 
   useEffect(() => {
-    setMasterData(loadInventoryMasterData(localStorage, tenantId));
     setKind('全部');
     setWarehouseId('全部');
     setQuery('');

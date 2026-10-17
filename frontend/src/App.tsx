@@ -20,6 +20,7 @@ import * as financeApi from './api/finance';
 import { messagesApi } from "./api/messages";
 import { personnelApi } from "./api/personnel";
 import { supplyChainApi } from "./api/supply-chain";
+import { platformApi } from './api/platform/client';
 import { workbenchApi, type WorkbenchDashboardDto, type WorkbenchRole } from './api/workbench';
 import { useSalesOrders, useInventoryAvailability, useProductionDemands, useWorkOrders } from './hooks/useApiData';
 import { AIHubManagement as AIHubManagementV2, AIAssistantDrawer } from './features/ai-hub';
@@ -59,16 +60,12 @@ import { PaymentAllocationModal } from './features/finance/components/PaymentAll
 import { confirmSalesOrderContents, mergeFormalSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
 import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
 import { createQuickSalesOrder } from './features/sales/model/quickSalesOrder';
+import { mapSalesCustomer, saveSalesCustomer } from './features/sales/model/formalCustomer';
 import {
-  completeSalesOutbound,
   createInventoryTabUrl,
   createInventoryWarehouseUrl,
   createSalesOutboundNavigationQuery,
   formatSalesOutboundDateTime,
-  loadSalesOutboundTasks,
-  removeSalesOutboundBySource,
-  cancelSalesOutbound,
-  recordWarehouseProductionResult,
   resolveInventoryTab,
   resolveInventoryWarehouseId,
   resolveSalesOutboundOrderId,
@@ -77,14 +74,13 @@ import { InventoryMasterDataPanel } from './features/inventory/pages/InventoryMa
 import { InventoryStockQueryPanel } from './features/inventory/pages/InventoryStockQueryPanel';
 import { useFormalInventory } from './features/inventory/model/useFormalInventory';
 import { resolveWarehouse } from './features/inventory/model/formalInventory';
-import { loadInventoryMasterData } from './features/inventory/model/inventoryMasterData';
+import { createInventoryReplenishmentDemand, resolveFactoryForWarehouse } from './features/inventory/model/replenishmentDemand';
 import { mapInventoryMasterToQuoteOptions } from './features/sales/model/salesInventoryOptions';
 import { classifyOutboundShipment } from './features/inventory/model/outboundShipmentAction';
 import { mapFormalShipmentStatus } from './features/inventory/model/formalShipmentStatus';
 import { postFormalOutbound, prepareFormalOutbound } from './features/inventory/model/formalOutboundWorkflow';
 import { formalShipmentStock } from './features/inventory/model/formalShipmentStock';
 import { canonicalInventoryUnit } from './shared/inventoryUnits';
-import { restoreShippedSalesOutbounds } from './features/inventory/model/shippedSalesOutboundSync';
 import { compareQuantity, subtractQuantity } from './shared/decimal';
 import {
   mapProductionDemandStatus,
@@ -94,27 +90,7 @@ import {
   planningResultCoversDemand,
   scheduleResultCoversDemand,
 } from './features/production/model/productionPlanStatus';
-import {
-  completeProductionMaterialIssueTask,
-  createInventoryProductionPlan,
-  createInventoryPurchaseRequest,
-  createProductionMaterialIssueTask,
-  loadInventoryPurchaseRequests,
-  loadProductionMaterialIssueTasks,
-  markProductionMaterialIssueTaskShortage,
-  suggestInventoryReplenishmentQty,
-  updateInventoryPurchaseRequestStatus,
-} from './features/inventory/model/inventoryActionBridge';
-import {
-  recordSalesOrderProductionRequested,
-  salesWorkspaceStorageKey,
-} from './features/sales/model/salesShipmentBridge';
-import {
-  PLATFORM_STATE_CHANGED_EVENT,
-  loadPlatformProductionLines,
-  loadPlatformState,
-  platformStorageKey,
-} from './platform/platformSeed';
+import { suggestInventoryReplenishmentQty } from './features/inventory/model/inventoryActionBridge';
 import { 
   LayoutDashboard, Database, BrainCircuit, Server, Cpu, Settings, Bell, Search, User, Plus, UploadCloud, Play, FileText, Activity, AlertTriangle, CheckCircle2, Clock, ChevronRight, MoreVertical, Zap, TrendingUp, Factory, Package, ShoppingCart, Wallet, Users, Network, MessageSquare, Target, TrendingDown, ChevronDown, Filter, Download, Box, Edit2, Trash2, X, BookOpen, Eye, Copy, Check, File, Calendar, CalendarDays, Briefcase, Phone, Send, MessageCircle, Calculator, CalendarRange, ClipboardList, Hammer, ShieldCheck, Route, MonitorCog, Bot, PlayCircle, RefreshCcw, RotateCcw, AlertCircle, Layers, CalendarCheck, GitCommit, Truck, ArrowRight, ArrowLeft, FileOutput, List, GitMerge, ScanLine, ClipboardCheck, RefreshCw, ListChecks, Microscope, Microchip, Inbox, Import, Workflow, MapPin, Timer, Coffee, FileSpreadsheet, ArrowUpCircle, ListTodo, Info, ArrowDownToLine, ArrowUpFromLine, Warehouse, ArrowRightLeft, BadgeDollarSign, FilePlus, Store, Landmark, Receipt, CreditCard, Coins, PieChart, HardHat, Fingerprint, Award, UserCheck, ShieldAlert, Link, Share2, Sparkles, Mic, Power, Wrench, Building, Key, Gauge, XCircle, Loader2, Move
 } from 'lucide-react';
@@ -866,7 +842,7 @@ const CenterToast = ({ toast, onClose }) => {
   );
 };
 
-const BusinessActionModal = ({ action, onClose, onConfirm }) => {
+const BusinessActionModal = ({ action, onClose, onConfirm, children = null }) => {
   if (!action) return null;
   const tone = monitorToneMap[action.tone || 'blue'] || monitorToneMap.blue;
   const Icon = action.icon || Workflow;
@@ -877,7 +853,7 @@ const BusinessActionModal = ({ action, onClose, onConfirm }) => {
     action.checks?.length ||
     action.matrix?.length ||
     action.steps?.length ||
-    action.note
+    action.note || children
   );
   const matrixHeaders = action.matrixHeaders || ['权限对象', '开放动作', '数据范围'];
   if (action.layout === 'supplierArchive') {
@@ -1142,6 +1118,7 @@ const BusinessActionModal = ({ action, onClose, onConfirm }) => {
               ))}
             </div>
           )}
+          {children}
           {action.note && <div className="bg-amber-50 border border-amber-100 text-amber-700 rounded-xl px-4 py-3 text-[13px] leading-relaxed font-medium">{action.note}</div>}
           {!hasBodyContent && (
             <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-5 text-[13px] text-slate-500 leading-relaxed">
@@ -2041,24 +2018,26 @@ const Sales_TrendChart = () => {
   );
 };
 
-const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCreateQuote, onOpenOrders, onToast, reminderAt, setReminderAt, onAudit }) => {
+const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCreateQuote, onOpenOrders, onToast, reminderAt, setReminderAt, onAudit, apiContext }) => {
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [aiData, setAiData] = useState<any>(null);
   const isReminded = !!reminderAt && Date.now() - new Date(reminderAt).getTime() < 24 * 60 * 60 * 1000;
   useEffect(() => {
-    import('./api/fulfillment').then(mod => {
-      const apiContext = { tenantId: 'TENANT-SHWS', accessToken: sessionStorage.getItem('industrial-ai-session:v2') ? JSON.parse(sessionStorage.getItem('industrial-ai-session:v2')).accessToken : '' };
-      mod.fetchAiInsights(apiContext).then(setAiData).catch(() => {});
-    });
-  }, []);
+    let active = true;
+    setAiData(null);
+    if (apiContext) import('./api/fulfillment').then(mod =>
+      mod.fetchAiInsights(apiContext)).then(data => { if (active) setAiData(data); }).catch(() => {});
+    return () => { active = false; };
+  }, [apiContext?.tenantId, apiContext?.accessToken]);
   const normalizedQuotes = quotes.map((quote) => ({ ...quote, status: sales_getQuoteStatus(quote) }));
   const riskyQuote = normalizedQuotes
     .filter((quote) => ['临期', '已过期'].includes(quote.status))
     .sort((a, b) => sales_daysUntil(a.validUntil) - sales_daysUntil(b.validUntil))[0];
   const dormantCustomers = customers.filter((customer) => {
     const missingProfile = !customer.phone || customer.phone === '-' || !customer.industry || customer.industry === '-';
-    const inactiveDays = customer.lastInteractionAt ? Math.floor((Date.now() - new Date(`${customer.lastInteractionAt}T00:00:00`).getTime()) / 86400000) : 999;
+    const inactiveDays = customer.lastInteractionAt && customer.lastInteractionAt !== '-'
+      ? Math.floor((Date.now() - new Date(customer.lastInteractionAt).getTime()) / 86400000) : NaN;
     return customer.level === 'D' && missingProfile && inactiveDays > 30;
   });
   const stalledOrders = orders.filter((order) => {
@@ -2583,19 +2562,8 @@ const Sales_QuotesView = ({ quotes, setQuotes, customers, quoteWarehouses, quote
 
   useEffect(() => setPage(1), [activeFilter, searchTerm, limit]);
 
-  const handleCreateQuote = (quote) => {
-      setQuotes(prev => [quote, ...prev]);
-      setIsCreateQuoteModalOpen(false);
-      onToast('报价单创建成功', `${quote.id} 已加入报价列表`);
-      onAudit('新增产品报价单', quote.id);
-  };
-
-  const handleSaveQuote = (quote) => {
-      setQuotes(prev => prev.map(item => item.id === quote.id ? quote : item));
-      setRecordModal(null);
-      onToast('报价单已更新', quote.id);
-      onAudit('编辑产品报价单', quote.id);
-  };
+  const handleCreateQuote = () => { throw new Error('未保存：后端尚未提供报价单持久化接口'); };
+  const handleSaveQuote = () => onToast('未保存', '后端尚未提供报价单编辑接口', 'danger');
 
   return (
       <div className="space-y-4 max-w-full mx-auto animate-in fade-in duration-300">
@@ -3110,16 +3078,18 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
 const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onSubmit }) => {
   const readOnly = mode === 'view';
   const [draft, setDraft] = useState(record || {
-    id: sales_makeDocumentId('KH'), name: '', code: '', address: '', owner: '', level: 'D', status: '合作中', industry: '', remark: '', lastInteractionAt: new Date().toISOString().slice(0, 10)
+    id: sales_makeDocumentId('KH'), name: '', code: '', address: '', owner: '', level: '', status: '合作中', industry: '', remark: '', lastInteractionAt: ''
   });
   const [contacts, setContacts] = useState(record?.contacts?.length ? record.contacts : [{ name: record?.contact || '', phone: record?.phone === '-' ? '' : record?.phone || '', role: '决策人' }]);
   const [error, setError] = useState('');
+  const [savingCustomer, setSavingCustomer] = useState(false);
   const activeIndustries = industries.filter((item) => item.status === '启用');
 
   const setField = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
   const updateContact = (index, key, value) => setContacts((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
 
-  const submit = () => {
+  const submit = async () => {
+    if (savingCustomer) return;
     const primary = contacts[0] || {};
     if (!draft.name?.trim() || !primary.name?.trim()) {
       setError('请填写客户名称和联系人');
@@ -3130,7 +3100,10 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
       setError(`客户档案与 ${duplicate.id} 重复，请核对客户名称或统一社会信用代码`);
       return;
     }
-    onSubmit({ ...draft, name: draft.name.trim(), code: draft.code?.trim() || '-', contact: primary.name.trim(), phone: primary.phone.trim(), contacts });
+    setSavingCustomer(true);
+    try {
+      await onSubmit({ ...draft, name: draft.name.trim(), code: draft.code?.trim() || '-', contact: primary.name.trim(), phone: primary.phone.trim(), contacts });
+    } finally { setSavingCustomer(false); }
   };
 
   return (
@@ -3144,7 +3117,7 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
           <section>
             <h4 className="mb-4 text-[13px] font-bold text-slate-800">客户基本信息</h4>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">客户编码</span><input value={draft.id} readOnly className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-500" /></label>
+              <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">客户编码</span><input value={draft.customerNo || draft.id} readOnly className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-500" /></label>
               <label className="block sm:col-span-2"><span className="mb-2 block text-[12px] font-bold text-slate-500">客户名称 <b className="text-rose-500">*</b></span><input value={draft.name || ''} readOnly={readOnly} onChange={(event) => setField('name', event.target.value)} placeholder="输入企业全称，保存时自动查重" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label>
               <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">统一社会信用代码</span><input value={draft.code === '-' ? '' : draft.code || ''} readOnly={readOnly} onChange={(event) => setField('code', event.target.value.toUpperCase())} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label>
               <label className="block"><span className="mb-2 block text-[12px] font-bold text-slate-500">行业</span><select value={draft.industry === '-' ? '' : draft.industry || ''} disabled={readOnly} onChange={(event) => setField('industry', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none focus:border-blue-500 disabled:bg-slate-50"><option value="">请选择行业</option>{activeIndustries.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
@@ -3159,17 +3132,17 @@ const Sales_CustomerModal = ({ mode, record, customers, industries, onClose, onS
           </section>
           <section>
             <h4 className="mb-4 text-[13px] font-bold text-slate-800">业务与财务属性</h4>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3"><label><span className="mb-2 block text-[12px] font-bold text-slate-500">归属销售</span><input value={draft.owner || ''} readOnly={readOnly} onChange={(event) => setField('owner', event.target.value)} placeholder="留空即进入公海池" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">客户等级</span><select value={draft.level || 'D'} disabled={readOnly} onChange={(event) => setField('level', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50">{['D','C','B','A','VIP'].map((item) => <option key={item} value={item}>{item}级客户</option>)}</select></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">状态</span><select value={draft.status || '合作中'} disabled={readOnly} onChange={(event) => setField('status', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50">{['合作中','潜在客户','跟进中','已流失'].map((item) => <option key={item}>{item}</option>)}</select></label></div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3"><label><span className="mb-2 block text-[12px] font-bold text-slate-500">归属销售</span><input value={draft.owner || ''} readOnly={readOnly} onChange={(event) => setField('owner', event.target.value)} placeholder="留空即进入公海池" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] outline-none focus:border-blue-500 read-only:bg-slate-50" /></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">客户等级</span><select value={draft.level || ''} disabled={readOnly} onChange={(event) => setField('level', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50"><option value="">未设置</option>{['D','C','B','A','VIP'].map((item) => <option key={item} value={item}>{item}级客户</option>)}</select></label><label><span className="mb-2 block text-[12px] font-bold text-slate-500">状态</span><select value={draft.status || '合作中'} disabled={readOnly} onChange={(event) => setField('status', event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] disabled:bg-slate-50">{['合作中','潜在客户','跟进中','已流失'].map((item) => <option key={item}>{item}</option>)}</select></label></div>
           </section>
           {error && <div role="alert" className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-700"><AlertCircle size={15} />{error}</div>}
         </div>
-        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4"><button onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-5 py-2 text-[13px] font-bold text-slate-600">{readOnly ? '关闭' : '取消'}</button>{!readOnly && <button disabled={!draft.name?.trim() || !contacts[0]?.name?.trim()} onClick={submit} className="rounded-lg bg-blue-600 px-5 py-2 text-[13px] font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">保存</button>}</div>
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4"><button onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-5 py-2 text-[13px] font-bold text-slate-600">{readOnly ? '关闭' : '取消'}</button>{!readOnly && <button disabled={savingCustomer || !draft.name?.trim() || !contacts[0]?.name?.trim()} onClick={submit} className="rounded-lg bg-blue-600 px-5 py-2 text-[13px] font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">保存</button>}</div>
       </div>
     </div>
   );
 };
 
-const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onAudit }) => {
+const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onAudit, apiContext }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [levelFilter, setLevelFilter] = useState('全部等级');
   const [industryFilter, setIndustryFilter] = useState('全部行业');
@@ -3179,7 +3152,7 @@ const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onA
   const [deleteTarget, setDeleteTarget] = useState(null);
   const visibleCustomers = customers.filter(row => {
       const keyword = searchTerm.trim().toLowerCase();
-      const matchSearch = !keyword || `${row.id} ${row.name} ${row.contact}`.toLowerCase().includes(keyword);
+      const matchSearch = !keyword || `${row.customerNo || row.id} ${row.name} ${row.contact}`.toLowerCase().includes(keyword);
       const matchLevel = levelFilter === '全部等级' || row.level === levelFilter;
       const matchIndustry = industryFilter === '全部行业' || row.industry === industryFilter;
       return matchSearch && matchLevel && matchIndustry;
@@ -3190,19 +3163,25 @@ const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onA
 
   useEffect(() => setPage(1), [searchTerm, levelFilter, industryFilter, limit]);
 
-  const handleSaveCustomer = (customer) => {
+  const handleSaveCustomer = async (customer) => {
       const creating = recordModal?.mode === 'create';
-      setCustomers(prev => creating ? [customer, ...prev] : prev.map(item => item.id === customer.id ? customer : item));
-      setRecordModal(null);
-      onToast(creating ? '客户档案已创建' : '客户资料已更新', customer.name);
-      onAudit(creating ? '创建客户档案' : '更新客户资料', customer.id);
+      try {
+          if (!apiContext) throw new Error('请登录后保存客户');
+          const saved = await saveSalesCustomer(apiContext, customer);
+          setCustomers(prev => creating ? [saved, ...prev] : prev.map(item => item.id === saved.id ? saved : item));
+          setRecordModal(null);
+          onToast(creating ? '客户档案已创建' : '客户资料已更新', saved.name);
+      } catch (error) { onToast('客户保存失败', error.message || '请重试', 'danger'); }
   };
 
-  const handleDeleteCustomer = () => {
-      setCustomers((prev) => prev.filter((item) => item.id !== deleteTarget.id));
-      onToast('客户已删除', deleteTarget.name, 'warning');
-      onAudit('删除客户', deleteTarget.id);
-      setDeleteTarget(null);
+  const handleDeleteCustomer = async () => {
+      try {
+          if (!apiContext || !deleteTarget?.formalCustomer) throw new Error('正式客户未加载，请刷新后重试');
+          await supplyChainApi.deleteCustomer(apiContext, deleteTarget.formalCustomer);
+          setCustomers((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+          onToast('客户已删除', deleteTarget.name, 'warning');
+          setDeleteTarget(null);
+      } catch (error) { onToast('客户删除失败', error.message || '请重试', 'danger'); }
   };
 
   return (
@@ -3231,7 +3210,7 @@ const Sales_CustomersView = ({ customers, setCustomers, industries, onToast, onA
                   <tbody>
                       {pagedCustomers.map(row => (
                           <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 text-blue-500 cursor-pointer font-mono font-bold">{row.id}</td>
+                              <td className="px-6 py-4 text-blue-500 cursor-pointer font-mono font-bold">{row.customerNo || row.id}</td>
                               <td className="px-6 py-4 text-slate-800 font-bold">{row.name}</td>
                               <td className="px-6 py-4 text-slate-700">{row.code}</td>
                               <td className="px-6 py-4 text-slate-700">{row.contact}</td>
@@ -3276,48 +3255,11 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
       setRecordModal({ type: 'industry', mode: 'create', record: { id: `IND-${String(industries.length + 1).padStart(3, '0')}`, name: '', parentId: '', sort: industries.length + 1, status: '启用', remark: '', createdAt: new Date().toLocaleString('zh-CN', { hour12: false }) } });
   };
 
-  const handleSaveRecord = (record) => {
-      if (recordModal.type === 'level') {
-          setLevels(prev => recordModal.mode === 'create' ? [...prev, record] : prev.map(item => item.level === record.level ? record : item));
-          onToast(recordModal.mode === 'create' ? '客户等级已新增' : '客户等级已更新', record.name);
-          onAudit(recordModal.mode === 'create' ? '新增客户等级' : '编辑客户等级', record.level);
-      } else {
-          setIndustries(prev => recordModal.mode === 'create' ? [...prev, record] : prev.map(item => item.id === record.id ? record : item));
-          onToast(recordModal.mode === 'create' ? '行业已新增' : '行业已更新', record.name);
-          onAudit(recordModal.mode === 'create' ? '新增行业字典' : '编辑行业字典', record.id);
-      }
-      setRecordModal(null);
-  };
-
-  const toggleLevelStatus = (row) => {
-      const status = row.status === '启用' ? '停用' : '启用';
-      setLevels(prev => prev.map(item => item.level === row.level ? { ...item, status } : item));
-      onToast(`客户等级已${status}`, row.name, status === '停用' ? 'warning' : 'success');
-      onAudit(`${status}客户等级`, row.level);
-  };
-
-  const toggleIndustryStatus = (row) => {
-      const status = row.status === '启用' ? '停用' : '启用';
-      setIndustries(prev => prev.map(item => item.id === row.id ? { ...item, status } : item));
-      onToast(`行业已${status}`, row.name, status === '停用' ? 'warning' : 'success');
-      onAudit(`${status}行业字典`, row.id);
-  };
-
-  const handleDeleteRecord = () => {
-      if (confirmDelete.type === 'level') {
-          if (customers.some((customer) => customer.level === confirmDelete.record.level)) {
-              onToast('客户等级正在被引用', '请停用该等级，不能直接删除', 'warning');
-              setConfirmDelete(null);
-              return;
-          }
-          setLevels(prev => prev.filter(item => item.level !== confirmDelete.record.level));
-      } else {
-          setIndustries(prev => prev.filter(item => item.id !== confirmDelete.record.id));
-      }
-      onToast('记录已删除', confirmDelete.record.name, 'danger');
-      onAudit(confirmDelete.type === 'level' ? '删除客户等级' : '删除行业字典', confirmDelete.type === 'level' ? confirmDelete.record.level : confirmDelete.record.id);
-      setConfirmDelete(null);
-  };
+  const unavailable = (..._args: unknown[]) => onToast('未保存', '销售基础数据完整属性与触达规则尚缺持久化契约，请由平台字典维护已支持的字段', 'danger');
+  const handleSaveRecord = unavailable;
+  const toggleLevelStatus = unavailable;
+  const toggleIndustryStatus = unavailable;
+  const handleDeleteRecord = unavailable;
 
   return (
       <div className="max-w-full mx-auto animate-in fade-in duration-300">
@@ -3459,7 +3401,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
                       </div>
                   </div>
                   <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-                      <button onClick={() => { onToast('自动化触达规则已保存', '订单超时提醒配置已更新'); onAudit('更新订单超时触达规则', 'OUTREACH-RULE'); }} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded shadow-sm transition-colors">保存配置</button>
+                      <button onClick={unavailable} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded shadow-sm transition-colors">保存配置</button>
                   </div>
               </div>
           )}
@@ -3592,92 +3534,30 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const salesInventory = useFormalInventory(formalContext);
   const inventoryMasterData = salesInventory.masterData || { warehouses: [], products: [], materials: [] };
+  const salesIdentity = useRef(formalContext);
+  salesIdentity.current = formalContext;
+  const salesReadRevision = useRef(0);
 
   useEffect(() => {
+    let active = true;
+    setSalesWarehouseList([]);
     if (!formalContext) return;
     inventoryApi.listWarehouses(formalContext)
-      .then((response) => setSalesWarehouseList((response.items || []).filter((warehouse) => warehouse.status === 'active')))
-      .catch(() => setSalesWarehouseList([]));
+      .then((response) => { if (active) setSalesWarehouseList((response.items || []).filter((warehouse) => warehouse.status === 'active')); })
+      .catch(() => { if (active) setSalesWarehouseList([]); });
+    return () => { active = false; };
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
-  // 从后端 API 加载客户数据（替代 localStorage 硬编码数据）
+  const [salesDataError, setSalesDataError] = useState('');
+  const [customerDataError, setCustomerDataError] = useState('');
   useEffect(() => {
-    if (!formalContext) return;
-    import('./api/supply-chain').then(({ supplyChainApi }) => {
-      supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 100 })
-        .then(res => {
-          if (res.items && res.items.length > 0) {
-            setCustomers(res.items.map((c: any) => ({
-              id: c.customerNo || c.id,
-              name: c.name,
-              code: c.code || '-',
-              contact: c.contactPerson || '-',
-              phone: c.phone || '-',
-              level: c.level || 'D',
-              status: c.status || '合作中',
-              address: c.address || '-',
-              owner: c.owner || '-',
-              industry: c.industry || '-',
-              lastInteractionAt: c.lastInteractionAt || '-',
-            })));
-          }
-        })
-        .catch(() => {/* API 失败时保留空数据 */});
-    });
-  }, [formalContext?.tenantId, formalContext?.accessToken]);
-
-  // 从后端 API 加载销售订单（替代 localStorage 硬编码数据）
-  useEffect(() => {
-    if (!formalContext) return;
-    // 后端会话建立后清除 localStorage 原型数据，确保 API 数据不被覆盖
-    localStorage.removeItem(salesWorkspaceStorageKey(currentTenant?.id));
-    import('./api/fulfillment').then(({ listFulfillmentOrders }) => {
-      listFulfillmentOrders(formalContext)
-        .then(res => {
-          if (res.items && res.items.length > 0) {
-            const statusMap = { OPEN: '待发货', CONFIRMED: '已确认', REPLENISHING: '生产补货中', PARTIALLY_SHIPPED: '部分发货', SHIPPED: '已发货', COMPLETED: '已完成', CANCELED: '已取消' };
-            setOrders(res.items.map((o: any) => {
-              const firstLine = o.lines?.[0] || {};
-              const totalQty = (o.lines || []).reduce((s, l) => s + Number(l.orderedQty || 0), 0);
-              const totalAmount = (o.lines || []).reduce((s, l) => s + Number(l.unitPrice || 0) * Number(l.orderedQty || 0), 0);
-              return {
-                id: o.orderNo || o.id,
-                client: o.customerName || o.recipient?.name || '-',
-                product: firstLine.productId ? `${firstLine.productId} × ${firstLine.orderedQty} 件` : '-',
-                productName: firstLine.productId || '-',
-                qty: totalQty,
-                amount: `¥${totalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`,
-                receivable: o.status === 'COMPLETED' ? '已结算' : '待生成',
-                date: (o.createdAt || '').split('T')[0],
-                deliveryDate: firstLine.promisedDate || o.requestedDeliveryDate || '-',
-                outStatus: o.status === 'SHIPPED' || o.status === 'COMPLETED' ? '已发货' : '未发货',
-                status: statusMap[o.status] || o.status || '待发货',
-                createdAt: (o.createdAt || '').replace('T', ' ').substring(0, 19),
-              };
-            }));
-          }
-        })
-        .catch(() => {/* 不回退到浏览器原型数据。 */});
-    });
-  }, [formalContext?.tenantId, formalContext?.accessToken]);
-
-  // 从后端 API 加载客户数据（替代硬编码 sales_customersListData）
-  useEffect(() => {
-    if (!formalContext) return;
-    import('./api/supply-chain').then(({ supplyChainApi }) => {
-      supplyChainApi.listCustomers(formalContext)
-        .then(res => {
-          const items = res?.items ?? res;
-          if (Array.isArray(items) && items.length > 0) {
-            setCustomers(prev => prev.length <= 3 ? items.map((c: any) => ({
-              id: c.id, name: c.name, code: c.customerNo || c.id,
-              level: 'A', contact: '', phone: '', status: '正常', industry: '',
-              creditCode: c.creditCode || '', createdAt: c.createdAt || '',
-            })) : prev);
-          }
-        })
-        .catch(() => {/* API 失败时保留本地数据 */});
-    });
+    let active = true;
+    setCustomers([]); setOrders([]); setQuotes([]); setLevels([]); setIndustries([]);
+    setAudits([]); setOutboundRequestModal(null); setSalesDataError(''); setCustomerDataError('');
+    if (formalContext) supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 100 })
+      .then(response => { if (active) setCustomers(response.items.map(mapSalesCustomer)); })
+      .catch(error => { if (active) { setCustomers([]); setCustomerDataError(error.message || '客户加载失败'); } });
+    return () => { active = false; };
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
   const quoteOptions = useMemo(
@@ -3740,10 +3620,18 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   };
 
   const refreshFormalOrders = async () => {
-      if (!formalContext) return;
-      const response = await listFulfillmentOrders(formalContext);
-      const formal = response.items.map(mapFormalOrder);
-      setOrders((previous) => mergeFormalSalesOrders(previous, formal));
+      const revision = ++salesReadRevision.current;
+      if (!formalContext) { setOrders([]); return; }
+      try {
+          const response = await listFulfillmentOrders(formalContext);
+          if (salesIdentity.current !== formalContext || revision !== salesReadRevision.current) return;
+          setOrders(response.items.map(mapFormalOrder));
+          setSalesDataError('');
+      } catch (error) {
+          if (salesIdentity.current !== formalContext || revision !== salesReadRevision.current) return;
+          setOrders([]); setSalesDataError(error.message || '正式订单加载失败');
+          throw error;
+      }
   };
 
   useEffect(() => {
@@ -3759,17 +3647,6 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
           window.removeEventListener('sales-fulfillment-changed', refresh);
       };
   }, [formalContext?.tenantId, formalContext?.accessToken]);
-
-  useEffect(() => {
-      const tasks = loadSalesOutboundTasks(window.localStorage, currentTenant?.id);
-      if (tasks.length === 0) return;
-      setOrders(prev => prev.map(order => {
-          if (order.aggregateId) return order;
-          const task = tasks.find(t => t.source === order.id && t.status !== '已出库');
-          return task ? { ...order, outStatus: task.status } : order;
-      }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTenant?.id]);
 
   useEffect(() => {
       const tab = resolveSalesTab(window.location.search);
@@ -3808,105 +3685,15 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       setAudits(prev => [{ action, entityId, operator: currentUser?.name || currentUser?.account || '当前用户', time: new Date().toLocaleString('zh-CN', { hour12: false }) }, ...prev].slice(0, 200));
   };
 
-  const approveQuoteAndConvert = (quote) => {
-      const latestQuote = quotes.find((item) => item.id === quote.id);
-      if (!latestQuote) {
-          showToast('报价审批确认失败', '报价单不存在或已被移除，请刷新后重试', 'danger');
-          return null;
-      }
-      const existingOrder = orders.find((order) => order.sourceQuoteId === latestQuote.id || order.id === latestQuote.convertedOrderId);
-      if (existingOrder) {
-          showToast('报价单已转订单', `${latestQuote.id} 已关联 ${existingOrder.id}`);
-          openSalesOrder(existingOrder.id);
-          return existingOrder;
-      }
-      try {
-          const approvedAt = new Date().toISOString();
-          const operator = currentUser?.name || currentUser?.account || '客户经理';
-          const order = createPendingSalesOrderFromQuote(latestQuote, {
-              orderId: sales_makeDocumentId('SO'),
-              salesman: operator,
-              approvedAt,
-          });
-          setQuotes(prev => prev.map(item => item.id === latestQuote.id ? {
-              ...item,
-              status: '已转订单',
-              convertedOrderId: order.id,
-              convertedAt: approvedAt,
-              convertedBy: operator,
-              version: Number(item.version || 1),
-          } : item));
-          setOrders(prev => [order, ...prev]);
-          addAudit('审批确认产品报价并转销售订单', latestQuote.id);
-          addAudit('由报价生成待发货销售订单', order.id);
-          showToast('销售订单已生成', `${order.id} 已进入待发货，尚未发货`);
-          openSalesOrder(order.id);
-          return order;
-      } catch (error) {
-          showToast('报价审批确认失败', error instanceof Error ? error.message : '请核对报价状态后重试', 'danger');
-          return null;
-      }
+  const approveQuoteAndConvert = () => {
+      showToast('未转单', '报价单缺少服务端持久化及转单接口', 'danger');
+      return null;
   };
 
   const ensureFormalSalesOrder = async (order) => {
           if (!formalContext) throw new Error('请先登录正式会话后再操作');
           if (order.aggregateId) return getFulfillmentOrder(formalContext, order.aggregateId);
-          const promotedOrder = orders.find(item => item.localOrderId === order.id && item.aggregateId);
-          if (promotedOrder) return getFulfillmentOrder(formalContext, promotedOrder.aggregateId);
-              const orderLines = Array.isArray(order.lines) && order.lines.length > 0
-                  ? order.lines.map((line) => ({
-                      productId: line.productId || String(line.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || '',
-                      productName: line.productName || '',
-                      spec: line.spec || '',
-                      qty: Number(line.quantity || line.qty || 0),
-                      unit: line.unit || '件',
-                      unitPrice: Number(line.unitPrice || 0),
-                    }))
-                  : [{
-                      productId: order.productId || String(order.productName || '').match(/[A-Z]{2,}\d+/)?.[0] || 'FG001',
-                      productName: order.productName || order.product || '',
-                      spec: order.spec || '',
-                      qty: Number(order.qty || 0),
-                      unit: order.unit || '件',
-                      unitPrice: Number(order.unitPrice || 0),
-                    }];
-              const warehouseId = order.warehouseId || order.warehouse || order.lines?.[0]?.warehouseId || '';
-              const fulfillmentWarehouse = salesWarehouseList.find((warehouse) => warehouse.id === warehouseId || warehouse.code === warehouseId || warehouse.name === warehouseId)
-                  || salesWarehouseList[0];
-              if (!fulfillmentWarehouse) throw new Error('请先在库存管理创建并启用发货仓库');
-              const customer = customers.find((item) => item.name === order.client) || customers[0];
-              const created = await createFulfillmentOrder(formalContext, {
-                  ...salesOrderPricingInput(order),
-                  customerId: customer?.id || order.client,
-                  customerName: order.client,
-                  ownerEmployeeId: currentUser?.account || 'sales-owner',
-                  fulfillmentWarehouseId: fulfillmentWarehouse.id,
-                  factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
-                  requestedDeliveryDate: order.deliveryDate,
-                  allowPartialShipment: true,
-                  currency: 'CNY',
-                  recipient: {
-                      name: customer?.contact || '待补充收货人',
-                      phone: customer?.phone && customer.phone !== '-' ? customer.phone : '13800000000',
-                      country: '中国', province: '上海', city: '上海', address: customer?.address || '待补充收货地址',
-                  },
-                  lines: orderLines.map((line, index) => ({
-                      lineNo: index + 1,
-                      productId: line.productId,
-                      orderedQty: String(line.qty),
-                      uom: canonicalInventoryUnit(line.unit),
-                      unitPrice: String(line.unitPrice || 0),
-                      taxRate: '0',
-                      promisedDate: order.deliveryDate,
-                      allowPartialShipment: true,
-                  })),
-              }, `sales-order:${order.id}`);
-              const createdOrder = { ...mapFormalOrder(created), localOrderId: order.id };
-              setOrders(prev => upsertSalesOrder(prev, createdOrder, order.id));
-              setQuotes(prev => prev.map(quote => quote.convertedOrderId === order.id
-                  ? { ...quote, convertedOrderId: createdOrder.id } : quote));
-              removeSalesOutboundBySource(window.localStorage, currentTenant?.id, order.id);
-              return getFulfillmentOrder(formalContext, created.id);
+          throw new Error('正式订单标识缺失，请刷新订单列表；不能把浏览器记录重新创建为订单');
   };
 
   const requestOutbound = async (order) => {
@@ -4016,8 +3803,8 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       return mapFormalOrder(await cancelFulfillmentOrder(formalContext, row.formalOrder, '销售确认取消'));
   };
 
-  const cancelOrderOutbound = (order) => {
-      cancelSalesOutbound(window.localStorage, currentTenant?.id, order.id);
+  const cancelOrderOutbound = () => {
+      window.dispatchEvent(new CustomEvent('sales-fulfillment-changed', { detail: { tenantId: currentTenant?.id } }));
   };
 
   const tabs = [
@@ -4078,10 +3865,17 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
               {activeTab === 'dashboard' && <BusinessFlowDock moduleName="销售管理" flow={businessFlow} onAction={onBusinessFlowAction} onNavigate={onNavigateModule} />}
 
               <div className="w-full">
-                  {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} onCreateQuote={(quote) => setQuotes(prev => [quote, ...prev])} onOpenOrders={() => navigateSalesTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
+                  {(salesDataError || customerDataError) && <div role="alert" className="mb-4 border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{[salesDataError, customerDataError].filter(Boolean).join('；')}<button className="ml-3 underline" onClick={() => {
+                      void refreshFormalOrders().catch(() => {});
+                      if (formalContext) supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 100 })
+                          .then(result => { if (salesIdentity.current === formalContext) { setCustomers(result.items.map(mapSalesCustomer)); setCustomerDataError(''); } })
+                          .catch(error => { if (salesIdentity.current === formalContext) setCustomerDataError(error.message || '客户加载失败'); });
+                  }}>重新加载</button></div>}
+                  {['quotes', 'basic-data'].includes(activeTab) && <div role="status" className="mb-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{activeTab === 'quotes' ? '报价单持久化接口尚未接入，当前不能保存或转单。' : '完整销售基础数据与触达配置尚未接入，当前不能保存配置。'}</div>}
+                  {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} apiContext={formalContext} onCreateQuote={() => { throw new Error('未保存：报价单持久化接口尚未提供'); }} onOpenOrders={() => navigateSalesTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
                   {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
                   {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={quoteOptions.products} orderCreationRevision={orderCreationRevision} apiContext={formalContext} />}
-                  {activeTab === 'customers' && <Sales_CustomersView customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
+                  {activeTab === 'customers' && <Sales_CustomersView apiContext={formalContext} customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
                   {activeTab === 'rma' && <RmaManagementPanel />}
                   {activeTab === 'receipts' && <CustomerReceiptPanel />}
                   {activeTab === 'basic-data' && <Sales_BaseDataView levels={levels} setLevels={setLevels} industries={industries} setIndustries={setIndustries} customers={customers} outreachSettings={outreachSettings} setOutreachSettings={setOutreachSettings} onToast={showToast} onAudit={addAudit} />}
@@ -5465,186 +5259,9 @@ const Prod_ImportBomModal = ({ onClose, onImport }) => (
     </div>
 );
 
-const Prod_BomView = ({ bomData, setBomData, showToast, formalCtx = null }) => {
-    const [activeBomId, setActiveBomId] = useState(bomData[0]?.id);
-    const [searchKw, setSearchKw] = useState('');
-    const [bomModal, setBomModal] = useState({ open: false, action: 'add', nodeId: null, parentId: null });
-    const [importOpen, setImportOpen] = useState(false);
-
-    const activeBom = bomData.find(b => b.id === activeBomId);
-    const isEditable = activeBom && activeBom.status === '草稿';
-
-    const handleCreateDraft = () => {
-        const newId = `BOM-${Date.now().toString().slice(-4)}`;
-        const newBom = { id: newId, name: `${newId} - 未命名产品`, type: '成品', quantity: 1, unit: 'PCS', status: '草稿', version: 'V1.0', children: [] };
-        setBomData(prev => [newBom, ...prev]);
-        setActiveBomId(newId);
-        setBomModal({ open: true, action: 'edit', nodeId: newId, parentId: null });
-    };
-
-    const handleImport = () => {
-        showToast('正在解析文件树层级...', 'warning');
-        setTimeout(() => {
-            const newId = 'FG-IMP-' + Date.now().toString().slice(-4);
-            const randSuffix = Math.floor(Math.random() * 1000);
-            const importedBom = {
-                id: newId, name: '自动导入 - 高级工业传感模块', type: '成品', quantity: 1, unit: 'PCS', status: '草稿', version: 'V1.0',
-                children: [
-                    { id: `RM-${randSuffix}-1`, name: `RM-${randSuffix}-1 - 进口高敏传感器探头`, type: '原材料', quantity: 2, unit: 'PCS', children: [] },
-                    { id: `RM-${randSuffix}-2`, name: `RM-${randSuffix}-2 - 标准防水密封垫圈`, type: '外购件', quantity: 4, unit: 'PCS', children: [] },
-                    { id: `SA-${randSuffix}`, name: `SA-${randSuffix} - 定制传感转换板`, type: '半成品', quantity: 1, unit: 'PCS', children: [
-                        { id: `RM-${randSuffix}-3`, name: `RM-${randSuffix}-3 - 微型贴片电容`, type: '外购件', quantity: 12, unit: 'PCS', children: [] }
-                    ]}
-                ]
-            };
-            setBomData(prev => [importedBom, ...prev]);
-            setActiveBomId(newId);
-            showToast('BOM 结构数据导入成功，已生成草稿！', 'success');
-            setImportOpen(false);
-        }, 1200);
-    };
-
-    const findBomNode = (node, id) => {
-        if (node.id === id) return node;
-        if (node.children) {
-            for (let child of node.children) {
-                let found = findBomNode(child, id);
-                if (found) return found;
-            }
-        }
-        return null;
-    };
-
-    const handleSaveBomNode = (data, targetStatus) => {
-        setBomData(prev => {
-            let newData = [...prev];
-            if (bomModal.action === 'add') {
-                const addRecursive = (nodes) => {
-                    for (let n of nodes) {
-                        if (n.id === bomModal.parentId) {
-                            n.children.push({ ...data, children: [] });
-                            return true;
-                        }
-                        if (n.children && addRecursive(n.children)) return true;
-                    }
-                    return false;
-                };
-                addRecursive(newData);
-            } else {
-                const editRecursive = (nodes) => {
-                    for (let i=0; i<nodes.length; i++) {
-                        if (nodes[i].id === bomModal.nodeId) {
-                            nodes[i] = { ...nodes[i], ...data };
-                            if (targetStatus) nodes[i].status = targetStatus;
-                            return true;
-                        }
-                        if (nodes[i].children && editRecursive(nodes[i].children)) return true;
-                    }
-                    return false;
-                };
-                editRecursive(newData);
-            }
-            return newData;
-        });
-        setBomModal({ open: false, action: 'add', nodeId: null, parentId: null });
-        showToast(targetStatus === '待审批' ? '产品BOM已成功提交审批！' : 'BOM 模型节点属性已保存成功！', 'success');
-    };
-
-    const handleDeleteNode = (id) => {
-        setBomData(prev => {
-            let newData = [...prev];
-            const isRoot = newData.findIndex(b => b.id === id);
-            if (isRoot > -1) {
-                newData.splice(isRoot, 1);
-                if (activeBomId === id) setActiveBomId(newData[0]?.id);
-            } else {
-                const deleteRecursive = (nodes) => {
-                    const idx = nodes.findIndex(n => n.id === id);
-                    if (idx > -1) { nodes.splice(idx, 1); return true; }
-                    for (let n of nodes) { if (n.children && deleteRecursive(n.children)) return true; }
-                    return false;
-                };
-                deleteRecursive(newData);
-            }
-            return newData;
-        });
-        showToast('节点已被移除', 'success');
-    };
-
-    const changeStatus = (id, status) => {
-        if (formalCtx && status === '已生效') {
-            showToast('请在上方生效版本中确认物料及工艺后发布', 'warning');
-            return;
-        }
-        setBomData(prev => prev.map(b => b.id === id ? { ...b, status } : b));
-        showToast(`状态已更新为: ${status}`, 'success');
-    };
-
-    return (
-        <div className="flex flex-col gap-5 h-full relative animate-in fade-in duration-300">
-            {formalCtx && <FormalBomPanel context={formalCtx} />}
-            <div className="flex flex-1 gap-5 overflow-hidden min-h-[500px]">
-                <div className="w-80 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col shrink-0 overflow-hidden">
-                    <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-                        <h4 className="font-bold text-[14px] text-slate-800 flex items-center gap-2"><List size={16} className="text-blue-600" /> 生产物料清单</h4>
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setImportOpen(true)} className="bg-white border border-slate-200 text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors shadow-sm" title="从Excel/CSV导入"><Import size={16}/></button>
-                            <button onClick={handleCreateDraft} className="bg-blue-600 text-white p-1.5 rounded-lg hover:bg-blue-700 transition-colors shadow-sm" title="新建产品BOM"><Plus size={16}/></button>
-                        </div>
-                    </div>
-                    <div className="px-4 py-3 border-b border-slate-50 bg-white shrink-0">
-                        <div className="relative">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input value={searchKw} onChange={e=>setSearchKw(e.target.value)} type="text" placeholder="搜索产品编码或名称..." className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] focus:outline-none focus:border-blue-500 focus:bg-white transition-colors" />
-                        </div>
-                    </div>
-                    <div className="p-3 flex-1 overflow-y-auto custom-scrollbar space-y-1 bg-[#fafcff]/30">
-                        {bomData.filter(b => (`${b.id} ${b.name}`).toLowerCase().includes(searchKw.toLowerCase())).map(b => {
-                            const colors = { '草稿': 'bg-slate-100 text-slate-600 border-slate-200', '待审批': 'bg-amber-50 text-amber-600 border-amber-200', '已生效': 'bg-emerald-50 text-emerald-600 border-emerald-200', '已作废': 'bg-rose-50 text-rose-600 border-rose-200', '已归档': 'bg-slate-100 text-slate-500 border-slate-200' };
-                            const bg = b.id === activeBomId ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-transparent hover:bg-slate-50';
-                            return (
-                                <div key={b.id} onClick={() => setActiveBomId(b.id)} className={`p-3 rounded-xl cursor-pointer border transition-colors flex flex-col gap-1.5 ${bg}`}>
-                                    <div className="font-bold text-[13px] text-slate-800 truncate" title={b.name}>{b.name}</div>
-                                    <div className="flex justify-between items-center mt-1">
-                                        <span className="text-[11px] text-slate-500 font-mono">ID: {b.id}</span>
-                                        <div className="flex gap-1.5">
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${b.type==='成品'?'bg-blue-100 text-blue-700':b.type==='半成品'?'bg-purple-100 text-purple-700':'bg-amber-100 text-amber-700'}`}>{b.type}</span>
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${colors[b.status]}`}>{b.status}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 overflow-hidden flex flex-col relative">
-                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center shrink-0 bg-slate-50/50">
-                        <div className="flex items-center gap-3">
-                            <h4 className="font-bold text-[14px] text-slate-800 flex items-center gap-2"><GitCommit size={16} className="text-blue-600" /> {activeBom ? activeBom.id + ' 结构层级' : 'BOM 结构树'}</h4>
-                            {activeBom && <span className={`px-2 py-0.5 text-[11px] rounded font-bold border ${activeBom.status==='草稿'?'bg-slate-100 text-slate-600':activeBom.status==='待审批'?'bg-amber-50 text-amber-600':activeBom.status==='已生效'?'bg-emerald-50 text-emerald-600':'bg-rose-50 text-rose-600'}`}>{activeBom.status}</span>}
-                        </div>
-                        <div className="flex gap-2">
-                            {activeBom?.status === '草稿' && <>
-                                <button onClick={() => changeStatus(activeBom.id, '待审批')} className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-[12px] font-bold hover:bg-blue-100 border border-blue-100 transition-colors">提交审批</button>
-                                <button onClick={() => handleDeleteNode(activeBom.id)} className="bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg text-[12px] font-bold hover:bg-rose-100 border border-rose-100 transition-colors">删除BOM</button>
-                            </>}
-                            {activeBom?.status === '待审批' && <button onClick={() => changeStatus(activeBom.id, '已生效')} className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg text-[12px] font-bold hover:bg-emerald-100 border border-emerald-100 transition-colors">审核通过(生效)</button>}
-                            {activeBom?.status === '已生效' && <>
-                                <button onClick={() => changeStatus(activeBom.id, '已作废')} className="bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg text-[12px] font-bold hover:bg-rose-100 border border-rose-100 transition-colors">作废</button>
-                                <button onClick={() => changeStatus(activeBom.id, '已归档')} className="bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-[12px] font-bold hover:bg-slate-100 border border-slate-200 transition-colors">归档</button>
-                            </>}
-                        </div>
-                    </div>
-                    <div className="p-8 overflow-y-auto flex-1 custom-scrollbar bg-[#fafcff]/50 flex justify-center items-start">
-                        {activeBom ? <BomNode node={activeBom} isRoot={true} isEditable={isEditable} onAdd={(parentId) => setBomModal({open: true, action: 'add', nodeId: null, parentId})} onEdit={(nodeId) => setBomModal({open: true, action: 'edit', nodeId, parentId: null})} onDelete={handleDeleteNode} /> : <div className="text-slate-400 text-[13px] mt-10 flex flex-col items-center gap-2"><Inbox size={32} className="text-slate-300" /> 请从左侧选择或新建一个产品 BOM</div>}
-                    </div>
-                </div>
-            </div>
-            {importOpen && <Prod_ImportBomModal onClose={() => setImportOpen(false)} onImport={handleImport} />}
-            {bomModal.open && <Prod_BomModal action={bomModal.action} activeNode={bomModal.action==='edit'?(() => { for(let b of bomData) { let n=findBomNode(b, bomModal.nodeId); if(n) return n; } return null; })() : null} onClose={() => setBomModal({open: false, action: 'add', nodeId: null, parentId: null})} onSave={handleSaveBomNode} />}
-        </div>
-    );
-};
+const Prod_BomView = ({ formalCtx = null, ..._props }) => formalCtx
+    ? <FormalBomPanel context={formalCtx} />
+    : <div role="status" className="border border-slate-200 bg-white p-8 text-center text-slate-500">请登录后读取正式 BOM 数据</div>;
 
 const Prod_RouteHeaderModal = ({ action, activeRoute, onClose, onSave }) => {
     const [id, setId] = useState(activeRoute?.id || '');
@@ -5747,46 +5364,11 @@ const Prod_RoutingView = ({ routingData, setRoutingData, equipments, showToast }
 
     const activeRoute = routingData.find(r => r.id === activeRouteId);
 
-    const handleSaveHeader = (data) => {
-        if (!data.id || !data.name || !data.targetItem) return;
-        setRoutingData(prev => {
-            if (headerModal.action === 'add') {
-                setActiveRouteId(data.id);
-                return [{ ...data, operations: [] }, ...prev];
-            } else {
-                return prev.map(r => r.id === headerModal.id ? { ...r, ...data } : r);
-            }
-        });
-        setHeaderModal({ open: false, action: 'add', id: null });
-        showToast('工艺路线基础信息保存成功！', 'success');
-    };
-
-    const handleDeleteHeader = (id) => {
-        setRoutingData(prev => {
-            const newData = prev.filter(r => r.id !== id);
-            if (activeRouteId === id) setActiveRouteId(newData[0]?.id);
-            return newData;
-        });
-        showToast('工艺路线已删除', 'success');
-    };
-
-    const handleSaveOp = (data) => {
-        if (!data.id || !data.name) return;
-        setRoutingData(prev => prev.map(r => {
-            if (r.id === activeRouteId) {
-                if (opModal.action === 'add') return { ...r, operations: [...r.operations, data] };
-                else return { ...r, operations: r.operations.map(op => op.id === opModal.id ? { ...op, ...data } : op) };
-            }
-            return r;
-        }));
-        setOpModal({ open: false, action: 'add', id: null });
-        showToast('工序步骤保存成功！', 'success');
-    };
-
-    const handleDeleteOp = (id) => {
-        setRoutingData(prev => prev.map(r => r.id === activeRouteId ? { ...r, operations: r.operations.filter(op => op.id !== id) } : r));
-        showToast('工艺节点已从路线中移除', 'success');
-    };
+    const unavailable = (..._args: unknown[]) => showToast('未保存：后端尚未提供工艺路线和工序维护接口', 'error');
+    const handleSaveHeader = unavailable;
+    const handleDeleteHeader = unavailable;
+    const handleSaveOp = unavailable;
+    const handleDeleteOp = unavailable;
 
     return (
         <div className="flex flex-col gap-5 h-full relative animate-in fade-in duration-300">
@@ -5839,7 +5421,7 @@ const Prod_RoutingView = ({ routingData, setRoutingData, equipments, showToast }
 };
 
 const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentUser, currentTenant }) => {
-  const productionLines = loadPlatformProductionLines(currentTenant?.id);
+  const [productionLines, setProductionLines] = useState([]);
   const legacyTabs = ['dashboard', 'mps', 'mrp', 'aps', 'orders', 'execution', 'qc_cost', 'bom', 'routing', 'equipment'];
   const focusedMpsId = new URLSearchParams(window.location.search).get('focusMps');
   const [activeTab, setActiveTab] = useState(() => {
@@ -5862,22 +5444,21 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [actionModal, setActionModal] = useState(null);
 
-  useEffect(() => {
-      const materialIssues = loadProductionMaterialIssueTasks(window.sessionStorage, currentTenant?.id);
-      if (!materialIssues.length) return;
-      setJobs((previous) => previous.map((job) => {
-          const task = materialIssues.find((item) => item.jobId === job.id);
-          if (!task) return job;
-          return { ...job, materialIssueTaskId: task.id, status: task.status === '已出库' ? '未开工' : '领料处理中' };
-      }));
-  }, [currentTenant?.id]);
-  
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
   };
 
   const formalCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const productionInventory = useFormalInventory(formalCtx);
+  useEffect(() => {
+      let active = true;
+      setProductionLines([]);
+      if (formalCtx) platformApi.listResources(formalCtx)
+          .then(items => { if (active) setProductionLines(items.filter(item => item.type === 'line' && item.status === 'enabled')); })
+          .catch(() => {});
+      return () => { active = false; };
+  }, [formalCtx]);
   const { snapshot: formalSnapshot, refresh: refreshFormalProduction, error: formalError } = useFormalProduction(formalCtx);
   const [reportOrder, setReportOrder] = useState(null);
 
@@ -5925,6 +5506,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   useEffect(() => {
       let cancelled = false;
+      setProductionDemands([]); setMps([]); setMrp([]);
       listProductionDemands({
           tenantId: currentTenant?.id || 'TENANT-SHWS',
           accessToken: currentUser?.accessToken || '',
@@ -5936,6 +5518,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               tenantId: currentTenant?.id || 'TENANT-SHWS',
               accessToken: currentUser?.accessToken || '',
           }, item.mrpTaskId)));
+          if (cancelled) return;
           const recovered = planned.flatMap((demand, index) => {
               if (tasks[index].status !== 'fulfilled') return [];
               const row = recoverMpsFromPlannedDemand(demand, tasks[index].value);
@@ -5943,10 +5526,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           });
           const recoveredRows = recovered.map(item => item.row);
           if (recoveredRows.length) {
-              setMps(prev => [
-                  ...recoveredRows,
-                  ...prev.filter(item => !recoveredRows.some(row => row.demandId === item.demandId)),
-              ]);
+              setMps(recoveredRows);
               const shortageRows = recovered.flatMap(({ row, task, demand }) => (planningMaterialShortages(task.result).filter(shortage => shortage.demandId === demand.id).map((shortage) => ({
                   id: `MRP-${task.id.slice(0, 8)}-${demand.id}-${shortage.materialId}`,
                   mrpTaskId: task.id,
@@ -5965,7 +5545,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
                   pegging: [],
               }))));
               if (shortageRows.length) {
-                  setMrp(prev => [...shortageRows, ...prev.filter(item => !shortageRows.some(row => row.mrpTaskId === item.mrpTaskId && row.itemCode === item.itemCode))]);
+                  setMrp(shortageRows);
               }
               onBusinessFlowAction?.('formalMrpCompleted', {
                   mrpTaskId: recovered[0].task.id,
@@ -5981,7 +5561,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   }, [currentTenant?.id, currentUser?.account, currentUser?.accessToken]);
 
   useEffect(() => {
-      if (!formalSnapshot) return;
+      if (!formalSnapshot) { setOrders([]); setJobs([]); setQc([]); return; }
       setOrders(formalSnapshot.orders.map(formalProductionOrder));
       setJobs(formalSnapshot.orders.filter(order => ['RELEASED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'CLOSING', 'CLOSED'].includes(order.status)).map(formalProductionJob));
       setQc(formalSnapshot.inspections.map(inspection => formalProductionInspection(inspection, formalSnapshot.orders, formalSnapshot.completions)));
@@ -5997,83 +5577,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, [activeTab]);
 
-  useEffect(() => {
-      if (!businessFlow || currentUser?.accessToken) return;
-      if (isLinkedFlowAtLeast(businessFlow, 'productionDemand')) {
-          const linkedDemand = {
-              id: businessFlow.productionDemandCode || businessFlow.productionDemandId || 'PD-LINK-001',
-              apiId: businessFlow.productionDemandId,
-              type: '销售缺货',
-              source: `销售订单 ${businessFlow.orderId}`,
-              customer: businessFlow.customer || '销售客户',
-              product: businessFlow.product,
-              shortage: businessFlow.shortage || businessFlow.qty,
-              requiredDate: '2026-06-28',
-              priority: '紧急',
-              status: isLinkedFlowAtLeast(businessFlow, 'mpsMrp') ? '已生成MPS' : '待生成MPS',
-              owner: '生产服务',
-              reason: `销售订单库存不足，库存事实 v${businessFlow.inventoryFactVersion || '-'}，生产需求已持久化`
-          };
-          setProductionDemands(prev => prev.some(item => item.id === linkedDemand.id || item.apiId === linkedDemand.apiId) ? prev.map(item => item.id === linkedDemand.id || item.apiId === linkedDemand.apiId ? { ...item, ...linkedDemand } : item) : [linkedDemand, ...prev]);
-      }
-      if (isLinkedFlowAtLeast(businessFlow, 'mpsMrp')) {
-          const linkedMps = {
-              id: 'MPS-LINK-001',
-              demandSource: '销售缺货',
-              source: `销售订单 (${businessFlow.orderId})`,
-              product: businessFlow.product,
-              quantity: businessFlow.shortage || businessFlow.qty,
-              date: '2026-06-28',
-              status: isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? '已展算' : '待展算',
-              priority: '销售联动',
-              sourceSalesOrder: businessFlow.orderId,
-              sourceFactVersion: businessFlow.inventoryFactVersion,
-              sourceCustomer: businessFlow.customer,
-          };
-          setMps(prev => prev.some(item => item.id === linkedMps.id) ? prev.map(item => item.id === linkedMps.id ? linkedMps : item) : [linkedMps, ...prev]);
-          setMrp(prev => prev.some(item => item.id === 'MRP-LINK-001') ? prev.map(item => item.id === 'MRP-LINK-001' ? { ...item, status: isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? '已转采购' : '待下达' } : item) : [{
-              id: 'MRP-LINK-001',
-              source: linkedMps.id,
-              itemCode: 'RM201',
-              itemName: 'AI算力芯片',
-              type: '采购件',
-              grossReq: businessFlow.qty * 2,
-              stock: 50,
-              onWay: 0,
-              netReq: businessFlow.qty * 2 - 50,
-              plannedQty: 200,
-              lotRule: '按需(L4L)',
-              status: isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? '已转采购' : '待下达',
-              pegging: []
-          }, ...prev]);
-      }
-      if (isLinkedFlowAtLeast(businessFlow, 'production')) {
-          const linkedOrder = {
-              id: 'WO-LINK-001',
-              source: `MRP-LINK-001 / ${businessFlow.orderId}`,
-              product: businessFlow.product,
-              quantity: businessFlow.qty,
-              startDate: '2026-06-24',
-              endDate: '2026-06-28',
-              status: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '已完工' : '执行中',
-              kitting: '100%'
-          };
-          setOrders(prev => prev.some(item => item.id === linkedOrder.id) ? prev.map(item => item.id === linkedOrder.id ? linkedOrder : item) : [linkedOrder, ...prev]);
-          setQc(prev => prev.some(item => item.id === 'QC-LINK-001') ? prev.map(item => item.id === 'QC-LINK-001' ? { ...item, status: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '已结案' : '待检验', okQty: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? businessFlow.qty : 0, result: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '全良品' : null } : item) : [{
-              id: 'QC-LINK-001',
-              orderId: linkedOrder.id,
-              product: businessFlow.product,
-              type: 'FQC(完工检)',
-              sampleQty: businessFlow.qty,
-              status: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '已结案' : '待检验',
-              okQty: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? businessFlow.qty : 0,
-              ngQty: 0,
-              result: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '全良品' : null
-          }, ...prev]);
-      }
-  }, [businessFlow?.currentStep]);
-
-  // --- 生产需求池交互 ---
   const handleValidateDemand = async (demandId) => {
       const targetDemand = productionDemands.find(item => item.id === demandId);
       if (!targetDemand?.formalDemand) return;
@@ -6347,86 +5850,37 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   // --- MPS 交互 ---
   const handleConfirmMps = (mpsId) => {
-      if (formalCtx) { handleCalcMrp(mpsId); return; }
-      setMps(prev => prev.map(m => m.id === mpsId ? { ...m, status: "待展算" } : m));
-      try {
-          const prodStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || "TENANT-SHWS"}`;
-          const rawProd = window.sessionStorage.getItem(prodStorageKey);
-          if (rawProd) {
-              const prodData = JSON.parse(rawProd);
-              if (Array.isArray(prodData.mps)) {
-                  prodData.mps = prodData.mps.map(item => item.id === mpsId ? { ...item, status: "待展算" } : item);
-                  window.sessionStorage.setItem(prodStorageKey, JSON.stringify(prodData));
-              }
-          }
-      } catch (e) { /* ignore */ }
-      showToast(`MPS计划 [${mpsId}] 已确认，可进行 MRP 展算`, "success");
+      if (!formalCtx) { showToast('请先登录正式会话', 'error'); return; }
+      handleCalcMrp(mpsId);
   };
   const handleConfirmDemandToMps = (demandId) => {
-      if (formalCtx) { void handleCreateMpsFromDemand(demandId); return; }
-      const targetDemand = productionDemands.find(item => item.id === demandId);
-      if (!targetDemand) return;
-      const newMpsId = `MPS-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
-      const newMps = {
-          id: newMpsId,
-          demandSource: targetDemand.type === '销售缺货' ? '销售缺货' : targetDemand.type === '客户加急' ? '订单加急' : '普通生产',
-          source: targetDemand.source,
-          product: targetDemand.product,
-          quantity: targetDemand.shortage,
-          date: targetDemand.requiredDate,
-          status: '待展算',
-          priority: targetDemand.priority,
-          sourceSalesOrder: targetDemand.sourceSalesOrder,
-          sourceCustomer: targetDemand.customer,
-          demandId: targetDemand.apiId || targetDemand.id,
-      };
-      setMps(prev => [newMps, ...prev]);
-      setProductionDemands(prev => prev.map(item => item.id === demandId ? {
-          ...item,
-          apiId: item.apiId || item.id,
-          apiStatus: 'PLANNED',
-          status: '已生成MPS',
-      } : item));
-      try {
-          const prodStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || "TENANT-SHWS"}`;
-          const rawProd = window.sessionStorage.getItem(prodStorageKey);
-          const prodData = rawProd ? JSON.parse(rawProd) : {};
-          if (!Array.isArray(prodData.mps)) prodData.mps = [];
-          prodData.mps.unshift(newMps);
-          if (!Array.isArray(prodData.productionDemands)) prodData.productionDemands = [];
-          prodData.productionDemands = prodData.productionDemands.map(item =>
-              item.id === demandId ? { ...item, apiId: item.apiId || item.id, apiStatus: 'PLANNED', status: '已生成MPS' } : item
-          );
-                  window.sessionStorage.setItem(prodStorageKey, JSON.stringify(prodData));
-      } catch (e) { /* ignore */ }
-      showToast(`需求 [${demandId}] 已确认，生成 MPS [${newMpsId}] 进入待展算`, "success");
+      if (!formalCtx) { showToast('请先登录正式会话', 'error'); return; }
+      void handleCreateMpsFromDemand(demandId);
   };
   const handleAddMps = async (data) => {
       if (!formalCtx) { showToast('请先登录', 'error'); return false; }
       try {
           const productId = data.product.split(' - ')[0].trim();
-          const inventory = loadInventoryMasterData(window.localStorage, currentTenant?.id);
-          const warehouse = inventory.warehouses.find(item => item.code === 'WH-FG-01' || item.id === 'WH-FG-01');
+          const matchingBoms = bomData.filter(item => item.name === data.product || item.productId === productId);
+          const warehouseIds = [...new Set(matchingBoms.map(item => item.inventoryWarehouseId).filter(Boolean))];
+          const candidates = productionInventory.warehouses.filter(item => item.status === 'active'
+              && (!warehouseIds.length || warehouseIds.includes(item.id) || warehouseIds.includes(item.code)));
+          if (candidates.length !== 1) throw new Error('无法确定目标仓库，请补充产品对应的生产仓库配置');
+          const warehouse = candidates[0];
+          const factoryResourceId = await resolveFactoryForWarehouse(formalCtx, warehouse);
           const demand = await productionOperationsApi.createDemand(formalCtx, {
               code: data.id.replace(/^MPS-/, 'DM-'), sourceType: 'MANUAL', sourceDescription: data.source, productId, productName: data.product,
-              qty: String(data.quantity), uom: 'PCS', dueDate: data.date, factoryResourceId: 'FAC-SH-01',
-              inventoryWarehouseId: warehouse?.id || 'WH-FG-01', priority: data.priority === '普通' ? 50 : 80,
+              qty: String(data.quantity), uom: matchingBoms[0]?.uom || productionInventory.masterData?.products.find(item => item.id === productId)?.unit,
+              dueDate: data.date, factoryResourceId,
+              inventoryWarehouseId: warehouse.id, priority: data.priority === '普通' ? 50 : 80,
           }, `manual-production:${currentTenant.id}:${data.id}`);
           setProductionDemands(prev => [mapFormalDemandRow(demand), ...prev.filter(item => item.apiId !== demand.id)]);
           showToast(`需求 ${demand.code} 已保存，请先校验和审批`, 'success');
           return true;
       } catch (error) { showToast(error instanceof Error ? `计划保存失败：${error.message}` : '计划保存失败', 'error'); return false; }
   };
-  const handleUpdateMps = (data) => {
-      if (mps.find(item => item.id === data.id)?.formalMps) { showToast('已展算计划不能直接修改，请通过来源需求调整', 'warning'); return; }
-      setMps(prev => prev.map(m => m.id === data.id ? { ...m, ...data } : m));
-      showToast(`MPS主计划 [${data.id}] 已更新`, 'success');
-  };
-  const handleDeleteMps = (id) => {
-      if (mps.find(item => item.id === id)?.formalMps) { showToast('正式计划保留业务追溯，不能直接删除', 'warning'); return; }
-      setMps(prev => prev.filter(m => m.id !== id));
-      showToast(`MPS 计划单 [${id}] 已删除`, 'success');
-  };
+  const handleUpdateMps = (_data) => showToast('未保存：正式计划需通过来源需求调整，未提供直接修改接口', 'error');
+  const handleDeleteMps = (_id) => showToast('未删除：正式计划保留业务追溯，未提供删除接口', 'error');
   const handleCalcMrp = (mpsId) => {
       const targetMps = mps.find(m => m.id === mpsId);
       const targetDemand = productionDemands.find(item => item.apiId === targetMps?.demandId);
@@ -6512,56 +5966,13 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           }
           return;
       }
-      if (o && (o.kitting !== '100%' || o.status !== '齐套待下发')) {
-          showToast(`工单 [${woId}] 尚未完成齐套与预占，禁止下发车间`, 'error');
-          return;
-      }
-      if(o) {
-          setOrders(orders.map(x => x.id === woId ? { ...x, status: '执行中' } : x));
-          let randStr = woId.split('-')[1] || Math.floor(Math.random()*1000);
-          setJobs(prev => [...prev, { id: `JOB-${randStr}-10`, orderId: woId, opId: '10', opName: 'SMT贴片加工', targetQty: o.quantity, okQty:0, ngQty:0, status:'待领料', machineId:'贴片机-M01', operator: '待定', isRework:false, ngHandled: false, opType: '内部' }]);
-          showToast(`工单 [${woId}] 已成功下发车间，并拆分为工序任务！`, 'success');
-          setActiveTab('execution');
-      }
+      showToast('未下发：正式工单未加载，请刷新后重试', 'error');
   };
-  const handleUpdateOrder = (data) => {
-      if (orders.find(item => item.id === data.id)?.formalOrder) { showToast('正式工单已锁定业务数量，不能直接修改', 'warning'); return; }
-      setOrders(prev => prev.map(o => o.id === data.id ? { ...o, ...data } : o));
-      showToast(`生产工单 [${data.id}] 已更新`, 'success');
-  };
-  const handleDeleteOrder = (id) => {
-      if (orders.find(item => item.id === id)?.formalOrder) { showToast('正式工单保留业务追溯，不能直接删除', 'warning'); return; }
-      setOrders(prev => prev.filter(o => o.id !== id));
-      showToast(`生产工单 [${id}] 已删除`, 'success');
-  };
+  const handleUpdateOrder = (_data) => showToast('未保存：正式工单核心业务事实不能直接修改', 'error');
+  const handleDeleteOrder = (_id) => showToast('未删除：正式工单保留业务追溯，不能直接删除', 'error');
 
   // --- Execution 交互 ---
-  const handleMaterialReq = (jobId) => {
-      const job = jobs.find((item) => item.id === jobId);
-      if (!job || job.status !== '待领料') {
-          showToast('只有待领料工序可以发起物料出库', 'error');
-          return;
-      }
-      const materialQty = Number(job.materialQty || job.targetQty * 2);
-      setActionModal({
-          kind: 'materialIssue',
-          record: { ...job, materialId: job.materialId || 'RM201', materialName: job.materialName || 'AI算力芯片', materialQty, unit: job.materialUnit || 'PCS' },
-          title: '发起生产物料出库',
-          desc: '确认后生成库存出库任务；仓库完成出库前，当前工序保持领料处理中。',
-          icon: ArrowUpFromLine,
-          tone: 'amber',
-          confirmText: '生成出库任务',
-          details: [
-              { label: '生产工单', value: job.orderId },
-              { label: '工序任务', value: `${job.id} / ${job.opName}` },
-              { label: '需求物料', value: `${job.materialId || 'RM201'} ${job.materialName || 'AI算力芯片'}` },
-              { label: '申请数量', value: `${materialQty} ${job.materialUnit || 'PCS'}` },
-              { label: '领料仓库', value: 'WH-RM-01 一号原材料仓' },
-              { label: '目标仓库', value: 'WH-WIP-01 线边暂存仓' },
-          ],
-          steps: ['生成生产领料出库任务', '跳转库存出库管理', '仓库确认后回写物料就位'],
-      });
-  };
+  const handleMaterialReq = (_jobId) => showToast('未保存：生产领料出库任务接口尚未提供，不能生成本地任务', 'error');
   const handleStartJob = async (jobId) => {
       const job = jobs.find(item => item.id === jobId);
       if (!job?.formalOrder || !formalCtx) { showToast('工单尚未保存，无法开工', 'error'); return; }
@@ -6629,26 +6040,10 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           showToast(order.status === 'COMPLETED' ? '结案已提交，请由另一名主管复核' : '工单已结案', 'success');
       } catch (error) { showToast(error instanceof Error ? `结案失败：${error.message}` : '结案失败', 'error'); }
   };
-  const handleReturnMaterial = (jobId) => {
-      showToast('退料单已生成，等待仓库点收冲减库存！', 'success');
-  };
-  const handleSendOutsource = (jobId) => {
-      setJobs(jobs.map(j => j.id === jobId ? { ...j, status: '委外中' } : j));
-      showToast(`委外发货单已生成，正发往供应商`, 'success');
-  };
-  const handleReceiveOutsource = (jobId) => {
-      setJobs(jobs.map(j => j.id === jobId ? { ...j, status: '已完工', okQty: j.targetQty } : j));
-      showToast(`委外件已运回，质检合格入库！`, 'success');
-  };
-  const handleReworkOrder = (originalId, ngCount) => {
-      let j = jobs.find(x => x.id === originalId);
-      if(j) {
-          setJobs(prev => prev.map(x => x.id === originalId ? { ...x, ngHandled: true } : x));
-          let rwId = `RW-${originalId.split('-')[1]}-${Math.floor(Math.random()*100)}`;
-          setJobs(prev => [{ id: rwId, orderId: j.orderId+'(返工)', opId: '99', opName: '异常返修工序', targetQty: ngCount, okQty: 0, ngQty: 0, status: '待领料', machineId: '综合返修工作台', operator: '技术员', isRework: true, ngHandled: false, opType: '内部' }, ...prev]);
-          showToast(`已生成逆向返修派工单！`, 'success');
-      }
-  };
+  const handleReturnMaterial = (_jobId) => showToast('未保存：后端尚未提供退料接口', 'error');
+  const handleSendOutsource = (_jobId) => showToast('未保存：后端尚未提供委外发货接口', 'error');
+  const handleReceiveOutsource = (_jobId) => showToast('未保存：后端尚未提供委外收货接口', 'error');
+  const handleReworkOrder = (_originalId, _ngCount) => showToast('未保存：请在正式质检单中提交返工处置', 'error');
 
   // --- QC & MRB 交互 ---
   const handleQcComplete = async (qcId, okQty, ngQty, scrapQty, reworkQty) => {
@@ -6664,26 +6059,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               return;
           }
       }
-      let mrbDesc = '';
-      if (ngQty > 0) {
-          let descArr = [];
-          if (scrapQty > 0) { descArr.push(`报废${scrapQty}件`); setTimeout(() => showToast(`已扣减 ${scrapQty} 件实物报废库存`, 'warning'), 500); }
-          if (reworkQty > 0) {
-              descArr.push(`返修${reworkQty}件`);
-              const targetQc = qc.find(q => q.id === qcId);
-              const orderId = targetQc.orderId;
-              const rwId = `RW-${orderId.split('-')[1]}-MRB`;
-              setTimeout(() => {
-                  setJobs(prev => [{ id: rwId, orderId: orderId+'(MRB返修)', opId: '99', opName: '异常返修工序', targetQty: reworkQty, okQty: 0, ngQty: 0, status: '待领料', machineId: '综合返修工作台', operator: '技术员', isRework: true, ngHandled: false, opType: '内部' }, ...prev]);
-                  showToast(`已自动为车间下达 ${reworkQty} 件的返修工单！`, 'success');
-              }, 1000);
-          }
-          mrbDesc = descArr.join('，');
-      }
-      const targetQuality = qc.find(item => item.id === qcId);
-      const nextStatus = reworkQty > 0 ? '待返修复检' : targetQuality?.type.includes('FQC') ? '待入库' : '已结案';
-      setQc(qc.map(q => q.id === qcId ? { ...q, status: nextStatus, okQty, ngQty, result: mrbDesc || (q.type.includes('FQC') ? '全良品待入库' : '过程检验通过') } : q));
-      showToast(reworkQty > 0 ? '检验已记录，NG 已进入返修复检闭环，暂不可结案' : nextStatus === '待入库' ? 'FQC 已通过，等待库存确认后再结案' : '过程检验已通过，结果已回写车间工序', reworkQty > 0 ? 'warning' : 'success');
+      showToast('未保存：正式质检单未加载，请刷新后重试', 'error');
   };
 
   const handleConfirmInbound = async (qcId) => {
@@ -6725,44 +6101,14 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   };
 
   // --- Equipment 交互 ---
-  const handleAddEq = (data) => {
-      setEquipments(prev => [...prev, data]);
-      showToast('设备资产注册保存成功', 'success');
-  };
-  const handleEditEq = (data) => {
-      setEquipments(prev => prev.map(e => e.id === data.id ? data : e));
-      showToast('设备资产修改保存成功', 'success');
-  };
-  const handleDeleteEq = (id) => {
-      setEquipments(prev => prev.filter(e => e.id !== id));
-      showToast('设备资产已被删除移去！', 'success');
-  };
-  const handleFixEquipment = (eqId) => {
-      setEquipments(equipments.map(e => e.id === eqId ? { ...e, status: '运行正常', oee: '90%' } : e));
-      showToast(`故障顺利消除，机台上线运行正常！`, 'success');
-  };
-  const handleSimulateFailure = (eqId) => {
-      const targetEq = equipments.find(e => e.id === eqId);
-      setEquipments(equipments.map(e => e.id === eqId ? { ...e, status: '故障停机', oee: '15%' } : e));
-      showToast(`⚠️ 故障警报：设备发生故障过载停机！`, 'error');
-      let job = jobs.find(j => (j.machineId === eqId || j.machineId === targetEq?.name) && j.status === '进行中');
-      if (job) {
-          setJobs(jobs.map(j => j.id === job.id ? { ...j, status: '锁定' } : j));
-          showToast('AI现场中枢：受故障机台牵连，工序加工卡已被紧急锁定挂起！', 'warning');
-      }
-  };
-
-  const handleAutoReschedule = () => {
-      setOrders(prev => prev.map(o => o.id === 'WO-260102' ? { ...o, status: '齐套待下发', kitting: '100%', startDate: '2026-06-08', endDate: '2026-06-11' } : o));
-      setJobs(prev => prev.map(j => j.machineId === '贴片机-M01' && j.status === '进行中' ? { ...j, machineId: '贴片机-M02' } : j));
-      showToast('AI 已完成重新排产：瓶颈工序切换至 SMT-M02，WO-260102 齐套状态已更新。', 'success');
-  };
-
-  const handleTransferLine = () => {
-      setJobs(prev => prev.map(j => j.id === 'JOB-260101-10' ? { ...j, machineId: '贴片机-M02', operator: '李工' } : j));
-      showToast('已转移至备用产线 SMT-M02，并同步更新现场执行任务。', 'success');
-      setActiveTab('execution');
-  };
+  const unavailableEquipment = () => showToast('未保存：后端尚未提供设备资产、维修和故障维护接口', 'error');
+  const handleAddEq = unavailableEquipment;
+  const handleEditEq = unavailableEquipment;
+  const handleDeleteEq = unavailableEquipment;
+  const handleFixEquipment = unavailableEquipment;
+  const handleSimulateFailure = unavailableEquipment;
+  const handleAutoReschedule = () => showToast('未执行：请从正式主计划运行 APS，不支持演示工单重排', 'error');
+  const handleTransferLine = () => showToast('未执行：后端尚未提供工序转线接口', 'error');
 
   const openProdAction = (kind) => {
       const configs = {
@@ -6803,22 +6149,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	      const kind = actionModal.kind;
 	      if (kind === 'materialIssue' && actionModal.record) {
 	          const job = actionModal.record;
-	          const result = createProductionMaterialIssueTask(window.sessionStorage, currentTenant?.id, {
-	              jobId: job.id,
-	              orderId: job.orderId,
-	              operationName: job.opName,
-	              materialId: job.materialId,
-	              materialName: job.materialName,
-	              requestedQty: job.materialQty,
-	              unit: job.unit,
-	              warehouseId: 'WH-RM-01',
-	              targetWarehouse: 'WH-WIP-01',
-	              actor: currentUser?.name || currentUser?.account || '当前生产用户',
-	          });
-	          setJobs((previous) => previous.map((item) => item.id === job.id ? { ...item, status: '领料处理中', materialIssueTaskId: result.task.id } : item));
-	          setActionModal(null);
-	          showToast(result.created ? `物料出库任务已生成：${result.task.id}` : `已存在物料出库任务：${result.task.id}`, result.created ? 'success' : 'warning');
-	          onNavigateModule?.('库存管理', { query: { inventory: 'outbound', focusOutbound: result.task.id } });
+	          showToast('未提交：生产领料任务接口尚未提供，请由正式工单开工流程办理扣料', 'error');
 	          return;
 	      }
 	      setActionModal(null);
@@ -7586,23 +6917,55 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   const [outboundSourceSearch, setOutboundSourceSearch] = useState('');
   const outboundSourceSearchRef = useRef<HTMLInputElement>(null);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(() => resolveInventoryWarehouseId(window.location.search));
-  const [, setStockData] = useState(inv_stockData);
   const [inboundData, setInboundData] = useState(inv_inboundData);
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const formalInventory = useFormalInventory(formalContext);
-  // 后端会话建立后清除库存 localStorage 原型数据，确保 API 数据不被覆盖
+  const inventoryIdentity = useRef(formalContext);
+  inventoryIdentity.current = formalContext;
+  const taskReadRevision = useRef(0);
+  const inboundReadRevision = useRef(0);
+  const [flowLoadError, setFlowLoadError] = useState('');
+  const [inboundLoadError, setInboundLoadError] = useState('');
+  const [inboundLoading, setInboundLoading] = useState(false);
+  const refreshInbound = async () => {
+    const revision = ++inboundReadRevision.current;
+    if (!formalContext) { setInboundData([]); setInboundLoading(false); return; }
+    const identity = formalContext;
+    setInboundLoading(true);
+    const results = await Promise.allSettled([
+      procurementApi.listReceipts(identity), productionOperationsApi.listCompletions(identity),
+    ]);
+    if (inventoryIdentity.current !== identity || revision !== inboundReadRevision.current) return;
+    const [receipts, completions] = results;
+    setInboundData([
+      ...(receipts.status === 'fulfilled' ? receipts.value.items.map(receipt => ({
+        id: receipt.receiptNo || receipt.id, type: '采购入库', source: receipt.purchaseOrderId,
+        item: receipt.materialId, qty: Number(receipt.receivedQty), date: receipt.receivedAt,
+        status: receipt.status === 'POSTED' ? '已入库' : receipt.status,
+        operator: receipt.inspectedBy || '-', formalReceipt: receipt,
+      })) : []),
+      ...(completions.status === 'fulfilled' ? completions.value.map(completion => ({
+        id: completion.code || completion.id, type: '生产入库', source: completion.workOrderId,
+        item: completion.workOrderId, qty: Number(completion.qty), date: completion.updatedAt,
+        status: completion.status === 'POSTED' ? '已入库' : completion.status,
+        operator: '-', formalCompletion: completion,
+      })) : []),
+    ]);
+    setInboundLoadError(results.some(item => item.status === 'rejected') ? '部分入库来源加载失败，当前仅展示成功读取的来源' : '');
+    setInboundLoading(false);
+  };
   useEffect(() => {
-    if (formalContext?.accessToken && currentTenant?.id) {
-      localStorage.removeItem(`industrial-ai-inventory-master-data:v1:${currentTenant.id}`);
-      localStorage.removeItem(`industrial-ai-inventory-sales-outbound:v1:${currentTenant.id}`);
-    }
-  }, [formalContext?.accessToken, currentTenant?.id]);
-  // 后端会话建立后清除库存主数据 localStorage 原型数据
-  useEffect(() => {
-    if (formalContext?.accessToken) {
-      localStorage.removeItem(`industrial-ai-inventory-master:v1:${currentTenant?.id}`);
-    }
-  }, [formalContext?.accessToken, currentTenant?.id]);
+    setInboundData([]); setInboundLoadError('');
+    void refreshInbound();
+    const refresh = () => { void refreshInbound(); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('sales-fulfillment-changed', refresh);
+    return () => {
+      ++inboundReadRevision.current;
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('sales-fulfillment-changed', refresh);
+    };
+  }, [formalContext]);
   const stockData = formalInventory.stockData;
   const warehouseList = formalInventory.warehouses.filter(warehouse => warehouse.status === 'active');
   const warehouseLoadError = formalInventory.error;
@@ -7689,14 +7052,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     };
   };
 
-  const readLocalOutboundRows = () => {
-    const localTasks = [
-      ...restoreShippedSalesOutbounds(window.localStorage, currentTenant?.id),
-    ];
-    return [...localTasks, ...inv_outboundData.filter((seed) => !localTasks.some((task) =>
-      task.id === seed.id || (seed.type === '销售发货' && task.source === seed.source)))];
-  };
-  const [outboundData, setOutboundData] = useState(() => readLocalOutboundRows());
+  const [outboundData, setOutboundData] = useState([]);
   const filteredOutboundData = useMemo(() => {
     const keyword = outboundSourceSearch.trim().toLowerCase();
     return outboundData.filter(row => !keyword || String(row.source || '').toLowerCase().includes(keyword));
@@ -7802,15 +7158,21 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   };
 
   const refreshFormalTasks = async () => {
-    if (!formalContext) return;
+    const revision = ++taskReadRevision.current;
+    if (!formalContext) { setOutboundData([]); return; }
     const formalSalesOrderId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedSalesOrderId || '')
       ? requestedSalesOrderId
       : undefined;
-    const response = await listFulfillmentShipmentTasks(formalContext, formalSalesOrderId);
-    const formal = response.items.map(mapFormalTask);
-    setOutboundData((previous) => [...formal, ...previous.filter((item) => !item.formalTask && !formal.some((serverTask) =>
-      serverTask.id === item.id || (item.type === '销售发货' && serverTask.source === item.source)))]);
-    return response.items;
+    try {
+      const response = await listFulfillmentShipmentTasks(formalContext, formalSalesOrderId);
+      if (inventoryIdentity.current !== formalContext || revision !== taskReadRevision.current) return;
+      setOutboundData(response.items.map(mapFormalTask)); setFlowLoadError('');
+      return response.items;
+    } catch (error) {
+      if (inventoryIdentity.current !== formalContext || revision !== taskReadRevision.current) return;
+      setOutboundData([]); setFlowLoadError(error.message || '出库任务加载失败');
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -7821,7 +7183,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const refresh = (event: Event) => {
       const tenantId = (event as CustomEvent<{ tenantId?: string }>).detail?.tenantId;
       if (tenantId && tenantId !== currentTenant?.id) return;
-      setOutboundData(previous => [...readLocalOutboundRows(), ...previous.filter(item => item.formalTask)]);
       refreshFormalTasks().catch(() => {});
     };
     window.addEventListener('focus', refresh);
@@ -7852,12 +7213,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     return () => window.removeEventListener('popstate', syncInventoryTab);
   }, []);
 
-  useEffect(() => {
-    setOutboundData((previous) => [
-      ...readLocalOutboundRows(),
-      ...previous.filter((item) => item.formalTask),
-    ]);
-  }, [currentTenant?.id]);
+  useEffect(() => { setOutboundData([]); setInboundData([]); }, [formalContext?.tenantId, formalContext?.accessToken]);
   const [recordModal, setRecordModal] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [actionReview, setActionReview] = useState(null);
@@ -7985,60 +7341,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     }
   };
 
-  useEffect(() => {
-    if (!businessFlow) return;
-    if (isLinkedFlowAtLeast(businessFlow, 'stockCheck')) {
-      setStockData(prev => prev.map(item => item.id === 'FG001' ? {
-        ...item,
-        stockQty: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? businessFlow.qty : (businessFlow.availableStock ?? 0),
-        lockQty: isLinkedFlowAtLeast(businessFlow, 'delivery') ? 0 : Math.min(businessFlow.qty, businessFlow.availableStock ?? 0),
-        availQty: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? businessFlow.qty : 0,
-        status: isLinkedFlowAtLeast(businessFlow, 'finishedInbound') ? '正常' : '低库存'
-      } : item));
-    }
-    if (isLinkedFlowAtLeast(businessFlow, 'materialInbound')) {
-      const materialInbound = {
-        id: businessFlow.purchaseReceipt?.receiptNo || 'IN-LINK-MAT-001',
-        type: '采购入库',
-        source: businessFlow.purchaseOrder?.orderNo || 'PO-LINK-001',
-        item: businessFlow.purchaseReceipt?.materialId || 'AI算力芯片',
-        qty: Number(businessFlow.purchaseReceipt?.receivedQty || businessFlow.qty * 2),
-        date: businessFlow.purchaseReceipt?.receivedAt?.slice(0, 16).replace('T', ' ') || '2026-06-23 10:30',
-        status: '已入库',
-        operator: businessFlow.purchaseReceipt ? '正式采购入库服务' : '系统联动'
-      };
-      setInboundData(prev => prev.some(item => item.id === materialInbound.id) ? prev.map(item => item.id === materialInbound.id ? materialInbound : item) : [materialInbound, ...prev]);
-      setStockData(prev => prev.map(item => item.id === 'RM201' ? { ...item, stockQty: Math.max(item.stockQty, 1500 + materialInbound.qty), availQty: Math.max(item.availQty, 1000 + materialInbound.qty), status: '正常' } : item));
-    }
-    if (isLinkedFlowAtLeast(businessFlow, 'finishedInbound')) {
-      const finishedInbound = {
-        id: 'IN-LINK-FG-001',
-        type: '生产入库',
-        source: 'WO-LINK-001',
-        item: '工业控制器顶配版',
-        qty: businessFlow.qty,
-        date: '2026-06-28 16:20',
-        status: '已入库',
-        operator: '系统联动'
-      };
-      setInboundData(prev => prev.some(item => item.id === finishedInbound.id) ? prev.map(item => item.id === finishedInbound.id ? finishedInbound : item) : [finishedInbound, ...prev]);
-    }
-    if (isLinkedFlowAtLeast(businessFlow, 'delivery')) {
-      const linkedOutbound = {
-        id: 'OUT-LINK-SO-001',
-        type: '销售发货',
-        source: businessFlow.orderId,
-        item: '工业控制器顶配版',
-        qty: businessFlow.qty,
-        date: '2026-06-29 09:30',
-        status: '已出库',
-        operator: '系统联动'
-      };
-      setOutboundData(prev => prev.some(item => item.id === linkedOutbound.id) ? prev.map(item => item.id === linkedOutbound.id ? linkedOutbound : item) : [linkedOutbound, ...prev]);
-      setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, lockQty: 0, availQty: 0, status: '正常' } : item));
-    }
-  }, [businessFlow?.currentStep, requestedSalesOrderId]);
-
   const requestedOutbound = requestedSalesOrderId
     ? outboundData.find((row) => row.source === requestedSalesOrderId || row.salesOrderId === requestedSalesOrderId)
     : null;
@@ -8093,59 +7395,11 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     if (nextUrl !== currentUrl) window.history.pushState({}, '', nextUrl);
   };
 
-  const handleManualInbound = () => {
-    setRecordModal({
-      type: 'inbound',
-      mode: 'create',
-      record: {
-        id: `IN-${Date.now().toString().slice(-8)}`,
-        type: '手工入库',
-        source: 'MANUAL',
-        item: 'AI算力芯片',
-        qty: 100,
-        date: '2026-07-03 09:00',
-        status: '待质检',
-        operator: '王仓管'
-      }
-    });
-  };
-
-  const isSameStockRecord = (left, right) => left.id === right.id
-    && (right.warehouseId ? left.warehouseId === right.warehouseId : left.warehouse === right.warehouse);
-
-  const saveStock = (data) => {
-    setStockData(prev => prev.map(row => isSameStockRecord(row, data) ? { ...row, ...data } : row));
-    showToast(`库存台账 [${data.id}] 已更新`, 'success');
-  };
-
-  const saveInbound = (data) => {
-    const exists = inboundData.some(row => row.id === data.id);
-    setInboundData(prev => exists ? prev.map(row => row.id === data.id ? { ...row, ...data } : row) : [data, ...prev]);
-    showToast(`入库单 [${data.id}] 已保存`, 'success');
-  };
-
-  const saveOutbound = (data) => {
-    setOutboundData(prev => prev.map(row => row.id === data.id ? { ...row, ...data } : row));
-    showToast(`出库单 [${data.id}] 已更新`, 'success');
-  };
-
-  const deleteRecord = () => {
-    if (!deleteTarget) return;
-    const { type, record } = deleteTarget;
-    if (type === 'stock') {
-      setStockData(prev => prev.filter(row => !isSameStockRecord(row, record)));
-      showToast(`物料 [${record.id}] 已从台账移除`, 'success');
-    }
-    if (type === 'inbound') {
-      setInboundData(prev => prev.filter(row => row.id !== record.id));
-      showToast(`入库单 [${record.id}] 已删除`, 'success');
-    }
-    if (type === 'outbound') {
-      setOutboundData(prev => prev.filter(row => row.id !== record.id));
-      showToast(`出库单 [${record.id}] 已删除`, 'success');
-    }
-    setDeleteTarget(null);
-  };
+  const handleManualInbound = () => showToast('未执行：手工入库尚缺正式提交契约，请使用采购收货或生产完工入库', 'error');
+  const saveStock = (_data?: unknown) => showToast('库存数量以正式过账为准，不能直接编辑', 'error');
+  const saveInbound = (_data?: unknown) => showToast('未保存：入库记录须由正式收货/完工接口生成', 'error');
+  const saveOutbound = (_data?: unknown) => showToast('未保存：请通过正式出库任务处理', 'error');
+  const deleteRecord = () => showToast('未删除：已入账流水保留业务追溯，不能在浏览器删除', 'error');
 
   const handleQuickInventory = () => {
     setActionReview({
@@ -8349,7 +7603,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       kind: 'inventoryProductionPlan',
       record: row,
       title: '产品补货申请',
-      desc: '确认后生成库存补货来源的 MPS 待展算计划，并流转到生产主计划。',
+      desc: '确认后保存库存补货生产需求，由生产人员校验、审批并进行计划。',
       icon: Factory,
       tone: 'blue',
       confirmText: '提交补货申请',
@@ -8362,12 +7616,12 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       quantityTitle: '补货信息',
       quantityFields: [{ id: 'requestedQty', label: '申请补货数量', value: suggestedQty, uom: row.unit }],
       dateFields: [{ id: 'requiredDate', label: '需求日期', value: requiredDate, min: new Date().toISOString().slice(0, 10) }],
-      note: '相同产品、仓库和库存快照存在活动计划时，将定位原 MPS，不重复创建。',
+      note: '提交成功后进入生产需求池，当前不会自动生成 MPS 或工单。',
     });
   };
 
   const openInventoryPurchaseRequest = (row) => {
-    const material = loadInventoryMasterData(window.localStorage, currentTenant?.id).materials.find((item) => item.id === row.id);
+    const material = formalInventory.masterData?.materials.find((item) => item.id === row.id);
     const procurementType = row.procurementType || material?.procurementType || '外购';
     if (procurementType === '自制') {
       showToast('自制物料不能发起采购，请改为发起生产申请', 'warning');
@@ -8459,76 +7713,27 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         showToast('请选择今天或之后的需求日期', 'error');
         return;
       }
-      const actor = currentUser?.name || currentUser?.account || '当前库存用户';
+      setIsActionSubmitting(true);
       try {
+        if (!formalContext) throw new Error('请登录后提交业务申请');
         if (actionReview.kind === 'inventoryProductionPlan') {
-          const result = createInventoryProductionPlan(window.localStorage, currentTenant?.id, row, {
-            requestedQty, requiredDate, priority: row.status === '低库存' ? '紧急' : '普通', actor,
-          });
+          const warehouse = resolveWarehouse(formalInventory.warehouses, row.warehouseId);
+          if (!warehouse) throw new Error('正式仓库尚未加载，请刷新后重试');
+          const demand = await createInventoryReplenishmentDemand(formalContext, warehouse, row, requestedQty, requiredDate);
           setActionReview(null);
-          showToast(result.created ? `补货申请已流转到生产主计划：${result.request.mpsId}` : `该库存快照已有补货计划：${result.request.mpsId}`, result.created ? 'success' : 'warning');
-          onNavigateModule?.('生产管理', { query: { production: 'plan', focusMps: result.request.mpsId } });
+          showToast(`补货需求 ${demand.code} 已保存，待生产校验、审批与计划`, 'success');
+          onNavigateModule?.('生产管理', { query: { production: 'plan', focusMps: demand.code } });
           return;
         }
-        const result = createInventoryPurchaseRequest(window.localStorage, currentTenant?.id, row, { requestedQty, requiredDate, actor });
-        setActionReview(null);
-        showToast(result.created ? `采购申请已生成：${result.request.id}` : `已存在活动采购申请：${result.request.id}`, result.created ? 'success' : 'warning');
-        onNavigateModule?.('采购管理', { query: { procurement: 'pr', focusPr: result.request.id } });
+        throw new Error('未生成采购申请：当前接口仅支持正式 MRP 缺料转 PR，尚不支持库存直接补货');
       } catch (error) {
         showToast(error instanceof Error ? error.message : '业务申请创建失败', 'error');
-      }
+      } finally { setIsActionSubmitting(false); }
       return;
     }
     if (actionReview.kind === 'productionRequest' && row) {
-      // 非正式任务（种子数据）直接跳转到生产管理MPS主计划
       if (!row.formalTask) {
-        const ss = resolveOutboundLineStockStatus(row);
-        const shortageLines = ss.lineStatuses.filter(l => l.shortage > 0);
-        // 读取用户输入的生产数量，默认为缺口数
-        const productionLines = shortageLines.map(ls => {
-          const fieldId = `prodQty_${ls.productId}`;
-          const inputVal = Number(shipmentQuantities[fieldId] ?? ls.shortage);
-          return { productId: ls.productId, productName: ls.productName, shortage: ls.shortage, prodQty: inputVal };
-        });
-        const prodSummary = productionLines.map(l => `${l.productId}:${l.prodQty}`).join('、');
-        // 在生产模块 localStorage 中创建 MPS 草稿记录
-        try {
-          const prodStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || 'TENANT-SHWS'}`;
-          const rawProd = window.sessionStorage.getItem(prodStorageKey);
-          const prodData = rawProd ? JSON.parse(rawProd) : {};
-          if (!Array.isArray(prodData.mps)) prodData.mps = [];
-          productionLines.forEach(pl => {
-            const newMpsId = `MPS-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
-            prodData.mps.unshift({
-              id: newMpsId,
-              demandSource: '销售缺货',
-              source: `出库单 ${row.id}`,
-              product: pl.productName || pl.productId,
-              quantity: pl.prodQty,
-              date: new Date().toISOString().slice(0, 10),
-              status: '草稿',
-              priority: '普通',
-              sourceSalesOrder: row.source,
-              shortageQty: pl.shortage,
-            });
-          });
-          window.sessionStorage.setItem(prodStorageKey, JSON.stringify(prodData));
-        } catch (e2) { /* ignore */ }
-        // 更新出库单状态为"生产申请中"
-        setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '生产申请中' } : item));
-        // 回写销售订单为"生产中"
-        recordSalesOrderProductionRequested(window.localStorage, currentTenant?.id, {
-          orderId: row.source,
-          availableQty: resolveOutboundAvailQty(row),
-          shortageQty: productionLines.reduce((s, l) => s + l.shortage, 0),
-          inventoryFactVersion: 1,
-          intakeId: `INT-${Date.now()}`,
-          operator: currentUser?.name || '当前用户',
-          requestedAt: new Date().toISOString(),
-        });
-        onNavigateModule?.('生产管理', { query: { production: 'plan', focusOrder: row.source } });
-        showToast(`已创建 ${productionLines.length} 条 MPS 草稿记录并跳转到生产管理，需生产：${prodSummary}`, 'success');
-        setActionReview(null);
+        showToast('正式发货任务未加载，请刷新后重试', 'error');
         return;
       }
       setIsActionSubmitting(true);
@@ -8538,7 +7743,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           const result = await createProductionRequestForTask(
             formalContext,
             row.formalTask,
-            { factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01' },
+            row.formalTask.factoryResourceId ? { factoryResourceId: row.formalTask.factoryResourceId } : undefined,
           );
           const mapped = mapFormalTask(result.task);
           setOutboundData((previous) => previous.map((item) => item.taskId === row.taskId ? mapped : item));
@@ -8546,77 +7751,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           setActionReview(null);
           return;
         }
-        const productId = row.productId || String(row.item || '').match(/[A-Z]{2,}\d+/)?.[0];
-        if (!productId) throw new Error('出库任务缺少可识别的产品编码');
-        const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(row.dueDate || '')
-          ? row.dueDate
-          : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-        const result = await createSalesOrderIntake({
-          tenantId: currentTenant.id,
-          accessToken: currentUser?.accessToken || '',
-        }, {
-          salesOrderId: row.source,
-          sourceLineId: '1',
-          sourceRevision: Number(row.sourceRevision || 1),
-          productId,
-          productName: row.item,
-          orderedQty: String(row.qty),
-          uom: 'PCS',
-          dueDate,
-          factoryResourceId: currentTenant.id === 'TENANT-HDJG' ? 'FAC-SZ-01' : 'FAC-SH-01',
-          inventoryWarehouseId: row.warehouseId || row.warehouse || 'WH-FG-01',
-        });
-        const availableQty = Number(result.intake.availableQty);
-        const shortageQty = Number(result.intake.shortageQty);
-        const requestedAt = new Date().toISOString();
-        const operator = currentUser?.name || currentUser?.account || '当前仓库用户';
-        setOutboundData((previous) => previous.map((item) => item.id === row.id ? {
-          ...item,
-          availableQty,
-          shortageQty,
-          inventoryFactVersion: result.intake.inventoryFactVersion,
-          intakeId: result.intake.id,
-          productionDemandId: result.demand?.id,
-          productionDemandCode: result.demand?.code,
-          status: shortageQty > 0 ? '生产申请中' : '待出库',
-        } : item));
-        recordWarehouseProductionResult(window.localStorage, currentTenant.id, row.id, {
-          availableQty,
-          shortageQty,
-          inventoryFactVersion: result.intake.inventoryFactVersion,
-          intakeId: result.intake.id,
-          productionDemandId: result.demand?.id,
-          productionDemandCode: result.demand?.code,
-        });
-        recordSalesOrderProductionRequested(window.localStorage, currentTenant.id, {
-          orderId: row.source,
-          availableQty,
-          shortageQty,
-          inventoryFactVersion: result.intake.inventoryFactVersion,
-          intakeId: result.intake.id,
-          productionDemandId: result.demand?.id,
-          productionDemandCode: result.demand?.code,
-          requestedAt,
-          operator,
-        });
-        onBusinessFlowAction?.('approveOrder', {
-          id: row.source,
-          client: row.customer,
-          productName: row.item,
-          qty: row.qty,
-          amount: row.amount || businessFlow?.amount || '待回写',
-          availableStock: availableQty,
-          shortage: shortageQty,
-          intake: result.intake,
-          productionDemand: result.demand,
-        });
-        showToast(
-          shortageQty > 0
-            ? `生产申请已提交：${result.demand?.code || result.demand?.id}`
-            : `库存事实已更新，${row.source} 可以继续出库`,
-          shortageQty > 0 ? 'warning' : 'success',
-        );
-        setActionReview(null);
       } catch (error) {
         const apiError = error instanceof ProductionApiError ? error : null;
         showToast(
@@ -8628,115 +7762,8 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       }
       return;
     }
-    if (actionReview.kind === 'quickInventory') {
-      try {
-        const ctx = formalContext;
-        if (ctx) {
-          await inventoryApi.createStocktakeTask(ctx, {
-            warehouseId: 'WH-01',
-            scope: 'spot',
-            reason: '快速盘点 - 重点预警物料',
-            assignedTo: currentUser?.name || 'system',
-            lines: [{ productId: 'RM202', productCode: 'RM202', productName: '12层空PCB板', systemQty: '0', uom: 'PCS' }],
-          });
-          showToast('盘点任务已通过正式 API 创建并分发到库管 PDA', 'success');
-        } else {
-          setStockData(prev => prev.map(item => item.id === 'RM202' ? { ...item, status: '低库存' } : item));
-          showToast('盘点任务已分发（本地模式），低库存项已重新标记预警', 'success');
-        }
-      } catch (e) {
-        setStockData(prev => prev.map(item => item.id === 'RM202' ? { ...item, status: '低库存' } : item));
-        showToast('盘点任务已分发，低库存项已重新标记预警', 'success');
-      }
-    }
-    if (actionReview.kind === 'completeInbound' && row) {
-      setInboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '已入库' } : item));
-      setStockData(prev => prev.map(item => item.name === row.item ? {
-        ...item,
-        stockQty: item.stockQty + row.qty,
-        availQty: item.availQty + row.qty,
-        status: item.status === '低库存' ? '正常' : item.status
-      } : item));
-      showToast(`入库单 [${row.id}] 已验收，库存数量已同步增加`, 'success');
-    }
-    if (actionReview.kind === 'partialShipment' && row) {
-      try {
-      const completedAt = new Date();
-      const operator = currentUser?.name || currentUser?.account || row.operator || '当前用户';
-      const ss = resolveOutboundLineStockStatus(row);
-      const shippableLines = ss.lineStatuses.filter(l => l.availQty > 0);
-      // 读取用户输入的发货数量，校验不可为0或超过 min(剩余待发, 实际可用)
-      const actualShipLines = shippableLines.map(ls => {
-        const fieldId = `shipQty_${ls.productId}`;
-        const maxQty = Math.min(ls.remainingQty ?? ls.qty, ls.availQty);
-        const rawInput = shipmentQuantities[fieldId];
-        const inputVal = (rawInput == null || rawInput === '') ? maxQty : Number(rawInput);
-        // 上限截断到 min(剩余待发, 实际可用)
-        const clampedVal = Math.min(inputVal, maxQty);
-        return { ...ls, shipQty: clampedVal };
-      });
-      // 校验：所有可发货产品的发货数量必须 > 0（不可为0）
-      const hasInvalid = actualShipLines.some(l => l.shipQty <= 0 || isNaN(l.shipQty));
-      if (hasInvalid) {
-        showToast('发货数量不可为0，请检查后重试', 'error');
-        return;
-      }
-      const shippedQty = actualShipLines.reduce((sum, l) => sum + l.shipQty, 0);
-      const lineShipments = actualShipLines.map(ls => ({ productId: ls.productId, shipQty: ls.shipQty }));
-      // 判断是否全量完成：所有订单行累计 shippedQty >= 订单数量
-      const allFullyShipped = ss.lineStatuses.every(ls => {
-        const ship = actualShipLines.find(a => a.productId === ls.productId);
-        const totalShipped = (ls.shippedQty ?? 0) + (ship ? ship.shipQty : 0);
-        return totalShipped >= ls.qty;
-      });
-      const newOutboundStatus = allFullyShipped ? '已出库' : '部分发货';
-      // 更新出库单lines中每行的已发货数量
-      const updatedLines = (row.lines || []).map(line => {
-        const ship = actualShipLines.find(a => a.productId === line.productId);
-        return ship ? { ...line, shippedQty: (Number(line.shippedQty) || 0) + ship.shipQty } : line;
-      });
-      // 构建出库明细记录
-      const shipmentDetails = actualShipLines.map(ls => ({ productId: ls.productId, productName: ls.productName, shipQty: ls.shipQty, unit: ls.unit || '件' }));
-      setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: newOutboundStatus, operator, shippedAt: completedAt.toISOString(), shippedQty: (Number(item.shippedQty) || 0) + shippedQty, lines: updatedLines.length > 0 ? updatedLines : item.lines, shipmentDetails: [...(item.shipmentDetails || []), ...shipmentDetails] } : item));
-      actualShipLines.forEach(ls => {
-        setStockData(prev => prev.map(item => item.id === ls.productId ? {
-          ...item,
-          stockQty: Math.max(0, item.stockQty - ls.shipQty),
-          availQty: Math.max(0, item.availQty - ls.shipQty)
-        } : item));
-      });
-      // 销售订单状态由后端出库 API（POST /api/v1/inventory/outbounds/{id}/post）回写，无需前端写 localStorage
-      const shipSummary = actualShipLines.map(l => `${l.productId}:${l.shipQty}`).join('、');
-      showToast(`出库单 [${row.id}] 已${allFullyShipped ? '全量' : '部分'}发货（${shipSummary}），销售订单已回写`, 'success');
-      if (businessFlow?.orderId === row.source) onBusinessFlowAction?.('shipSales');
-      setActionReview(null);
-      return;
-      } catch (e) {
-        showToast('部分发货失败：' + (e instanceof Error ? e.message : String(e)), 'error');
-      }
-    }
-    if (actionReview.kind === 'productionRequest' && row) {
-      const ss = resolveOutboundLineStockStatus(row);
-      const shortageLines = ss.lineStatuses.filter(l => l.shortage > 0);
-      const operator = currentUser?.name || currentUser?.account || row.operator || '当前用户';
-      let createdCount = 0;
-      const createdMpsIds = [];
-      shortageLines.forEach(ls => {
-        const fieldId = `prodQty_${ls.productId}`;
-        const rawInput = shipmentQuantities[fieldId];
-        const prodQty = (rawInput == null || rawInput === '') ? ls.shortage : Number(rawInput);
-        if (!(prodQty > 0)) return;
-        try {
-          const stockRow = { id: ls.productId, name: ls.productName || ls.productId, warehouseId: row.warehouseId || 'WH-01', availQty: ls.availQty, safetyStock: ls.qty, unit: ls.unit || '件' };
-          const result = createInventoryProductionPlan(window.localStorage, currentTenant?.id, stockRow, { requestedQty: prodQty, requiredDate: row.dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), priority: '高', actor: operator });
-          if (result.created) createdCount++;
-          createdMpsIds.push(result.request.mpsId);
-        } catch (e) { /* ignore duplicate */ }
-      });
-      setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '生产申请中' } : item));
-      onNavigateModule?.('生产管理', { query: { production: 'plan', focusOrder: row.source } });
-      showToast(`已为 ${createdCount} 项缺口产品创建 MPS 生产计划，正在跳转到生产计划页面`, 'success');
-      setActionReview(null);
+    if (['quickInventory', 'completeInbound', 'partialShipment'].includes(actionReview.kind)) {
+      showToast('未执行：请使用对应正式盘点、采购收货或销售出库流程', 'error');
       return;
     }
     if (actionReview.kind === 'processOutbound' && row) {
@@ -8824,94 +7851,10 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         }
         return;
       }
-      const completedAt = new Date();
-      const operator = currentUser?.name || currentUser?.account || row.operator || '当前用户';
-      // 销售订单状态由后端出库 API 回写，无需前端写 localStorage
-      setOutboundData(prev => prev.map(item => item.id === row.id ? { ...item, status: '已出库', operator, shippedAt: completedAt.toISOString() } : item));
-      // 按产品明细逐行扣减库存（stockQty 和 availQty）；无明细行时回退到单产品匹配
-      const shipLines = (row.lines && row.lines.length > 0)
-        ? row.lines.map(line => ({ productId: line.productId, shipQty: Number(line.qty || 0) }))
-        : (() => {
-          const pid = row.productId || String(row.item || '').match(/[A-Z]{2,}\d+/)?.[0] || '';
-          return pid ? [{ productId: pid, shipQty: Number(row.qty || 0) }] : [];
-        })();
-      shipLines.forEach(ls => {
-        if (!ls.productId) return;
-        setStockData(prev => prev.map(item => item.id === ls.productId ? {
-          ...item,
-          stockQty: Math.max(0, item.stockQty - ls.shipQty),
-          availQty: Math.max(0, item.availQty - ls.shipQty)
-        } : item));
-      });
-      if (row.type === '销售发货') {
-        if (businessFlow?.orderId === row.source) onBusinessFlowAction?.('shipSales');
-        showToast(`出库单 [${row.id}] 已完成，销售订单状态由后端同步`, 'success');
-      } else {
-        showToast(`出库单 [${row.id}] 已完成拣货并扣减库存`, 'success');
-      }
+      showToast('未执行：该记录未关联正式出库任务', 'error');
+      return;
     }
-    if (actionReview.kind === 'deadStock') {
-      try {
-        const ctx = formalContext;
-        if (ctx) {
-          const resp = await inventoryApi.createTransferOrder(ctx, {
-            fromWarehouseId: 'WH-01', toWarehouseId: 'WH-TR-01',
-            productId: 'FG001', productCode: 'FG001', productName: '工业控制器顶配版',
-            transferQty: '120', uom: 'PCS', reason: 'AI呆滞物料去化',
-          });
-          showToast(`呆滞物料调拨单 [${resp.transfer.transferNo}] 已通过正式 API 创建`, 'success');
-        } else throw new Error('no context');
-      } catch (e) {
-        setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, status: '去化中' } : item));
-        setOutboundData(prev => [{
-          id: `OUT-DIS-${Date.now().toString().slice(-5)}`,
-          type: '调拨出库',
-          source: 'AI呆滞处理',
-          item: '工业控制器顶配版',
-          qty: 120,
-          date: '2026-07-03 10:00',
-          status: '拣货中',
-          operator: '系统AI'
-        }, ...prev]);
-        showToast('呆滞物料调拨单已生成（本地模式），FG001 已进入去化流程', 'success');
-      }
-    }
-    if (actionReview.kind === 'transferStock' && row) {
-      try {
-        const ctx = formalContext;
-        if (ctx) {
-          const resp = await inventoryApi.createTransferOrder(ctx, {
-            fromWarehouseId: row.warehouseId || 'WH-01', toWarehouseId: 'WH-TR-01',
-            productId: row.id, productCode: row.id, productName: row.name,
-            transferQty: String(row.stockQty || row.availQty || '1'), uom: row.uom || 'PCS',
-            reason: '库存调拨至去化中转仓',
-          });
-          showToast(`物料 [${row.id}] 调拨单 [${resp.transfer.transferNo}] 已通过正式 API 创建`, 'success');
-        } else throw new Error('no context');
-      } catch (e) {
-        setStockData(prev => prev.map(item => isSameStockRecord(item, row) ? { ...item, warehouseId: 'WH-TR-01', warehouse: '去化中转仓', location: 'T-01-01', status: '正常' } : item));
-        showToast(`物料 [${row.id}] 已调拨至去化中转仓（本地模式）`, 'success');
-      }
-    }
-    if (actionReview.kind === 'createPurchaseRequest') {
-      setInboundData(prev => [{
-        id: `IN-PR-${Date.now().toString().slice(-5)}`,
-        type: '采购到货预期',
-        source: 'PR-RM202-500',
-        item: '12层空PCB板',
-        qty: 500,
-        date: '2026-07-06 09:00',
-        status: '待到货',
-        operator: '系统AI'
-      }, ...prev]);
-      showToast('PR-RM202-500 已生成，入库流水已创建待到货记录', 'success');
-      setActiveTab('inbound');
-    }
-    if (actionReview.kind === 'pushSalesTask') {
-      setStockData(prev => prev.map(item => item.id === 'FG001' ? { ...item, status: '去化中' } : item));
-      showToast('销售去化任务已推送，FG001 已标记为去化中', 'success');
-    }
-    setActionReview(null);
+    showToast('未执行：该动作尚缺正式业务接口，请勿使用原型流程', 'error');
   };
 
   const getStockStatusBadge = (status) => {
@@ -8970,6 +7913,8 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         </div>
         <BusinessFlowDock moduleName="库存管理" flow={businessFlow} onAction={handleInventoryFlowAction} onNavigate={onNavigateModule} />
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
+            {activeTab === 'inbound' && (inboundLoadError || inboundLoading) && <div role={inboundLoadError ? 'alert' : 'status'} className="mb-4 border border-slate-200 bg-white p-3 text-sm">{inboundLoadError || '正在加载入库流水…'}{inboundLoadError && <button className="ml-3 underline" onClick={() => void refreshInbound()}>重新加载</button>}</div>}
+            {activeTab === 'outbound' && flowLoadError && <div role="alert" className="mb-4 border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{flowLoadError}<button className="ml-3 underline" onClick={() => void refreshFormalTasks().catch(() => {})}>重新加载</button></div>}
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
                   metrics={[
@@ -9326,9 +8271,14 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   const [formalRequests, setFormalRequests] = useState([]);
   const [formalOrders, setFormalOrders] = useState([]);
   const [formalSuppliers, setFormalSuppliers] = useState([]);
+  const [approvalSupplierId, setApprovalSupplierId] = useState('');
+  const [procurementError, setProcurementError] = useState('');
+  const procurementRevision = useRef(0);
+  const procurementIdentity = useRef('');
+  const procurementScope = `${currentTenant?.id}:${currentUser?.accessToken || ''}`;
+  procurementIdentity.current = procurementScope;
   const [supplierCreateOpen, setSupplierCreateOpen] = useState(false);
   const [supplierCreating, setSupplierCreating] = useState(false);
-  const [localRequests, setLocalRequests] = useState(() => loadInventoryPurchaseRequests(window.localStorage, currentTenant?.id));
   const formalContext = currentUser?.accessToken ? { tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken } : null;
 
   const showCenterToast = (msg, type = 'success') => {
@@ -9337,14 +8287,25 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   };
 
   const refreshProcurement = async () => {
-    if (!formalContext) return;
-    const [requests, orders, suppliers] = await Promise.all([procurementApi.listRequests(formalContext), procurementApi.listOrders(formalContext), procurementApi.listSuppliers(formalContext)]);
-    setFormalRequests(Array.isArray(requests.items) ? requests.items : []);
-    setFormalOrders(Array.isArray(orders.items) ? orders.items : []);
-    setFormalSuppliers(Array.isArray(suppliers.items) ? suppliers.items : []);
+    const revision = ++procurementRevision.current;
+    if (!formalContext) { setFormalRequests([]); setFormalOrders([]); setFormalSuppliers([]); return; }
+    try {
+      const [requests, orders, suppliers] = await Promise.all([procurementApi.listRequests(formalContext), procurementApi.listOrders(formalContext), procurementApi.listSuppliers(formalContext)]);
+      if (procurementIdentity.current !== procurementScope || revision !== procurementRevision.current) return;
+      setFormalRequests(Array.isArray(requests.items) ? requests.items : []);
+      setFormalOrders(Array.isArray(orders.items) ? orders.items : []);
+      setFormalSuppliers(Array.isArray(suppliers.items) ? suppliers.items : []);
+      setProcurementError('');
+    } catch (error) {
+      if (procurementIdentity.current !== procurementScope || revision !== procurementRevision.current) return;
+      setFormalRequests([]); setFormalOrders([]); setFormalSuppliers([]);
+      setProcurementError(error.message || '采购数据加载失败');
+      throw error;
+    }
   };
 
   useEffect(() => {
+    setFormalRequests([]); setFormalOrders([]); setFormalSuppliers([]); setActionModal(null); setApprovalSupplierId('');
     refreshProcurement().catch((error) => showCenterToast(error instanceof Error ? `正式采购数据加载失败：${error.message}` : '正式采购数据加载失败', 'error'));
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
@@ -9378,28 +8339,6 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     }
   };
 
-  useEffect(() => {
-    setLocalRequests(loadInventoryPurchaseRequests(window.localStorage, currentTenant?.id));
-  }, [currentTenant?.id]);
-
-  const linkedPrRow = businessFlow && isLinkedFlowAtLeast(businessFlow, 'purchaseRequest') ? {
-    id: 'PR-LINK-001',
-    source: `MRP-LINK-001 / ${businessFlow.orderId}`,
-    item: 'AI算力芯片 (RM201)',
-    qty: businessFlow.qty * 2,
-    reqDate: '2026-06-23',
-    status: isLinkedFlowAtLeast(businessFlow, 'purchaseOrder') ? '已转订单' : '待审批',
-    applicant: '系统联动'
-  } : null;
-  const linkedPoRow = businessFlow && isLinkedFlowAtLeast(businessFlow, 'purchaseOrder') ? {
-    id: 'PO-LINK-001',
-    supplier: '深圳华芯科技',
-    item: 'AI算力芯片 (RM201)',
-    amount: '¥ 25,600.00',
-    deliveryDate: '2026-06-23',
-    status: isLinkedFlowAtLeast(businessFlow, 'materialInbound') ? '已送货入库' : '供应商确认',
-    creator: '系统联动'
-  } : null;
   const formalPrRows = formalRequests.map(request => ({
     ...request,
     id: request.requestNo || request.id,
@@ -9424,17 +8363,16 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     creator: '正式采购服务',
     formalOrder: order
   }));
-  const prRows = [...formalPrRows, ...localRequests, ...(linkedPrRow ? [linkedPrRow] : []), ...proc_prData]
-    .filter((row, index, rows) => rows.findIndex((item) => item.id === row.id) === index);
-  const poRows = formalPoRows.length ? [...formalPoRows, ...proc_poData] : linkedPoRow ? [linkedPoRow, ...proc_poData.filter(row => row.id !== linkedPoRow.id)] : proc_poData;
+  const prRows = formalPrRows;
+  const poRows = formalPoRows;
   const formalSupplierRows = formalSuppliers.map(supplier => ({
     ...supplier,
     id: supplier.code || supplier.id,
     apiId: supplier.id,
     name: supplier.name || '未知供应商',
     level: supplier.rating || '-',
-    onTimeRate: '98.5%',
-    qualityRate: '99.2%',
+    onTimeRate: '-',
+    qualityRate: '-',
     leadTime: `${supplier.leadTimeDays ?? '-'}天`,
     status: supplier.status === 'enabled' ? '合格供应商' : supplier.status === 'disabled' ? '已停用' : '黑名单',
     formalSupplier: supplier
@@ -9617,18 +8555,9 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 
   const confirmProcAction = async () => {
     if (!actionModal) return;
-    if (actionModal.kind === 'adopt') {
-      if (businessFlow?.currentStep === 'purchaseRequest') onBusinessFlowAction?.('approvePr');
-      setActiveTab('order');
-      showCenterToast('采购订单草稿已生成，已跳转到 PO 台账', 'success');
-    }
-    if (actionModal.kind === 'quote') {
-      setActiveTab('supplier');
-      showCenterToast('备选询价任务已创建，已跳转到供应商管理', 'success');
-    }
-    if (actionModal.kind === 'notify') {
-      setActiveTab('dashboard');
-      showCenterToast('生产计划通知已发送', 'warning');
+    if (['adopt', 'quote', 'notify', 'supplierScore'].includes(actionModal.kind)) {
+      showCenterToast('未执行：后端尚未提供该业务命令接口', 'error');
+      return;
     }
     if (actionModal.kind === 'prView' || actionModal.kind === 'poView' || actionModal.kind === 'supplierView') {
       showCenterToast('单据详情已打开', 'success');
@@ -9637,7 +8566,9 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
       if (actionModal.record?.formalRequest) {
         try {
           if (!formalContext) throw new Error('请先登录正式会话');
-          const result = await procurementApi.approveRequest(formalContext, actionModal.record.formalRequest);
+          const supplier = formalSuppliers.find(item => item.id === approvalSupplierId && item.status === 'enabled');
+          if (!supplier) throw new Error('请选择正式启用的供应商');
+          const result = await procurementApi.approveRequest(formalContext, actionModal.record.formalRequest, { supplierId: supplier.id, supplierName: supplier.name });
           await refreshProcurement();
           onBusinessFlowAction?.('formalPoCreated', { purchaseOrder: result.order });
           setActiveTab('order');
@@ -9646,15 +8577,9 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
           showCenterToast(error instanceof Error ? `采购审批失败：${error.message}` : '采购审批失败', 'error');
           return;
         }
-      } else if (actionModal.record?.localRequest) {
-        const updated = updateInventoryPurchaseRequestStatus(window.localStorage, currentTenant?.id, actionModal.record.id, '已转订单');
-        if (updated) setLocalRequests((previous) => previous.map((item) => item.id === updated.id ? updated : item));
-        setActiveTab('order');
-        showCenterToast(`采购申请 ${actionModal.record.id} 已审批，等待生成正式采购订单`, 'success');
       } else {
-        if (businessFlow?.currentStep === 'purchaseRequest') onBusinessFlowAction?.('approvePr');
-        setActiveTab('order');
-        showCenterToast('采购申请已审批通过，已跳转采购订单台账', 'success');
+        showCenterToast('未审批：正式采购申请未加载', 'error');
+        return;
       }
     }
     if (actionModal.kind === 'poDelivery') {
@@ -9670,8 +8595,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
           return;
         }
       } else {
-        if (businessFlow?.currentStep === 'purchaseOrder') onBusinessFlowAction?.('receiveMaterial');
-        showCenterToast('供应商送货已登记，库存收货任务已生成', 'success');
+        showCenterToast('未收货：正式采购订单未加载', 'error');
+        return;
       }
     }
     if (actionModal.kind === 'prReject') {
@@ -9686,7 +8611,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
           return;
         }
       } else {
-        showCenterToast(`采购申请 ${actionModal.record.id} 已驳回`, 'warning');
+        showCenterToast('未驳回：正式采购申请未加载', 'error');
+        return;
       }
     }
     if (actionModal.kind === 'poCancel') {
@@ -9701,11 +8627,9 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
           return;
         }
       } else {
-        showCenterToast(`采购订单 ${actionModal.record.id} 已取消`, 'warning');
+        showCenterToast('未取消：正式采购订单未加载', 'error');
+        return;
       }
-    }
-    if (actionModal.kind === 'supplierScore') {
-      showCenterToast('供应商绩效评分已刷新', 'success');
     }
     setActionModal(null);
   };
@@ -9742,7 +8666,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   return (
     <div className="w-full h-full font-sans flex flex-col relative">
       <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
-      <BusinessActionModal action={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmProcAction} />
+      <BusinessActionModal action={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmProcAction}>
+        {actionModal?.kind === 'prApprove' && <label className="block text-sm text-slate-700">供应商<select aria-label="审批供应商" value={approvalSupplierId} onChange={event => setApprovalSupplierId(event.target.value)} className="mt-2 w-full rounded border border-slate-200 p-2"><option value="">请选择供应商</option>{formalSuppliers.filter(item => item.status === 'enabled').map(item => <option key={item.id} value={item.id}>{item.name} ({item.code})</option>)}</select></label>}
+      </BusinessActionModal>
+      {procurementError && <div role="alert" className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{procurementError}<button className="ml-3 underline" onClick={() => void refreshProcurement().catch(() => {})}>重新加载</button></div>}
       {supplierCreateOpen && <Procurement_SupplierCreateModal submitting={supplierCreating} onClose={() => setSupplierCreateOpen(false)} onSubmit={handleCreateSupplier} />}
       <main className="px-8 py-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
         <div className="flex justify-between items-start mb-6 shrink-0">
@@ -9779,21 +8706,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         </div>
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 relative">
                           <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-slate-800 text-[14px]">采购申请：{formalRequests.find(r => r.status === 'PENDING_APPROVAL')?.prNo || '暂无待审批 PR'}</h3>
-                            <span className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'bg-emerald-50 border border-emerald-100 text-emerald-600' : 'bg-slate-50 border border-slate-100 text-slate-400'}`}>{formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'AI 已寻源' : '无待审批'}</span>
+                            <h3 className="font-bold text-slate-800 text-[14px]">采购申请：{formalRequests.find(r => r.status === 'PENDING_APPROVAL')?.requestNo || '暂无待审批 PR'}</h3>
+                            <span className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'bg-emerald-50 border border-emerald-100 text-emerald-600' : 'bg-slate-50 border border-slate-100 text-slate-400'}`}>{formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? '待寻源' : '暂无 AI 推荐'}</span>
                           </div>
-                          {formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? (
-                          <>
-                          <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
-                            <p><span className="font-bold text-slate-800">历史画像匹配：</span> 模型已分析潜在供应商的历史交期与退货率，推荐最优供应商。</p>
-                          </div>
-                          <div className="flex gap-4">
-                            <button onClick={() => openProcAction('adopt')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">一键采纳并生成 PO</button>
-                          </div>
-                          </>
-                          ) : (
-                          <div className="text-[13px] text-slate-400">暂无待审批的采购申请。</div>
-                          )}
+                          <div className="text-[13px] text-slate-400">{procurementError ? '采购来源加载失败，请重试。' : '尚未获取供应商推荐结果。'}</div>
                         </div>
                       </div>
 
@@ -9804,22 +8720,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         </div>
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-5">
                           <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-slate-800 text-[14px]">{formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.poNo || '暂无在途 PO'} / {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.materialName || '-'}</h3>
-                            <span className="px-2.5 py-1 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-lg">高风险</span>
+                            <h3 className="font-bold text-slate-800 text-[14px]">{formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.orderNo || '暂无在途 PO'} / {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.materialName || '-'}</h3>
+                            <span className="px-2.5 py-1 bg-slate-50 border border-slate-100 text-slate-500 text-[11px] font-bold rounded-lg">暂无 AI 预警</span>
                           </div>
-                          {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED') ? (
-                        <>
-                        <div className="text-[13px] text-slate-600 leading-relaxed space-y-3 mb-5">
-                            <p><span className="font-bold text-slate-800">风险来源：</span> 供应商产线稼动率和物流波动可能导致交期延迟。</p>
-                        </div>
-                        <div className="flex gap-4">
-                            <button onClick={() => openProcAction('quote')} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">发起备选询价</button>
-                            <button onClick={() => openProcAction('notify')} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">通知生产计划</button>
-                        </div>
-                        </>
-                        ) : (
-                        <div className="text-[13px] text-slate-400">暂无在途采购订单。</div>
-                        )}
+                        <div className="text-[13px] text-slate-400">{procurementError ? '采购来源加载失败，请重试。' : '尚未获取交期风险预警结果。'}</div>
                         </div>
                       </div>
                     </div>
@@ -9858,11 +8762,11 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         </div>
                         <div className="grid grid-cols-4 gap-4 mb-6">
                           {[
-                            { label: 'PR待审核', value: '3', color: 'blue', icon: FilePlus },
-                            { label: '待寻源', value: '2', color: 'purple', icon: Store },
-                            { label: 'PO待确认', value: '4', color: 'amber', icon: FileText },
-                            { label: '待到货', value: '6', color: 'emerald', icon: Truck }
-                          ].map((item, idx) => {
+ { label: 'PR待审核', value: procurementError ? '-' : formalRequests.filter(item => item.status === 'PENDING_APPROVAL').length, color: 'blue', icon: FilePlus },
+ { label: '待寻源', value: '-', color: 'purple', icon: Store },
+ { label: 'PO待确认', value: procurementError ? '-' : formalOrders.filter(item => item.status === 'CREATED').length, color: 'amber', icon: FileText },
+ { label: '待到货', value: procurementError ? '-' : formalOrders.filter(item => ['CONFIRMED', 'PARTIALLY_RECEIVED'].includes(item.status)).length, color: 'emerald', icon: Truck }
+ ].map((item, idx) => {
                             const StepIcon = item.icon;
                             const colorClass = item.color === 'blue' ? 'bg-blue-50 text-blue-600 border-blue-100' : item.color === 'purple' ? 'bg-purple-50 text-purple-600 border-purple-100' : item.color === 'amber' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100';
                             return (
@@ -9880,11 +8784,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                           })}
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          {[
-                            { id: 'PR-260705-01', title: 'AI算力芯片', meta: 'MRP自动生成 · 1000 PCS', status: '建议转PO', tone: 'blue' },
-                            { id: 'PO-260706-001', title: '深圳华芯科技', meta: '2026-07-14 到货 · ¥125,000', status: '供应商确认', tone: 'emerald' },
-                            { id: 'ASN-260707-02', title: '12层空PCB板', meta: '预计晚到 1 天 · 500 PCS', status: '需跟催', tone: 'rose' }
-                          ].map(item => (
+                          {prRows.slice(0, 3).map(row => ({ id: row.id, title: row.item, meta: row.source, status: row.status, tone: 'blue' })).map(item => (
                             <div key={item.id} className="border border-slate-100 bg-slate-50/70 rounded-xl p-4">
                               <div className="flex justify-between items-start mb-2">
                                 <span className="font-mono text-[12px] font-bold text-blue-600">{item.id}</span>
@@ -9903,11 +8803,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                           供应商绩效排行
                         </div>
                         <div className="space-y-4">
-                          {[
-                            { name: '深圳华芯科技', score: 96, desc: '芯片类 · A级', risk: '低风险' },
-                            { name: '苏州芯联电子', score: 91, desc: 'PCB/封装 · A级', risk: '备选推荐' },
-                            { name: '宁波精密五金', score: 82, desc: '结构件 · B级', risk: '需复核' }
-                          ].map(row => (
+                          {formalSupplierRows.slice(0, 3).map(item => ({ name: item.name, score: '-', desc: item.level, risk: '暂无绩效统计' })).map(row => (
                             <div key={row.name} className="border border-slate-100 rounded-xl p-4 bg-slate-50/60">
                               <div className="flex justify-between items-start mb-2">
                                 <div>
@@ -9917,7 +8813,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                 <span className="font-mono text-[18px] font-bold text-slate-800">{row.score}</span>
                               </div>
                               <div className="h-1.5 bg-white border border-slate-100 rounded-full overflow-hidden mb-2">
-                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${row.score}%` }}></div>
+                                <div className="h-full bg-blue-500 rounded-full" style={{ width: 0 }}></div>
                               </div>
                               <div className="text-[11px] text-slate-500 font-medium">{row.risk}</div>
                             </div>
@@ -9933,15 +8829,11 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                           近期待到货日程
                         </div>
                         <div className="space-y-3">
-                          {[
-                            { date: '07-14', item: 'AI算力芯片 RM201', supplier: '深圳华芯科技', qty: '1000 PCS', status: '供应商确认' },
-                            { date: '07-15', item: '微型贴片电容 PR001', supplier: '苏州芯联电子', qty: '5000 PCS', status: '运输中' },
-                            { date: '07-17', item: '铝合金防护外壳 RM305', supplier: '宁波精密五金', qty: '300 套', status: '待发货' }
-                          ].map(row => (
+                          {poRows.filter(item => ['CONFIRMED', 'PARTIALLY_RECEIVED'].includes(item.formalOrder.status)).map(item => ({ date: item.deliveryDate, item: item.item, supplier: item.supplier, qty: String(Number(item.formalOrder.orderedQty) - Number(item.formalOrder.receivedQty)) + ' ' + item.formalOrder.uom, status: item.status })).map(row => (
                             <div key={`${row.date}-${row.item}`} className="flex items-center gap-4 border border-slate-100 rounded-xl p-4 bg-slate-50/60">
                               <div className="w-14 h-14 rounded-xl bg-white border border-slate-100 flex flex-col items-center justify-center shrink-0">
-                                <span className="text-[11px] text-slate-400 font-bold">JUL</span>
-                                <span className="text-[16px] text-slate-800 font-bold">{row.date.split('-')[1]}</span>
+                                <span className="text-[11px] text-slate-400 font-bold">{row.date?.slice(0, 7) || '-'}</span>
+                                <span className="text-[16px] text-slate-800 font-bold">{row.date?.slice(8, 10) || '-'}</span>
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="font-bold text-[13px] text-slate-800 truncate">{row.item}</div>
@@ -9959,11 +8851,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                           采购待办与异常闭环
                         </div>
                         <div className="space-y-3">
-                          {[
-                            { title: '大额采购申请待审批', desc: 'PR-260705-01 金额 12.5 万，需部门总监复核', action: '查看审批' },
-                            { title: '供应商确认超时', desc: 'PO-260706-003 已超过 8 小时未确认', action: '一键催办' },
-                            { title: '到货质检差异', desc: 'IN-260701-02 退料待质检，需确认可回用比例', action: '查看质检' }
-                          ].map(row => (
+                          {prRows.filter(item => item.formalRequest.status === 'PENDING_APPROVAL').map(item => ({ title: item.id, desc: item.item, action: '查看审批' })).map(row => (
                             <div key={row.title} className="flex items-center gap-4 border border-slate-100 rounded-xl p-4 bg-slate-50/60">
                               <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
                                 <Clock size={16} />
@@ -9972,7 +8860,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                 <div className="font-bold text-[13px] text-slate-800">{row.title}</div>
                                 <div className="text-[12px] text-slate-500 mt-1">{row.desc}</div>
                               </div>
-                              <button className="text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-[12px] font-bold shrink-0">{row.action}</button>
+                              <button onClick={() => setActiveTab('pr')} className="text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-[12px] font-bold shrink-0">{row.action}</button>
                             </div>
                           ))}
                         </div>
@@ -12867,7 +11755,6 @@ export default function App() {
     { role: 'assistant', text: '你好，我是工业 AI 助手。你可以直接问经营、销售、生产、库存和采购数据；涉及生成单据或改变 ERP 数据时，我会先给出依据、影响范围和审批要求。', time: '刚刚' }
   ]);
   const [profileModal, setProfileModal] = useState(null);
-  const [platformState, setPlatformState] = useState(() => loadPlatformState(currentTenant));
   const roleMeta = roleWorkbenchMeta[activeRole] || roleWorkbenchMeta.老板;
   const [workbenchDashboard, setWorkbenchDashboard] = useState<WorkbenchDashboardDto | null>(null);
   const [workbenchError, setWorkbenchError] = useState('');
@@ -12921,22 +11808,6 @@ export default function App() {
   const authorizedTenantOptions = allTenantOptions.filter((tenant) =>
     !currentUser?.tenantIds?.length || currentUser.tenantIds.includes(tenant.id),
   );
-
-  useEffect(() => {
-    setPlatformState(loadPlatformState(currentTenant));
-    const onPlatformChange = (event) => {
-      if (event.detail?.tenantId === currentTenant.id) setPlatformState(event.detail.state || loadPlatformState(currentTenant));
-    };
-    const onStorage = (event) => {
-      if (event.key === platformStorageKey(currentTenant.id)) setPlatformState(loadPlatformState(currentTenant));
-    };
-    window.addEventListener(PLATFORM_STATE_CHANGED_EVENT, onPlatformChange);
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener(PLATFORM_STATE_CHANGED_EVENT, onPlatformChange);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, [currentTenantId]);
 
 	  const handleLogin = async ({ account, password, phone, smsCode, captchaId, captchaCode }) => {
       let session;

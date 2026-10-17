@@ -7,17 +7,26 @@ export function useFormalProduction(context: ApiContext | null) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
   const generation = useRef(0);
+  const requestId = useRef(0);
   const refresh = useCallback(async () => {
     if (!context) return;
     const revision = generation.current;
-    const [orders, inspections, completions, closes, access] = await Promise.all([
-      productionOperationsApi.listWorkOrders(context), productionOperationsApi.listInspections(context),
-      productionOperationsApi.listCompletions(context), productionOperationsApi.listCloses(context),
-      productionOperationsApi.readiness(context),
-    ]);
-    if (revision !== generation.current) return;
-    setSnapshot({ orders: orders.items, inspections, completions, closes, permissions: access.permissions });
-    setError("");
+    const request = ++requestId.current;
+    try {
+      const [orders, inspections, completions, closes, access] = await Promise.all([
+        productionOperationsApi.listWorkOrders(context), productionOperationsApi.listInspections(context),
+        productionOperationsApi.listCompletions(context), productionOperationsApi.listCloses(context),
+        productionOperationsApi.readiness(context),
+      ]);
+      if (revision !== generation.current || request !== requestId.current) return;
+      setSnapshot({ orders: orders.items, inspections, completions, closes, permissions: access.permissions });
+      setError("");
+    } catch (reason) {
+      if (revision !== generation.current || request !== requestId.current) return;
+      setSnapshot(null);
+      setError(reason instanceof Error ? reason.message : "生产数据加载失败");
+      throw reason;
+    }
   }, [context?.tenantId, context?.accessToken]);
   useEffect(() => {
     generation.current += 1;

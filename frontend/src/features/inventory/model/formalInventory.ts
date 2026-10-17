@@ -40,14 +40,14 @@ export const buildFormalInventory = (
   const masterData: InventoryMasterData = {
     schemaVersion: 1, stockSource: 'formal', warehouses: warehouses.map(mapFormalWarehouse),
     products: products.map(product => ({
-      id: product.id, name: product.name, specification: product.specification || '',
+      id: product.id, code: product.code, serverVersion: product.version, name: product.name, specification: product.specification || '',
       category: product.category || '', unit: product.uom || '', unitPrice: Number(product.unitPrice || 0),
       defaultWarehouseId: singleWarehouse(product.id, product.code),
       safetyStock: Number(product.safetyStockQty || 0), traceMode: '', status: product.status === 'active' ? '启用' : '停用',
       updatedAt: product.updatedAt || '',
     })),
     materials: materials.map(material => ({
-      id: material.id, name: material.name, specification: material.specification || '',
+      id: material.id, code: material.code, serverVersion: material.version, name: material.name, specification: material.specification || '',
       materialType: material.materialType || '', unit: material.uom || '', unitPrice: Number(material.unitPrice || 0),
       defaultWarehouseId: singleWarehouse(material.id, material.code),
       safetyStock: Number(material.safetyStockQty || 0), procurementType: '',

@@ -319,8 +319,10 @@ export const platformApi = {
   selfProvision: (context: ApiContext) =>
     apiRequest<{ created: boolean; tenantId: string }>("/api/v1/platform/tenants/self-provision", context, { method: "POST" }),
   // ---- 平台快照与权限预览 ----
-  getSnapshot: (context: ApiContext) =>
-    apiRequest<PlatformSnapshotDto>("/api/v1/platform/snapshot", context),
+  getSnapshot: async (context: ApiContext): Promise<PlatformSnapshotDto> => {
+    const value = await apiRequest<PlatformSnapshotDto & { auditLogs?: AuditRecordDto[] }>("/api/v1/platform/snapshot", context);
+    return { ...value, audits: value.audits || value.auditLogs || [] };
+  },
 
   getActorPermissions: (context: ApiContext, loginName: string) =>
     apiRequest<ActorPermissionsDto>(
@@ -357,7 +359,7 @@ export const platformApi = {
     apiRequest<OrgUnitDto[]>("/api/v1/platform/org-units", context),
 
   saveOrgUnit: (context: ApiContext, data: OrgUnitDto) =>
-    apiRequest<OrgUnitDto>("/api/v1/platform/org-units", context, {
+    apiRequest<OrgUnitDto>(`/api/v1/platform/org-units${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -376,7 +378,7 @@ export const platformApi = {
     apiRequest<EnterpriseResourceDto[]>("/api/v1/platform/resources", context),
 
   saveResource: (context: ApiContext, data: EnterpriseResourceDto) =>
-    apiRequest<EnterpriseResourceDto>("/api/v1/platform/resources", context, {
+    apiRequest<EnterpriseResourceDto>(`/api/v1/platform/resources${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -395,7 +397,7 @@ export const platformApi = {
     apiRequest<PositionDto[]>("/api/v1/platform/positions", context),
 
   savePosition: (context: ApiContext, data: PositionDto) =>
-    apiRequest<PositionDto>("/api/v1/platform/positions", context, {
+    apiRequest<PositionDto>(`/api/v1/platform/positions${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -414,7 +416,7 @@ export const platformApi = {
     apiRequest<EmployeeDto[]>("/api/v1/platform/employees", context),
 
   saveEmployee: (context: ApiContext, data: EmployeeDto) =>
-    apiRequest<EmployeeDto>("/api/v1/platform/employees", context, {
+    apiRequest<EmployeeDto>(`/api/v1/platform/employees${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -433,7 +435,7 @@ export const platformApi = {
     apiRequest<AccountDto[]>("/api/v1/platform/accounts", context),
 
   saveAccount: (context: ApiContext, data: AccountDto) =>
-    apiRequest<AccountDto>("/api/v1/platform/accounts", context, {
+    apiRequest<AccountDto>(`/api/v1/platform/accounts${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -468,7 +470,7 @@ export const platformApi = {
     apiRequest<RoleDto[]>("/api/v1/platform/roles", context),
 
   saveRole: (context: ApiContext, data: RoleDto) =>
-    apiRequest<RoleDto>("/api/v1/platform/roles", context, {
+    apiRequest<RoleDto>(`/api/v1/platform/roles${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -517,7 +519,7 @@ export const platformApi = {
     apiRequest<ApprovalRuleDto[]>("/api/v1/platform/approval-rules", context),
 
   saveApprovalRule: (context: ApiContext, data: ApprovalRuleDto) =>
-    apiRequest<ApprovalRuleDto>("/api/v1/platform/approval-rules", context, {
+    apiRequest<ApprovalRuleDto>(`/api/v1/platform/approval-rules${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -536,7 +538,7 @@ export const platformApi = {
     apiRequest<DictionaryDto[]>("/api/v1/platform/dictionaries", context),
 
   saveDictionary: (context: ApiContext, data: DictionaryDto) =>
-    apiRequest<DictionaryDto>("/api/v1/platform/dictionaries", context, {
+    apiRequest<DictionaryDto>(`/api/v1/platform/dictionaries${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
@@ -566,7 +568,7 @@ export const platformApi = {
     }),
 
   saveParameter: (context: ApiContext, data: PlatformParameterDto) =>
-    apiRequest<PlatformParameterDto>("/api/v1/platform/parameters", context, {
+    apiRequest<PlatformParameterDto>(`/api/v1/platform/parameters${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
       body: JSON.stringify(data),
       ...(data.id ? { expectedVersion: data.version } : {}),
