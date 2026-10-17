@@ -208,7 +208,10 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
               : <MasterEditorSelect {...controlProps} label="物料类型" name="materialType" options={['原材料', '辅料', '半成品', '包装材料']} />}
             <MasterEditorField {...controlProps} label="基本单位" name="unit" />
             <MasterEditorField {...controlProps} label="价格 (元)" name="unitPrice" type="number" step="0.01" />
-            <MasterEditorSelect {...controlProps} label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
+            <div>
+              <MasterEditorSelect {...controlProps} label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
+              <p className="mt-1.5 text-[12px] leading-5 text-amber-700">默认仓库设置暂不可用，保存{entityLabels[state.entity]}资料不会修改仓库归属。</p>
+            </div>
             <MasterEditorField {...controlProps} label="安全库存" name="safetyStock" type="number" />
             {state.entity === 'product'
               ? <MasterEditorSelect {...controlProps} label="追溯方式" name="traceMode" locked options={['不追溯', '批次', '序列号']} />
