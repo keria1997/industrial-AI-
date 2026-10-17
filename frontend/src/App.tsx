@@ -10628,8 +10628,6 @@ export default function App() {
               </div>
               <div className="ml-3 min-w-0 flex-1">
                 <div className="text-[13px] font-bold text-slate-800 group-hover:text-blue-700 truncate">{currentUser.name}</div>
-                <div aria-label="当前账号角色" title={accountRole} className="text-[11px] font-medium text-slate-500 break-words">账号角色：{accountRole}</div>
-                <div className="text-[11px] font-medium text-slate-500">工作台视图：{roleMeta.title}</div>
               </div>
               <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
             </button>
@@ -10726,8 +10724,6 @@ export default function App() {
                 <div className="relative">
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-black shadow-sm">{todayLabel}</span>
-                    <span aria-label="工作台账号角色" className="min-w-0 max-w-full break-words px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">账号角色：{accountRole}</span>
-                    <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[12px] font-black">工作台视图：{roleMeta.title}</span>
                   <span role="status" aria-label="工作台数据状态" className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${!activeRole ? 'bg-slate-50 text-slate-600 border-slate-200' : workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : workbenchOutdated ? 'bg-amber-50 text-amber-700 border-amber-200' : workbenchLoading ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${!activeRole ? 'bg-slate-400' : workbenchError ? 'bg-rose-500' : workbenchOutdated ? 'bg-amber-500' : workbenchLoading ? 'bg-slate-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                     {!activeRole ? '未匹配工作台视图' : workbenchError ? '数据读取异常' : workbench.expired ? '数据已失效' : workbench.stale || workbench.businessStale ? '数据已过期' : workbenchLoading ? '实时取数中' : '数据已更新'}
