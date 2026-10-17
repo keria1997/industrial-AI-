@@ -42,7 +42,9 @@ export const buildFormalInventory = (
     products: products.map(product => ({
       id: product.id, code: product.code, serverVersion: product.version, name: product.name, specification: product.specification || '',
       category: product.category || '', unit: product.uom || '', unitPrice: Number(product.unitPrice || 0),
-      defaultWarehouseId: singleWarehouse(product.id, product.code),
+      // Configuration comes from the product API; stock distribution cannot supply a default.
+      defaultWarehouseId: product.defaultWarehouseId
+        ? resolveWarehouse(warehouses, product.defaultWarehouseId)?.code || product.defaultWarehouseId : '',
       safetyStock: Number(product.safetyStockQty || 0), traceMode: '', status: product.status === 'active' ? '启用' : '停用',
       updatedAt: product.updatedAt || '',
     })),

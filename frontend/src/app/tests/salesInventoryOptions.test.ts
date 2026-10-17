@@ -32,4 +32,15 @@ describe('mapInventoryMasterToQuoteOptions', () => {
       availQty: 0,
     });
   });
+
+  it('matches server warehouse IDs in stock facts to configured product warehouse codes', () => {
+    const data = createInventoryMasterDataSeed();
+    data.warehouses.find(item => item.id === 'WH-FG-01')!.serverId = 'warehouse-server-id';
+    const options = mapInventoryMasterToQuoteOptions(data, [{
+      id: 'FG001', name: '产品', category: '成品', warehouseId: 'warehouse-server-id', warehouse: '成品主仓',
+      location: '-', stockQty: 8, lockQty: 0, availQty: 8, unit: '台', status: '正常',
+    }]);
+    expect(options.products.find(item => item.id === 'FG001'))
+      .toMatchObject({ warehouseId: 'WH-FG-01', availQty: 8 });
+  });
 });

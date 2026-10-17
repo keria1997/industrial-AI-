@@ -29,7 +29,7 @@ import {
   type InventoryStockQueryRow,
   type InventoryWarehouse,
 } from '../model/inventoryMasterData';
-import { inventoryApi, type ApiContext, type WarehouseDto } from '../../../api/fulfillment';
+import { inventoryApi, type ApiContext, type ProductDto, type WarehouseDto } from '../../../api/fulfillment';
 
 type MasterTab = 'warehouses' | 'products' | 'materials';
 type MasterEntity = 'warehouse' | 'product' | 'material';
@@ -116,14 +116,14 @@ const MasterEditorField = ({ label, name, draft, readOnly, onChange, type = 'tex
   </label>
 );
 
-const MasterEditorSelect = ({ label, name, draft, readOnly, onChange, options, locked = false }: EditorControlProps & { options: string[] | Array<{ value: string; label: string }> }) => (
+const MasterEditorSelect = ({ label, name, draft, readOnly, onChange, options, locked = false, placeholder, placeholderDisabled = false }: EditorControlProps & { options: string[] | Array<{ value: string; label: string; disabled?: boolean }>; placeholder?: string; placeholderDisabled?: boolean }) => (
   <label className="block">
     <span className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}</span>
     <select disabled={readOnly || locked} value={String(draft[name] ?? '')} onChange={(event) => onChange(name, event.target.value)} className={editorFieldClass(readOnly, locked)}>
-      <option value="">{locked ? '未配置' : '请选择'}</option>
+      <option value="" disabled={placeholderDisabled}>{placeholder || (locked ? '未配置' : '请选择')}</option>
       {options.map((option) => typeof option === 'string'
         ? <option key={option} value={option}>{option}</option>
-        : <option key={option.value} value={option.value}>{option.label}</option>)}
+        : <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
     </select>
   </label>
 );
@@ -142,7 +142,19 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
   const [saving, setSaving] = useState(false);
   const readOnly = state.mode === 'view';
   const editLocked = state.mode !== 'create';
-  const warehouses = data.warehouses.filter((item) => item.status === '启用' || item.id === draft.defaultWarehouseId);
+  const warehouses = data.warehouses.filter((item) => item.status === '启用'
+    || [item.id, item.serverId].includes(String(draft.defaultWarehouseId || '')));
+  const productWarehouseOptions = warehouses.map((item) => ({
+    value: item.id,
+    label: `${item.name} (${item.code || item.id})${item.status === '启用' ? '' : '（已停用）'}`,
+    disabled: item.status !== '启用',
+  }));
+  if (state.entity === 'product' && draft.defaultWarehouseId
+    && !productWarehouseOptions.some(item => item.value === draft.defaultWarehouseId)) {
+    productWarehouseOptions.push({
+      value: String(draft.defaultWarehouseId), label: `当前关联仓库（不可用）：${draft.defaultWarehouseId}`, disabled: true,
+    });
+  }
   const update = (key: string, value: string | number) => setDraft((current) => ({ ...current, [key]: value }));
   const controlProps = { draft, readOnly, onChange: update };
 
@@ -160,6 +172,11 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
       if (!String(draft.specification || '').trim() || !String(draft.unit || '').trim()) return '请填写规格型号和基本单位';
       if (Number(draft.unitPrice) < 0) return '价格不能小于 0';
       if (Number(draft.safetyStock) < 0) return '安全库存不能小于 0';
+      if (state.entity === 'product' && draft.defaultWarehouseId
+        && draft.defaultWarehouseId !== state.record.defaultWarehouseId
+        && !data.warehouses.some(item => item.id === draft.defaultWarehouseId && item.status === '启用')) {
+        return '请选择可用的库存仓库';
+      }
     }
     return '';
   };
@@ -209,8 +226,16 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
             <MasterEditorField {...controlProps} label="基本单位" name="unit" />
             <MasterEditorField {...controlProps} label="价格 (元)" name="unitPrice" type="number" step="0.01" />
             <div>
-              <MasterEditorSelect {...controlProps} label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
-              <p className="mt-1.5 text-[12px] leading-5 text-amber-700">默认仓库设置暂不可用，保存{entityLabels[state.entity]}资料不会修改仓库归属。</p>
+              {state.entity === 'product' ? <>
+                <MasterEditorSelect {...controlProps} label="库存仓库" name="defaultWarehouseId"
+                  options={productWarehouseOptions} placeholder="暂不关联"
+                  placeholderDisabled={state.mode !== 'create' && !!state.record.defaultWarehouseId} />
+                {!warehouses.some(item => item.status === '启用') && !readOnly
+                  && <p className="mt-1.5 text-[12px] leading-5 text-slate-500">暂无可选仓库，{state.record.defaultWarehouseId ? '保留当前关联。' : '可暂不关联。'}</p>}
+              </> : <>
+                <MasterEditorSelect {...controlProps} label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
+                <p className="mt-1.5 text-[12px] leading-5 text-amber-700">默认仓库设置暂不可用，保存物料资料不会修改仓库归属。</p>
+              </>}
             </div>
             <MasterEditorField {...controlProps} label="安全库存" name="safetyStock" type="number" />
             {state.entity === 'product'
@@ -366,14 +391,30 @@ export const InventoryMasterDataPanel = ({
       name: String(draft.name), specification: String(draft.specification || ''),
       uom: String(draft.unit), unitPrice: String(draft.unitPrice), safetyStockQty: String(draft.safetyStock),
     };
-    // UI -> inventory API -> persisted master data; unsupported fields are read-only.
+    // UI warehouse code -> server warehouse ID -> inventory API; no stock mutation.
     if (editor.entity === 'product') {
-      const values = { ...input, category: String(draft.category || '') };
-      if (editor.mode === 'create') await inventoryApi.createProduct(apiContext, { code: String(draft.id), ...values });
+      const warehouseChanged = draft.defaultWarehouseId !== editor.record.defaultWarehouseId;
+      const warehouse = data.warehouses.find(item => item.id === draft.defaultWarehouseId);
+      if (draft.defaultWarehouseId && (editor.mode === 'create' || warehouseChanged)
+        && (!warehouse || warehouse.status !== '启用')) throw new Error('请选择可用的库存仓库');
+      const values = {
+        ...input, category: String(draft.category || ''),
+        ...(draft.defaultWarehouseId && (editor.mode === 'create' || warehouseChanged)
+          ? { defaultWarehouseId: warehouse!.serverId || warehouse!.id } : {}),
+      };
+      let saved: { product: ProductDto };
+      if (editor.mode === 'create') saved = await inventoryApi.createProduct(apiContext, { code: String(draft.id), ...values });
       else {
         const current = data.products.find(item => item.id === editor.record.id);
         if (!current?.serverVersion) throw new Error('产品版本未加载，请刷新后重试');
-        await inventoryApi.updateProduct(apiContext, current.id, current.serverVersion, { ...values, status: warehouseStatusToServer(String(draft.status)) });
+        saved = await inventoryApi.updateProduct(apiContext, current.id, current.serverVersion, { ...values, status: warehouseStatusToServer(String(draft.status)) });
+      }
+      // A successful legacy response may omit the association; reload facts without claiming it was saved.
+      if (values.defaultWarehouseId && saved.product?.defaultWarehouseId !== values.defaultWarehouseId) {
+        commit(data);
+        setEditor(null);
+        onToast('产品资料已提交，但库存仓库关联未确认，请刷新后检查', 'warning');
+        return;
       }
     } else {
       const values = { ...input, materialType: String(draft.materialType || '') };
@@ -551,7 +592,7 @@ export const InventoryMasterDataPanel = ({
               <th className="px-5 py-3">产品编码 / 名称</th>
               <th className="px-5 py-3">规格型号</th>
               <th className="px-5 py-3">分类 / 单位</th>
-              <th className="px-5 py-3">默认仓库</th>
+              <th className="px-5 py-3">库存仓库</th>
               <th className="px-5 py-3 text-right">实际可用</th>
               <th className="px-5 py-3 text-right">价格</th>
               <th className="px-5 py-3">安全库存</th>
@@ -575,10 +616,14 @@ export const InventoryMasterDataPanel = ({
                     <div className="mt-0.5 text-[11px] text-slate-500">{row.unit}</div>
                   </td>
                   <td className="px-5 py-4">
-                    <button type="button" onClick={() => onSelectWarehouse(row.defaultWarehouseId)} className="font-bold text-blue-700 hover:underline">{warehouseName(row.defaultWarehouseId)}</button>
+                    {row.defaultWarehouseId
+                      ? data.warehouses.some(item => item.id === row.defaultWarehouseId || item.serverId === row.defaultWarehouseId)
+                        ? <button type="button" onClick={() => onSelectWarehouse(row.defaultWarehouseId)} className="font-bold text-blue-700 hover:underline">{warehouseName(row.defaultWarehouseId)}</button>
+                        : <span className="text-slate-500">关联仓库不可用</span>
+                      : <span className="text-slate-400">未关联</span>}
                   </td>
                   <td className="px-5 py-4 text-right font-bold tabular-nums text-emerald-700">
-                    {actionRow ? <span>{actionRow.availQty} <span className="text-[10px] font-medium text-slate-400">{row.unit}</span></span> : <span className="text-slate-400">-</span>}
+                    {actionRow?.hasStockFact ? <span>{actionRow.availQty} <span className="text-[10px] font-medium text-slate-400">{row.unit}</span></span> : <span className="text-slate-400">-</span>}
                   </td>
                   <td className="px-5 py-4 text-right font-bold tabular-nums text-slate-800">{formatUnitPrice(row.unitPrice)}</td>
                   <td className="px-5 py-4 font-bold tabular-nums text-slate-800">{row.safetyStock} {row.unit}</td>

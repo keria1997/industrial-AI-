@@ -35,7 +35,7 @@ export const mapInventoryMasterToQuoteOptions = (
       const warehouseId = fact.warehouseId
         || data.warehouses.find((warehouse) => warehouse.name === fact.warehouse)?.id
         || fact.warehouse;
-      return [stockFactKey(warehouseId, fact.id), Number(fact.availQty || 0)];
+      return [stockFactKey(warehouseById.get(warehouseId)?.id || warehouseId, fact.id), Number(fact.availQty || 0)];
     }),
   );
 

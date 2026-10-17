@@ -73,6 +73,31 @@ describe('formal inventory authority', () => {
     expect(multipleWarehouses.masterData.products[0].defaultWarehouseId).toBe('');
   });
 
+  it('does not infer a product warehouse from a single stock location when configuration is absent', () => {
+    const product = { id: 'api-product', code: 'API-FG', name: '未关联产品', defaultWarehouseId: null } as ProductDto;
+    const { masterData, stockData } = buildFormalInventory(createInventoryMasterDataSeed(), [warehouse],
+      [{ ...fact, productId: product.id }], [product], []);
+    expect(masterData.products[0].defaultWarehouseId).toBe('');
+    expect(stockData[0]).toMatchObject({ warehouseId: warehouse.id, availQty: 105 });
+  });
+
+  it('uses the configured warehouse independently of stock and preserves missing stock as unknown', () => {
+    const product = { id: 'api-product', code: 'API-FG', name: '已关联产品', defaultWarehouseId: other.id } as ProductDto;
+    const { masterData, stockData } = buildFormalInventory(createInventoryMasterDataSeed(), [warehouse, other],
+      [{ ...fact, productId: product.id }], [product], []);
+    expect(masterData.products[0].defaultWarehouseId).toBe(other.code);
+    expect(getWarehouseInventoryRows(masterData.warehouses[0], masterData, stockData)[0])
+      .toMatchObject({ id: product.id, hasStockFact: true, availQty: 105 });
+    expect(getWarehouseInventoryRows(masterData.warehouses[1], masterData, stockData)[0])
+      .toMatchObject({ id: product.id, hasStockFact: false, status: '未查询到库存记录' });
+  });
+
+  it('retains an unavailable configured warehouse without silently replacing it', () => {
+    const product = { id: 'api-product', code: 'API-FG', name: '受限仓库产品', defaultWarehouseId: 'not-in-scope' } as ProductDto;
+    const { masterData } = buildFormalInventory(createInventoryMasterDataSeed(), [warehouse], [], [product], []);
+    expect(masterData.products[0].defaultWarehouseId).toBe('not-in-scope');
+  });
+
   it('adds frozen and reserved decimal quantities without floating point arithmetic', () => {
     expect(snapshot([{ ...fact, allocatedReservedQty: '0.1', frozenQty: '0.2' }]).stockData[0].lockQty).toBe(0.3);
   });
