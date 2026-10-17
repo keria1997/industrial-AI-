@@ -16,6 +16,7 @@ import { useFormalProduction } from './features/production/model/useFormalProduc
 import { ProductionReportModal } from './features/production/components/ProductionReportModal';
 import { FormalBomPanel } from './features/production/components/FormalBomPanel';
 import { procurementApi } from './api/procurement';
+import { purchaseOrderReadOnlyReason, purchaseRequestReadOnlyReason } from './features/procurement/procurementContract';
 import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, registerTenant, requestLoginCaptcha, requestPasswordReset, resetPasswordByEmail, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
 import * as financeApi from './api/finance';
 import { messagesApi } from "./api/messages";
@@ -7383,33 +7384,35 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 
   const formalPrRows = formalRequests.map(request => ({
     ...request,
-    id: request.requestNo || request.id,
+    id: request.requestNo || request.prNo || request.id,
     apiId: request.id,
     source: `MRP ${request.mrpTaskId || '未知任务'} / ${request.demandId || '未知需求'}`,
     item: `${request.materialName || request.materialId || '未知物料'} (${request.materialId || '-'})`,
-    qty: Number(request.requiredQty || 0),
+    qty: request.requiredQty ?? request.qty ?? '-',
     reqDate: request.requiredDate || request.dueDate || '-',
     status: request.status === 'PENDING_APPROVAL' ? '待审批' : request.status === 'CONVERTED' ? '已转订单' : request.status === 'REJECTED' ? '已驳回' : request.status === 'CANCELED' ? '已取消' : '已审批',
     applicant: '正式采购服务',
-    formalRequest: request
+    formalRequest: request,
+    readOnlyReason: purchaseRequestReadOnlyReason(request),
   }));
   const formalPoRows = formalOrders.map(order => ({
     ...order,
-    id: order.orderNo || order.id,
+    id: order.orderNo || order.poNo || order.id,
     apiId: order.id,
     supplier: order.supplierName || '未知供应商',
     item: `${order.materialName || order.materialId || '未知物料'} (${order.materialId || '-'})`,
-    amount: order.totalAmount ? `¥ ${parseFloat(order.totalAmount).toLocaleString('zh-CN')}` : `${order.orderedQty || 0} ${order.uom || ''}`.trim(),
-    deliveryDate: order.promisedDate || '-',
+    amount: order.totalAmount != null ? `${order.currency || '币种未返回'} ${order.totalAmount}` : '-',
+    deliveryDate: order.promisedDate || order.requiredDate || '-',
     status: order.status === 'RECEIVED' ? '已送货入库' : order.status === 'PARTIALLY_RECEIVED' ? '部分入库' : order.status === 'CANCELED' ? '已取消' : '供应商确认',
     creator: '正式采购服务',
-    formalOrder: order
+    formalOrder: order,
+    readOnlyReason: purchaseOrderReadOnlyReason(order),
   }));
   const prRows = formalPrRows.filter(row => !focusedPrId || row.id === focusedPrId || row.apiId === focusedPrId);
   const poRows = formalPoRows.filter(row => !focusedPoId || row.id === focusedPoId || row.apiId === focusedPoId);
   const formalSupplierRows = formalSuppliers.map(supplier => ({
     ...supplier,
-    id: supplier.code || supplier.id,
+    id: supplier.code || supplier.supplierNo || supplier.id,
     apiId: supplier.id,
     name: supplier.name || '未知供应商',
     level: supplier.rating || '-',
@@ -7423,6 +7426,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   const openProcRowAction = (kind, row) => {
     const required = { prApprove: ['procurement.pr.approve', 'procurement.request.approve'], prReject: ['procurement.pr.approve', 'procurement.request.approve'], poDelivery: ['procurement.receipt.create', 'procurement.receipt.post'], poCancel: ['procurement.po.cancel', 'procurement.order.cancel'] }[kind];
     if (required && !hasPermission(currentUser?.permissions, ...required)) { showCenterToast('无此操作权限', 'warning'); return; }
+    if (required && row.readOnlyReason) { showCenterToast(row.readOnlyReason, 'warning'); return; }
     if (kind === 'poDelivery') { setReceiptOrder(row.formalOrder); return; }
     setActionReason('');
     const configs = {
@@ -7695,7 +7699,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         </div>
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 relative">
                           <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-slate-800 text-[14px]">采购申请：{formalRequests.find(r => r.status === 'PENDING_APPROVAL')?.requestNo || '暂无待审批 PR'}</h3>
+                            <h3 className="font-bold text-slate-800 text-[14px]">采购申请：{formalPrRows.find(r => r.formalRequest.status === 'PENDING_APPROVAL')?.id || '暂无待审批 PR'}</h3>
                             <span className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? 'bg-emerald-50 border border-emerald-100 text-emerald-600' : 'bg-slate-50 border border-slate-100 text-slate-400'}`}>{formalRequests.find(r => r.status === 'PENDING_APPROVAL') ? '待寻源' : '暂无 AI 推荐'}</span>
                           </div>
                           <div className="text-[13px] text-slate-400">{procurementError ? '采购来源加载失败，请重试。' : '尚未获取供应商推荐结果。'}</div>
@@ -7709,7 +7713,7 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         </div>
                         <div className="bg-slate-50 border border-slate-100 rounded-xl p-5">
                           <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-slate-800 text-[14px]">{formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.orderNo || '暂无在途 PO'} / {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.materialName || '-'}</h3>
+                            <h3 className="font-bold text-slate-800 text-[14px]">{formalPoRows.find(o => o.formalOrder.status === 'PARTIALLY_RECEIVED')?.id || '暂无在途 PO'} / {formalOrders.find(o => o.status === 'PARTIALLY_RECEIVED')?.materialName || '-'}</h3>
                             <span className="px-2.5 py-1 bg-slate-50 border border-slate-100 text-slate-500 text-[11px] font-bold rounded-lg">暂无 AI 预警</span>
                           </div>
                         <div className="text-[13px] text-slate-400">{procurementError ? '采购来源加载失败，请重试。' : '尚未获取交期风险预警结果。'}</div>
@@ -7874,12 +7878,12 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                         <td className="px-6 py-4"><div className="flex items-center gap-2"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold text-[11px] border border-slate-200">{row.source}</span>{row.id === focusedPrId && <span className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-blue-700">本次补货</span>}</div></td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{row.item}</td>
                                         <td className="px-6 py-4 text-right font-mono font-bold text-slate-800 text-[14px]">{row.qty}</td>
-                                        <td className="px-6 py-4"><span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-lg text-[11px] font-bold">{row.status}</span></td>
+                                        <td className="px-6 py-4"><span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-lg text-[11px] font-bold">{row.status}</span>{row.readOnlyReason && <p className="mt-2 max-w-xs whitespace-normal text-xs text-amber-700">{row.readOnlyReason}</p>}</td>
                                         <td className="px-6 py-4">
                                           <TableActionGroup>
                                             <TableActionButton icon={Eye} label="查看" onClick={() => openProcRowAction('prView', row)} />
-                                            <TableActionButton icon={CheckCircle2} label="审批" tone="emerald" onClick={() => openProcRowAction('prApprove', row)} disabled={row.formalRequest.status !== 'PENDING_APPROVAL' || !hasPermission(currentUser?.permissions, 'procurement.pr.approve', 'procurement.request.approve')} />
-                                            <TableActionButton icon={XCircle} label="驳回" tone="red" onClick={() => openProcRowAction('prReject', row)} disabled={row.formalRequest.status !== 'PENDING_APPROVAL' || !hasPermission(currentUser?.permissions, 'procurement.pr.approve', 'procurement.request.approve')} />
+                                            <TableActionButton icon={CheckCircle2} label="审批" tone="emerald" onClick={() => openProcRowAction('prApprove', row)} disabled={!!row.readOnlyReason || row.formalRequest.status !== 'PENDING_APPROVAL' || !hasPermission(currentUser?.permissions, 'procurement.pr.approve', 'procurement.request.approve')} />
+                                            <TableActionButton icon={XCircle} label="驳回" tone="red" onClick={() => openProcRowAction('prReject', row)} disabled={!!row.readOnlyReason || row.formalRequest.status !== 'PENDING_APPROVAL' || !hasPermission(currentUser?.permissions, 'procurement.pr.approve', 'procurement.request.approve')} />
                                           </TableActionGroup>
                                         </td>
                                     </tr>
@@ -7907,12 +7911,12 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                                         <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-2"><Store size={14} className="text-slate-400"/> {row.supplier}</td>
                                         <td className="px-6 py-4 font-bold text-slate-700">{row.item}</td>
                                         <td className="px-6 py-4 text-right font-mono font-bold text-slate-800 text-[14px]">{row.amount}</td>
-                                        <td className="px-6 py-4">{getPOStatusBadge(row.status)}</td>
+                                        <td className="px-6 py-4">{getPOStatusBadge(row.status)}{row.readOnlyReason && <p className="mt-2 max-w-xs whitespace-normal text-xs text-amber-700">{row.readOnlyReason}</p>}</td>
                                         <td className="px-6 py-4">
                                           <TableActionGroup>
                                             <TableActionButton icon={Eye} label="查看" onClick={() => openProcRowAction('poView', row)} />
-                                            <TableActionButton icon={Truck} label="送货" tone="emerald" onClick={() => openProcRowAction('poDelivery', row)} disabled={!['CREATED', 'CONFIRMED', 'PARTIALLY_RECEIVED'].includes(row.formalOrder.status) || !hasPermission(currentUser?.permissions, 'procurement.receipt.create', 'procurement.receipt.post')} />
-                                            <TableActionButton icon={XCircle} label="取消" tone="red" onClick={() => openProcRowAction('poCancel', row)} disabled={!['CREATED', 'CONFIRMED'].includes(row.formalOrder.status) || !hasPermission(currentUser?.permissions, 'procurement.po.cancel', 'procurement.order.cancel')} />
+                                            <TableActionButton icon={Truck} label="送货" tone="emerald" onClick={() => openProcRowAction('poDelivery', row)} disabled={!!row.readOnlyReason || !['CONFIRMED', 'PARTIALLY_RECEIVED'].includes(row.formalOrder.status) || !hasPermission(currentUser?.permissions, 'procurement.receipt.create', 'procurement.receipt.post')} />
+                                            <TableActionButton icon={XCircle} label="取消" tone="red" onClick={() => openProcRowAction('poCancel', row)} disabled={!!row.readOnlyReason || !['CREATED', 'CONFIRMED'].includes(row.formalOrder.status) || !hasPermission(currentUser?.permissions, 'procurement.po.cancel', 'procurement.order.cancel')} />
                                           </TableActionGroup>
                                         </td>
                                     </tr>
@@ -9577,7 +9581,7 @@ const roleWorkbenchMeta = {
   仓管: { title: '仓储作业台', summary: '围绕收、发、存、盘与批次追溯，快速处理异常任务。' },
   车间: { title: '车间执行台', summary: '聚焦派工、报工、质检、设备与在制品流转。' },
   财务: { title: '业财协同台', summary: '销售与采购业务自动形成应收应付、发票、流水和凭证。' },
-  人事: { title: '组织与人才台', summary: '统一管理员工、岗位、考勤、技能与关键人才风险。' },
+  人事: { title: '组织与人才台', summary: '统一管理员工、岗位、技能与关键人才风险。' },
   超级管理员: { title: '平台治理台', summary: '管理租户、组织、权限、审批、审计与系统运行状态。' },
 };
 

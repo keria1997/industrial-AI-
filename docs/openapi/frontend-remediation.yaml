@@ -11,6 +11,52 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /sales/ai-insights:
+    get:
+      summary: Read sales monitoring facts with explicit source availability
+      description: |
+        Target integration contract; the legacy controller has not implemented source provenance.
+        A timestamp with fixed zeros is not an EMPTY result. Count/amount facts require
+        verified database aggregation; unavailable facts must be null, never fabricated zeros.
+      parameters:
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Source status and authorized tenant facts; EMPTY means a verified empty scope
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [availability, dataAsOf, sourceVersion, currency, monthlyOrderCount, totalSalesAmount, stalledCount, deliveryRiskCount, deliveryRiskOrders, stalledOrders]
+                properties:
+                  availability: { type: string, enum: [AVAILABLE, EMPTY, UNAVAILABLE] }
+                  dataAsOf: { type: string, format: date-time, nullable: true }
+                  sourceVersion: { type: string, nullable: true }
+                  currency: { type: string, pattern: '^[A-Z]{3}$', nullable: true }
+                  monthlyOrderCount: { type: integer, minimum: 0, nullable: true }
+                  totalSalesAmount: { type: string, nullable: true, description: Single-currency decimal amount; never sum currencies }
+                  stalledCount: { type: integer, minimum: 0, nullable: true }
+                  deliveryRiskCount: { type: integer, minimum: 0, nullable: true }
+                  deliveryRiskOrders:
+                    type: array
+                    items:
+                      type: object
+                      required: [orderId]
+                      properties:
+                        orderId: { type: string }
+                        customerName: { type: string }
+                        deliveryDate: { type: string, format: date }
+                        totalAmount: { type: string }
+                  stalledOrders:
+                    type: array
+                    items:
+                      type: object
+                      required: [orderId]
+                      properties:
+                        orderId: { type: string }
+        '401': { description: Missing or expired session }
+        '403': { description: Sales monitoring or tenant scope access denied }
+        '503': { description: Source unavailable; no fabricated statistics }
   /sales/sales-orders/{id}/cancel:
     post:
       summary: Cancel an authorized sales order with the user's reason

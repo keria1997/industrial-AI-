@@ -295,6 +295,10 @@ export const inventoryApi = {
 // ===== 销售监控舱 AI 洞察 =====
 
 export type AiInsights = {
+  availability?: 'AVAILABLE' | 'EMPTY' | 'UNAVAILABLE';
+  dataAsOf?: string | null;
+  sourceVersion?: string | null;
+  currency?: string | null;
   stalledOrders: Array<{
     orderId: string;
     customerId: string;

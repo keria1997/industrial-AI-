@@ -10,14 +10,18 @@ const loadInsights = (context: ApiContext) => fetchAiInsights(context);
 const loadCustomers = (context: ApiContext) =>
   loadApiCollection((page, pageSize) => supplyChainApi.listCustomers(context, { page, pageSize }));
 const count = (value: unknown) => Number.isInteger(value) && Number(value) >= 0 ? String(value) : '-';
-const money = (value: unknown) => value !== '' && value != null && Number.isFinite(Number(value))
-  ? (Number(value) / 10000).toFixed(2) : '-';
+const money = (value: unknown, currency?: string | null) => value !== '' && value != null && Number.isFinite(Number(value)) && currency
+  ? currency === 'CNY' ? (Number(value) / 10000).toFixed(2) : String(value) : '-';
 
 // UI -> business APIs. No local quotes, reminder records, forecasts or generated AI replies.
 export function SalesMonitorFacts({ apiContext, Cabin }: { apiContext: ApiContext | null; Cabin: any }) {
   const insights = useApiResource(apiContext, loadInsights);
   const customers = useApiResource(apiContext, loadCustomers);
-  const facts = insights.data;
+  const source = insights.data;
+  const verifiedSource = ['AVAILABLE', 'EMPTY'].includes(source?.availability || '')
+    && !!source?.dataAsOf && Number.isFinite(Date.parse(source.dataAsOf)) && !!source?.sourceVersion?.trim();
+  const facts = verifiedSource ? source : null;
+  const unverified = !!source && !verifiedSource;
   const risks = Array.isArray(facts?.deliveryRiskOrders) ? facts.deliveryRiskOrders : [];
   const customerProfilesComplete = customers.data != null && customers.data.every(customer => {
     const date = customer.metadata?.lastInteractionAt;
@@ -31,18 +35,19 @@ export function SalesMonitorFacts({ apiContext, Cabin }: { apiContext: ApiContex
   });
   const customerState = customers.loading ? '加载中' : customers.error ? '数据加载失败'
     : !customerProfilesComplete ? '数据不完整' : dormant.length ? '建议跟进' : '暂未发现';
-  const riskState = insights.loading ? '加载中' : insights.error ? '数据加载失败'
+  const riskState = insights.loading ? '加载中' : insights.error ? '数据加载失败' : unverified ? '数据待核实'
     : facts?.deliveryRiskCount === 0 ? '暂无 AI 预警'
       : facts?.deliveryRiskCount > 0 ? '交期预警' : '尚未获取预警结果';
   return <>
     {(insights.loading || insights.error) && <ApiDataState loading={insights.loading} error={insights.error} onRetry={insights.reload} />}
+    {unverified && <div role="status" className="flex items-center justify-between gap-3 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><span>销售统计数据待核实：来源尚未提供有效的可用状态、事实时间或版本，暂不展示金额、数量和无风险结论。</span><button type="button" onClick={() => void insights.reload()} className="shrink-0 underline">重新加载</button></div>}
     {(customers.loading || customers.error) && <ApiDataState loading={customers.loading} error={customers.error} onRetry={customers.reload} />}
     <Cabin
       metrics={[
         { title: '生效报价数', value: '-', unit: '份', subtitle: '尚未获取报价统计', icon: Target, theme: 'emerald' },
         { title: '本月订单数', value: count(facts?.monthlyOrderCount), unit: '单', subtitle: '正式销售统计', icon: ShoppingCart, theme: 'blue' },
         { title: '异常停滞订单', value: count(facts?.stalledCount), unit: '单', subtitle: '正式停滞规则统计', icon: AlertTriangle, theme: 'rose' },
-        { title: '订单销售额', value: money(facts?.totalSalesAmount), unit: '万元', subtitle: '正式销售统计', icon: Wallet, theme: 'amber' },
+        { title: '订单销售额', value: money(facts?.totalSalesAmount, facts?.currency), unit: facts?.currency === 'CNY' ? '万元' : facts?.currency || '', subtitle: '正式销售统计', icon: Wallet, theme: 'amber' },
       ]}
       aiCards={[
         {

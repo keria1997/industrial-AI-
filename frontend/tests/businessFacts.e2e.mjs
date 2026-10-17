@@ -69,6 +69,7 @@ try {
       if (path.endsWith('/ai/action-plans')) return page(data ? [{ id: 'P1', title: '接口审计记录', status: 'rejected', submittedBy: '接口提交人', approvalPath: '接口审批路径' }] : []);
       if (path.endsWith('/ai/insights')) return page(data ? [{ id: 'I1', title: '接口聚合预警', summary: 'API 风险摘要', severity: 'warning', sourceType: '接口来源', sourceId: 'API-SOURCE' }] : []);
       if (path.endsWith('/sales/ai-insights')) return route.fulfill({ json: {
+        availability: data ? 'AVAILABLE' : 'EMPTY', dataAsOf: new Date().toISOString(), sourceVersion: 'controlled-1', currency: 'CNY',
         monthlyOrderCount: data ? 5 : 0, totalSalesAmount: data ? '123450' : '0', stalledCount: data ? 2 : 0,
         deliveryRiskCount: data ? 1 : 0, deliveryRiskOrders: data ? [{ orderId: 'API-ORDER-RISK' }] : [], stalledOrders: [],
       } });
@@ -223,6 +224,17 @@ try {
       assert(!(await page.locator('[data-ai-card="订单履约延期预警"]').innerText()).includes('立即发起'));
     }
     if (mode === 'data') {
+      await context.route('**/api/v1/sales/ai-insights', route => route.fulfill({ json: {
+        monthlyOrderCount: 0, totalSalesAmount: '0', stalledCount: 0, deliveryRiskCount: 0,
+        deliveryRiskOrders: [], generatedAt: new Date().toISOString(),
+      } }));
+      await page.reload(); await page.waitForLoadState('networkidle');
+      await metric('本月订单数', '-');
+      await metric('订单销售额', '-');
+      const riskCard = await page.locator('[data-ai-card="订单履约延期预警"]').innerText();
+      assert(riskCard.includes('数据待核实'));
+      assert(!riskCard.includes('当前没有距离交期不足'));
+      console.log('PASS legacy fixed-zero response: source unavailable, no fabricated zero/risk-free conclusion');
       await page.getByRole('button', { name: 'AI 助手', exact: true }).click();
       await page.getByLabel('向 AI 助手提问', { exact: true }).fill('查询接口库存');
       await page.getByRole('button', { name: '发送问题', exact: true }).click();

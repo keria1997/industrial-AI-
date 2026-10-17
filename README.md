@@ -1,5 +1,7 @@
 # AI 应用前后端分离项目
 
+当前 ERP 前后端入口分别是 `frontend/src/` 与 `backend/src/main/java/com/wanshen/platform/`。下方目录树中的早期聊天组件为架构示意，不作为现有文件路径或已完成能力清单。实际启动与真实联调方法见 [前端运行说明](frontend/README.md) 和 [联调报告](docs/前后端真实联调报告-2026-10-17.md)。
+
 ## 架构总览
 
 ```
@@ -134,15 +136,15 @@ cd ai-service
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-# 2. 启动业务后端（端口 8080）
-cd backend
-mvn spring-boot:run
+# 2. 回到仓库根目录，安装前端依赖
+cd ..
+npm --prefix frontend install
 
-# 3. 启动前端（端口 5173）
-cd frontend
-npm install
-npm run dev
+# 3. 配置根目录 .env.local 后启动业务后端（8081）和前端（默认5173）
+npm run dev:all
 ```
+
+只启动后端时，在仓库根目录运行 `npm run dev:java-api`，通过现有脚本读取 `.env.local`。直接执行 Maven 不会自动读取该文件。`/healthz` 仅说明 Java 进程存活；`/readyz` 才检查数据库迁移和工作进程。现有库迁移台账异常时，应由后端核对迁移基线，禁止靠伪造校验和使检查通过。
 
 ## 开发规范
 

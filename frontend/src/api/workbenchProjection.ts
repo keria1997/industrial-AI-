@@ -7,7 +7,11 @@ const unavailable = (value: unknown) => value === null || value === undefined ? 
 // Adapt the frozen PRD 1.1 projection without inventing facts or combining currencies/units.
 // Legacy flat responses are retained for existing deployments; malformed requested sections fail visibly.
 export function workbenchProjection(response: any, query: WorkbenchQuery): WorkbenchDashboardDto {
-  if (!response?.schemaVersion) return response;
+  if (!response?.schemaVersion) {
+    if (!Array.isArray(response?.metrics)) throw new Error('工作台响应缺少指标列表');
+    // Attendance stays hidden even when a legacy backend still returns its metric.
+    return { ...response, metrics: response.metrics.filter(metric => metric.key !== 'attendanceRate') };
+  }
   if (response.schemaVersion !== '1.1' || !response.data) throw new Error('工作台响应版本不受支持');
   const data = response.data;
   const metrics: WorkbenchMetricDto[] = [];

@@ -10,3 +10,4 @@ target/
 
 backend/backend.log
 backend/logs/
+/artifacts/live-integration/

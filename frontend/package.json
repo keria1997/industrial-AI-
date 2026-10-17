@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "dev:java-api": "node scripts/dev-java-api.mjs",
-    "dev:all": "node scripts/dev-all.mjs",
+    "dev:java-api": "npm --prefix .. run dev:java-api",
+    "dev:all": "npm --prefix .. run dev:all",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test:routes:java": "node scripts/verify-java-routes.mjs",
@@ -17,6 +17,7 @@
     "test:prototype-storage": "node tests/prototypeStorage.e2e.mjs",
     "test:business-facts": "node tests/businessFacts.e2e.mjs",
     "test:remediation": "node tests/remediation.e2e.mjs",
+    "test:live-backend": "node tests/liveBackend.e2e.mjs",
     "test:java": "mvn -f server-java/pom.xml -o test",
     "test": "npm run test:routes:java && npm run test:frontend && npm run test:java"
   },

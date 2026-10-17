@@ -5,6 +5,8 @@ import { createModuleUrl } from '../routing';
 import { validatePositiveAmount } from '../../shared/commandValidation';
 import { workbenchProjection } from '../../api/workbenchProjection';
 import { validateNewPassword } from '../../shared/passwordPolicy';
+import { purchaseOrderReadOnlyReason, purchaseRequestReadOnlyReason } from '../../features/procurement/procurementContract';
+import type { PurchaseOrderDto, PurchaseRequestDto } from '../../api/procurement';
 
 describe('frontend remediation boundaries', () => {
   it('grants no menus or commands for missing/empty effective permissions', () => {
@@ -53,5 +55,25 @@ describe('frontend remediation boundaries', () => {
     expect(data.metrics.map(item => [item.value, item.unit])).toEqual([['12.34', 'CNY'], ['5.60', 'USD'], ['-', 'PCS'], ['0', '种']]);
     expect(data.todoTotal).toBeNull();
     expect(() => workbenchProjection({ schemaVersion: '1.1', data: {} }, { sections: 'todos,alerts,activities' })).toThrow('分区');
+  });
+
+  it('keeps attendance hidden in a real legacy workbench response', () => {
+    const response = { metrics: [
+      { key: 'monthlyReceivable', value: '100' },
+      { key: 'attendanceRate', value: '0' },
+    ], todos: [] };
+    const projected = workbenchProjection(response, {});
+    expect(projected.metrics.map(metric => metric.key)).toEqual(['monthlyReceivable']);
+    expect(response.metrics).toHaveLength(2);
+    expect(() => workbenchProjection({}, {})).toThrow('指标列表');
+  });
+
+  it('does not allow legacy display aliases to authorize procurement mutations', () => {
+    expect(purchaseRequestReadOnlyReason({ id: 'pr1', prNo: 'PR-1', qty: '100', version: 1 } as PurchaseRequestDto)).toContain('requiredQty');
+    expect(purchaseOrderReadOnlyReason({ id: 'po1', poNo: 'PO-1', orderedQty: '100', receivedQty: '60', version: 1 } as PurchaseOrderDto)).toContain('orderNo');
+    expect(purchaseOrderReadOnlyReason({
+      id: 'po1', orderNo: 'PO-1', purchaseRequestId: 'pr1', materialId: 'm1', warehouseId: 'w1',
+      orderedQty: '100', receivedQty: '60', uom: 'PCS', promisedDate: '2026-10-20', version: 2,
+    } as PurchaseOrderDto)).toBe('');
   });
 });

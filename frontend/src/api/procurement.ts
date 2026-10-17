@@ -1,12 +1,14 @@
 import { apiRequest, type ApiContext } from './client';
 
 export type PurchaseRequestDto = {
+  prNo?: string; qty?: string; unit?: string; sourceDemandId?: string;
   id: string; requestNo: string; mrpTaskId: string; demandId: string; materialId: string; materialName?: string;
   warehouseId: string; requiredQty: string; uom: string; requiredDate: string; status: string;
   purchaseOrderId?: string; rejectReason?: string; version: number; createdAt: string; updatedAt: string;
 };
 
 export type PurchaseOrderDto = {
+  poNo?: string; requiredDate?: string;
   id: string; orderNo: string; purchaseRequestId: string; demandId: string; materialId: string; materialName?: string;
   warehouseId: string; orderedQty: string; receivedQty: string; uom: string; supplierId: string;
   supplierName: string; promisedDate: string;
@@ -24,6 +26,7 @@ export type PurchaseReceiptDto = {
 };
 
 export type SupplierDto = {
+  supplierNo?: string;
   id: string; code: string; name: string; shortName: string;
   contactPerson: string; phone: string; email: string; address: string;
   bankAccount: string; taxNo: string; rating: string;
