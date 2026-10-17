@@ -16,13 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class RequestContextServiceTests {
     @Test
-    void mpsMenuUsesAccountRoleAndPublishedGrantsImmediately() throws Exception {
+    void mpsMenuUsesSignedAccountPositionAndPublishedGrantsImmediately() throws Exception {
         var tokens = new TokenService("test-secret", new ObjectMapper());
         var store = new InMemoryPlatformProvisioningStore();
         var contexts = new RequestContextService(tokens, store);
         store.save("account", "A", Map.of("tenantId", "T", "id", "A", "loginName", "planner",
-                "employeeId", "E", "status", "enabled", "roleId", "R"));
-        store.save("employee", "E", Map.of("tenantId", "T", "id", "E", "status", "active"));
+                "employeeId", "E", "status", "enabled", "directRoleIds", List.of()));
+        store.save("employee", "E", Map.of("tenantId", "T", "id", "E", "status", "active", "primaryPositionId", "P"));
+        store.save("position", "P", Map.of("tenantId", "T", "id", "P", "status", "enabled", "defaultRoleIds", List.of("R")));
         store.save("role", "R", Map.of("tenantId", "T", "id", "R", "code", "PLANNER", "status", "enabled",
                 "dataScope", "tenant_all", "scopeValues", List.of()));
         store.save("permission", "MENU", Map.of("tenantId", "T", "id", "MENU", "code", ProductionPlanningPermissions.MENU));

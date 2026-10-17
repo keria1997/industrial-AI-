@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 public abstract class AbstractPersonnelStore {
     public record Employee(
             String id, String tenantId, String employeeNo, String name, String department,
-            String phone, String email, String status,
+            String position, String phone, String email, String status,
             @JsonInclude(JsonInclude.Include.NON_NULL) String hireDate,
             @JsonInclude(JsonInclude.Include.NON_NULL) String leaveDate,
             Map<String, Object> metadata, String remark, int version,
@@ -53,7 +53,7 @@ public abstract class AbstractPersonnelStore {
     public abstract <T> T transaction(Supplier<T> work);
     public abstract Page<Employee> employees(
             String tenantId, Integer page, Integer pageSize, String status,
-            String department, String search
+            String department, String position, String search
     );
     public abstract Optional<Employee> employee(String tenantId, String id);
     public abstract Optional<Employee> employeeByNo(String tenantId, String employeeNo);

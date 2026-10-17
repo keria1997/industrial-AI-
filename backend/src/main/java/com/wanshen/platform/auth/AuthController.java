@@ -192,7 +192,7 @@ public class AuthController {
         RegisteredUser user;
         try {
             user = users.createUser(new CreateUserInput(account, passwordHasher.hash(password), name, phone,
-                    email, null, tenantName, industry, true, null, null, null));
+                    email, null, tenantName, industry, true, null, null, null, null));
         } catch (RegisteredUserStore.DuplicateAccountException exception) { throw conflict("该账号已被注册", "换一个账号名或直接登录"); }
         catch (RegisteredUserStore.DuplicatePhoneException exception) { throw conflict("该手机号已被注册", "换一个手机号或直接登录"); }
         catch (RegisteredUserStore.DuplicateEmailException exception) { throw conflict("该邮箱已被注册", "换一个邮箱或直接登录"); }
@@ -243,7 +243,7 @@ public class AuthController {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", user.id()); item.put("account", user.account()); item.put("name", user.name());
             item.put("phone", user.phone()); item.put("email", user.email()); item.put("department", user.department());
-            item.put("employeeNo", user.employeeNo()); item.put("role", user.role());
+            item.put("position", user.position()); item.put("employeeNo", user.employeeNo()); item.put("role", user.role());
             item.put("isTenantAdmin", user.isTenantAdmin()); item.put("firstLogin", user.firstLogin());
             item.put("status", user.status()); item.put("createdAt", user.createdAt());
             return item;
@@ -255,17 +255,17 @@ public class AuthController {
         String tenantId = requireTenantAdmin(request);
         String name = text(input, "name"); String phone = text(input, "phone"); String email = text(input, "email");
         String account = text(input, "account"); String department = text(input, "department");
-        String employeeNo = optional(input, "employeeNo", "");
+        String position = text(input, "position"); String employeeNo = optional(input, "employeeNo", "");
         if (name.isBlank() || name.length() > 100 || !phone.matches("1[3-9]\\d{9}")
                 || !email.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+") || account.length() < 2 || account.length() > 50
-                || department.isBlank() || employeeNo.length() > 50) {
+                || department.isBlank() || position.isBlank() || employeeNo.length() > 50) {
             throw bad("请求字段不符合规则", "检查输入后重试");
         }
         String password = temporaryPassword();
         audit(request, tenantId, "employee.create.requested", account);
         try {
             RegisteredUser user = users.createUser(new CreateUserInput(account, passwordHasher.hash(password), name,
-                    phone, email, tenantId, "", "", false, department, employeeNo, null));
+                    phone, email, tenantId, "", "", false, department, position, employeeNo, null));
             return ResponseEntity.status(201).body(Map.of("id", user.id(), "account", user.account(), "temporaryPassword", password));
         } catch (RegisteredUserStore.DuplicateAccountException exception) { throw conflict("该账号已被注册", "换一个账号名"); }
         catch (RegisteredUserStore.DuplicatePhoneException exception) { throw conflict("该手机号已被注册", "换一个手机号"); }

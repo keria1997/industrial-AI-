@@ -5187,6 +5187,123 @@
         }
       }
     },
+    "/api/v1/platform/positions": {
+      "get": {
+        "operationId": "GETapi_v1_platform_positions",
+        "tags": [
+          "Platform"
+        ],
+        "summary": "GET /api/v1/platform/positions",
+        "description": "Implemented by PlatformController.",
+        "x-classification": "public",
+        "responses": {
+          "200": {
+            "description": "Successful response follows the module DTO contract."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "401": {
+            "description": "Missing, expired or revoked session."
+          },
+          "403": {
+            "description": "Permission, tenant or resource scope denied."
+          },
+          "500": {
+            "description": "Unexpected server error."
+          }
+        }
+      },
+      "post": {
+        "operationId": "POSTapi_v1_platform_positions",
+        "tags": [
+          "Platform"
+        ],
+        "summary": "POST /api/v1/platform/positions",
+        "description": "Implemented by PlatformController.",
+        "x-classification": "public",
+        "responses": {
+          "200": {
+            "description": "Successful response follows the module DTO contract."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "401": {
+            "description": "Missing, expired or revoked session."
+          },
+          "403": {
+            "description": "Permission, tenant or resource scope denied."
+          },
+          "409": {
+            "description": "Version, state, idempotency or business conflict."
+          },
+          "500": {
+            "description": "Unexpected server error."
+          }
+        }
+      }
+    },
+    "/api/v1/platform/positions/{id}": {
+      "delete": {
+        "operationId": "DELETEapi_v1_platform_positions_id",
+        "tags": [
+          "Platform"
+        ],
+        "summary": "DELETE /api/v1/platform/positions/{id}",
+        "description": "Implemented by PlatformController.",
+        "x-classification": "public",
+        "responses": {
+          "200": {
+            "description": "Successful response follows the module DTO contract."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "401": {
+            "description": "Missing, expired or revoked session."
+          },
+          "403": {
+            "description": "Permission, tenant or resource scope denied."
+          },
+          "409": {
+            "description": "Version, state, idempotency or business conflict."
+          },
+          "500": {
+            "description": "Unexpected server error."
+          }
+        }
+      },
+      "put": {
+        "operationId": "PUTapi_v1_platform_positions_id",
+        "tags": [
+          "Platform"
+        ],
+        "summary": "PUT /api/v1/platform/positions/{id}",
+        "description": "Implemented by PlatformController.",
+        "x-classification": "public",
+        "responses": {
+          "200": {
+            "description": "Successful response follows the module DTO contract."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "401": {
+            "description": "Missing, expired or revoked session."
+          },
+          "403": {
+            "description": "Permission, tenant or resource scope denied."
+          },
+          "409": {
+            "description": "Version, state, idempotency or business conflict."
+          },
+          "500": {
+            "description": "Unexpected server error."
+          }
+        }
+      }
+    },
     "/api/v1/platform/resources": {
       "get": {
         "operationId": "GETapi_v1_platform_resources",

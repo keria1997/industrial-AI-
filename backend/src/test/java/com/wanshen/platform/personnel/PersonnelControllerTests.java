@@ -48,6 +48,7 @@ class PersonnelControllerTests {
                                   "employeeNo": "EMP-JAVA-001",
                                   "name": "张三",
                                   "department": "总装",
+                                  "position": "技师",
                                   "phone": "13800000000",
                                   "email": "zhang@example.com"
                                 }
@@ -108,6 +109,7 @@ class PersonnelControllerTests {
                   "employeeNo": "EMP-JAVA-REPLAY",
                   "name": "李四",
                   "department": "质检",
+                  "position": "工程师",
                   "phone": "13900000000",
                   "email": "li@example.com"
                 }

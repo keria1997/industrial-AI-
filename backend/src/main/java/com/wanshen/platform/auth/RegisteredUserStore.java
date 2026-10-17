@@ -28,7 +28,7 @@ public interface RegisteredUserStore {
     record CreateUserInput(
             String account, String encodedPassword, String name, String phone, String email,
             String tenantId, String tenantName, String industry, boolean isTenantAdmin,
-            String department, String employeeNo, String role
+            String department, String position, String employeeNo, String role
     ) {}
 
     class DuplicateAccountException extends RuntimeException {}

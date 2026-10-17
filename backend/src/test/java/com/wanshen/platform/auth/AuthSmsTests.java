@@ -29,7 +29,7 @@ class AuthSmsTests {
 
     private RegisteredUser user() {
         return users.createUser(new RegisteredUserStore.CreateUserInput("registered", "hash", "SMS user", phone,
-                "sms@example.com", "SMS-TENANT", "SMS tenant", "industry", true, "", "", "老板"));
+                "sms@example.com", "SMS-TENANT", "SMS tenant", "industry", true, "", "", "", "老板"));
     }
 
     private String body(String phone, String code) {

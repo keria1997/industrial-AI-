@@ -84,6 +84,21 @@ public class PlatformController {
         return delete(request, "resource", "platform.resource.manage", "企业资源", id);
     }
 
+    @GetMapping("/positions")
+    public List<Map<String, Object>> positions(HttpServletRequest request) { return read(request, "position", "platform.org.view"); }
+    @PostMapping("/positions")
+    public ResponseEntity<Object> createPosition(@RequestBody JsonNode body, HttpServletRequest request) {
+        return write(request, "position", "platform.position.manage", "岗位", "新增岗位", body, 201);
+    }
+    @PutMapping("/positions/{id}")
+    public ResponseEntity<Object> updatePosition(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
+        return write(request, "position", "platform.position.manage", "岗位", "修改岗位", withId(body, id), 200);
+    }
+    @DeleteMapping("/positions/{id}")
+    public ResponseEntity<Void> deletePosition(@PathVariable String id, HttpServletRequest request) {
+        return delete(request, "position", "platform.position.manage", "岗位", id);
+    }
+
     @GetMapping("/employees")
     public List<Map<String, Object>> employees(HttpServletRequest request) { return read(request, "employee", "platform.org.view"); }
     @PostMapping("/employees")
@@ -107,11 +122,11 @@ public class PlatformController {
     }
     @PostMapping("/accounts")
     public ResponseEntity<Object> createAccount(@RequestBody JsonNode body, HttpServletRequest request) {
-        return writeAccount(request, map(body), 201);
+        return write(request, "account", "platform.account.manage", "账号", "新增账号", body, 201);
     }
     @PutMapping("/accounts/{id}")
     public ResponseEntity<Object> updateAccount(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
-        return writeAccount(request, withId(body, id), 200);
+        return write(request, "account", "platform.account.manage", "账号", "修改账号", withId(body, id), 200);
     }
     @DeleteMapping("/accounts/{id}")
     public ResponseEntity<Void> deleteAccount(@PathVariable String id, HttpServletRequest request) {
@@ -327,19 +342,6 @@ public class PlatformController {
                 .body(value);
     }
 
-    private ResponseEntity<Object> writeAccount(
-            HttpServletRequest request, Map<String, Object> input, int status
-    ) {
-        RequestContext context = context(request);
-        validate("account", input);
-        Map<String, Object> value = service.saveAccount(context, input);
-        value.remove("passwordHash");
-        return ResponseEntity.status(status)
-                .header("X-Trace-Id", context.traceId())
-                .eTag("\"" + value.get("version") + "\"")
-                .body(value);
-    }
-
     private ResponseEntity<Void> delete(
             HttpServletRequest request, String kind, String permission, String label, String id
     ) {
@@ -365,8 +367,9 @@ public class PlatformController {
         List<String> required = switch (kind) {
             case "orgUnit" -> List.of("code", "name", "type", "status");
             case "resource" -> List.of("code", "name", "type", "ownerOrgId", "specification", "status");
-            case "employee" -> List.of("employeeNo", "name", "primaryOrgId", "mobile", "email", "status");
-            case "account" -> List.of("loginName", "employeeId", "roleId", "authType", "status");
+            case "position" -> List.of("code", "name", "orgId", "status");
+            case "employee" -> List.of("employeeNo", "name", "primaryOrgId", "primaryPositionId", "mobile", "email", "status");
+            case "account" -> List.of("loginName", "employeeId", "authType", "status");
             case "role" -> List.of("code", "name", "description", "dataScope", "status");
             case "adapter" -> List.of("permissionCode", "permissionName", "module", "legacyRoleCode", "legacyScope", "status");
             case "approvalRule" -> List.of("module", "documentType", "resolver", "resolverValue", "fallback", "status");
@@ -377,23 +380,29 @@ public class PlatformController {
         required.forEach(field -> {
             if (input.get(field) == null || input.get(field).toString().isBlank()) bad();
         });
-        Map<String, Set<String>> enumRules = switch (kind) {
-            case "orgUnit" -> Map.of("type", Set.of("company", "department", "factory", "workshop"));
-            case "resource" -> Map.of("type", Set.of("line", "warehouse", "work_center"));
-            case "employee" -> Map.of("status", Set.of("active", "transferring", "leave", "resigned"));
-            case "account" -> Map.of("status", Set.of("pending_activation", "enabled", "locked", "disabled"));
-            case "adapter" -> Map.of("status", Set.of("draft", "pending_sync", "synced", "conflict", "failed", "disabled"));
-            case "approvalRule" -> Map.of("resolver", Set.of("by_role", "by_org_manager"));
-            case "parameter" -> Map.of("valueType", Set.of("integer", "boolean", "text"));
-            default -> Map.of();
+        Set<String> allowed = switch (kind) {
+            case "orgUnit" -> Set.of("company", "department", "factory", "workshop");
+            case "resource" -> Set.of("line", "warehouse", "work_center");
+            case "employee" -> Set.of("active", "transferring", "leave", "resigned");
+            case "account" -> Set.of("pending_activation", "enabled", "locked", "disabled");
+            case "adapter" -> Set.of("draft", "pending_sync", "synced", "conflict", "failed", "disabled");
+            case "approvalRule" -> Set.of("by_role", "by_position", "by_org_manager");
+            case "parameter" -> Set.of("integer", "boolean", "text");
+            default -> null;
         };
-        enumRules.forEach((field, allowed) -> {
-            Object value = input.get(field);
-            if (value != null && !allowed.contains(String.valueOf(value))) bad();
-        });
+        if (allowed != null && !allowed.contains(input.get(kind.equals("approvalRule") ? "resolver" : "type"))) {
+            if (!kind.equals("account") && !kind.equals("employee") && !kind.equals("adapter") && !kind.equals("parameter")) bad();
+        }
         Set<String> statuses = Set.of("enabled", "disabled", "active", "transferring", "leave", "resigned",
                 "pending_activation", "locked");
         if (input.containsKey("status") && !statuses.contains(input.get("status"))) bad();
+        if ("position".equals(kind)) {
+            if (input.get("defaultRoleIds") == null) input.put("defaultRoleIds", List.of());
+            if (input.get("resourceIds") == null) input.put("resourceIds", List.of());
+        }
+        if ("account".equals(kind)) {
+            if (input.get("directRoleIds") == null) input.put("directRoleIds", List.of());
+        }
         if ("role".equals(kind) && input.get("scopeValues") == null) input.put("scopeValues", List.of());
         if ("adapter".equals(kind) && input.get("errorMessage") == null) input.put("errorMessage", "");
     }

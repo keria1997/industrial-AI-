@@ -52,7 +52,7 @@ public class JdbcPersonnelStore extends AbstractPersonnelStore implements AutoCl
     @Override
     public Page<Employee> employees(
             String tenantId, Integer page, Integer pageSize, String status,
-            String department, String search
+            String department, String position, String search
     ) {
         List<Employee> values = scoped(tenantId, connection -> {
             List<Employee> result = new ArrayList<>();
@@ -72,7 +72,8 @@ public class JdbcPersonnelStore extends AbstractPersonnelStore implements AutoCl
         }).stream()
                 .filter(item -> status == null || item.status().equals(status))
                 .filter(item -> department == null || item.department().equals(department))
-                .filter(item -> search == null || search.isBlank() || contains(search, item.employeeNo(), item.name(), item.department(), item.phone(), item.email()))
+                .filter(item -> position == null || item.position().equals(position))
+                .filter(item -> search == null || search.isBlank() || contains(search, item.employeeNo(), item.name(), item.department(), item.position(), item.phone(), item.email()))
                 .sorted((left, right) -> right.createdAt().compareTo(left.createdAt()))
                 .toList();
         return page(values, page, pageSize);
@@ -85,7 +86,7 @@ public class JdbcPersonnelStore extends AbstractPersonnelStore implements AutoCl
 
     @Override
     public Optional<Employee> employeeByNo(String tenantId, String employeeNo) {
-        return employees(tenantId, 1, 10000, null, null, null).items().stream()
+        return employees(tenantId, 1, 10000, null, null, null, null).items().stream()
                 .filter(item -> item.employeeNo().equals(employeeNo))
                 .findFirst();
     }

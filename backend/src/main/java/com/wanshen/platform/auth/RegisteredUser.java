@@ -8,6 +8,6 @@ import java.util.List;
 public record RegisteredUser(
         String id, String account, String passwordHash, String name, String phone,
         String email, String tenantId, String tenantName, String industry, String role,
-        boolean isTenantAdmin, boolean firstLogin, String department,
+        boolean isTenantAdmin, boolean firstLogin, String department, String position,
         String employeeNo, String status, List<String> permissions, String createdAt, long sessionVersion
 ) {}

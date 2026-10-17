@@ -19,9 +19,9 @@ public class PlatformService {
         String tenantId = context.tenantId();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("tenant", store.get(tenantId, "tenant", tenantId).orElseThrow(() -> notFound("租户")));
-        String[] kinds = {"capability", "orgUnit", "resource", "employee", "account",
+        String[] kinds = {"capability", "orgUnit", "resource", "position", "employee", "account",
                 "role", "permission", "adapter", "approvalRule", "dictionary", "parameter", "auditLog"};
-        String[] names = {"capabilities", "orgUnits", "resources", "employees", "accounts",
+        String[] names = {"capabilities", "orgUnits", "resources", "positions", "employees", "accounts",
                 "roles", "permissions", "adapters", "approvalRules", "dictionaries", "parameters", "auditLogs"};
         for (int index = 0; index < kinds.length; index++) {
             List<Map<String, Object>> values = store.list(tenantId, kinds[index]);
@@ -70,18 +70,24 @@ public class PlatformService {
         String tenantId = context.tenantId();
         String account = loginName == null || loginName.isBlank() ? context.actorId() : loginName;
         List<Map<String, Object>> roles = store.list(tenantId, "role");
+        String mappedRoleCode = workbenchRole(activeRole);
         final List<String> roleIds = new ArrayList<>();
-        // Authorization always comes from the account's one direct role. activeRole is
-        // retained only for client compatibility and can never widen authorization.
-        Optional<Map<String, Object>> accountDoc = accounts(tenantId).stream()
-                .filter(item -> account.equals(item.get("loginName"))).findFirst();
-        if (accountDoc.isPresent() && "enabled".equals(accountDoc.get().get("status"))) {
-            String employeeId = text(accountDoc.get(), "employeeId");
-            boolean employeeActive = store.list(tenantId, "employee").stream().anyMatch(item ->
-                    employeeId.equals(item.get("id")) && "active".equals(item.get("status")));
-            if (employeeActive) {
-                Object roleId = accountDoc.get().get("roleId");
-                if (roleId != null && !String.valueOf(roleId).isBlank()) roleIds.add(String.valueOf(roleId));
+        if (mappedRoleCode != null) {
+            roles.stream().filter(role -> mappedRoleCode.equals(role.get("code")) && enabled(role))
+                    .findFirst().ifPresent(role -> roleIds.add(role.get("id").toString()));
+        } else {
+            Optional<Map<String, Object>> accountDoc = accounts(tenantId).stream()
+                    .filter(item -> account.equals(item.get("loginName"))).findFirst();
+            if (accountDoc.isPresent() && "enabled".equals(accountDoc.get().get("status"))) {
+                String employeeId = text(accountDoc.get(), "employeeId");
+                Optional<Map<String, Object>> employee = store.list(tenantId, "employee").stream().filter(item ->
+                        employeeId.equals(item.get("id")) && "active".equals(item.get("status"))).findFirst();
+                if (employee.isPresent()) {
+                    roleIds.addAll(strings(accountDoc.get(), "directRoleIds"));
+                    store.list(tenantId, "position").stream()
+                            .filter(position -> text(employee.get(), "primaryPositionId").equals(position.get("id")) && enabled(position))
+                            .findFirst().ifPresent(position -> roleIds.addAll(strings(position, "defaultRoleIds")));
+                }
             }
         }
         roleIds.removeIf(id -> roles.stream().noneMatch(role ->
@@ -169,8 +175,7 @@ public class PlatformService {
                 : authorizedWarehouses.stream().distinct().toList();
         List<String> distinctAuthorized = authorized.stream().distinct().toList();
         Map<String, Object> result = base("loginName", account);
-        result.put("activeRole", activeRoles.stream().map(role -> role.get("code")).findFirst().orElse(null));
-        result.put("enabled", !roleIds.isEmpty());
+        result.put("activeRole", activeRole); result.put("enabled", !roleIds.isEmpty());
         result.put("roleIds", roleIds); result.put("roleCodes", activeRoles.stream().map(role -> role.get("code")).toList());
         result.put("permissionCodes", allowed); result.put("deniedPermissionCodes", denied);
         result.put("fieldModes", fieldModes); result.put("authorizedFactoryOrgIds", distinctAuthorized);
@@ -214,35 +219,6 @@ public class PlatformService {
                     text(input, "code"));
             return save(context, "dictionary", "platform.dictionary.manage", "字典",
                     text(input, "id").isBlank() ? "新增字典" : "修改字典", input);
-        });
-    }
-
-    public Map<String, Object> saveAccount(RequestContext context, Map<String, Object> input) {
-        require(context, "platform.account.manage");
-        return store.transaction(() -> {
-            if (input.containsKey("directRoleIds")) throw new ApiException(400, "PLATFORM_400_SINGLE_ROLE_REQUIRED",
-                    "账号角色已改为单选 roleId", "移除 directRoleIds 后提交 roleId");
-            String accountDocId = text(input, "id");
-            String employeeId = text(input, "employeeId");
-            String roleId = text(input, "roleId");
-            boolean employeeActive = store.list(context.tenantId(), "employee").stream().anyMatch(item ->
-                    employeeId.equals(text(item, "id")) && "active".equals(text(item, "status")));
-            if (!employeeActive) throw new ApiException(422, "PLATFORM_422_EMPLOYEE_INVALID",
-                    "账号必须绑定一名在职员工", "选择在职员工后重试");
-            boolean roleEnabled = store.list(context.tenantId(), "role").stream().anyMatch(item ->
-                    roleId.equals(text(item, "id")) && enabled(item));
-            if (!roleEnabled) throw new ApiException(422, "PLATFORM_422_ROLE_INVALID",
-                    "账号必须绑定一个启用角色", "选择启用角色后重试");
-            boolean employeeUsed = store.list(context.tenantId(), "account").stream().anyMatch(item ->
-                    !accountDocId.equals(text(item, "id")) && employeeId.equals(text(item, "employeeId")));
-            if (employeeUsed) throw new ApiException(409, "PLATFORM_409_EMPLOYEE_ACCOUNT_EXISTS",
-                    "一个员工只能拥有一个账号", "该员工已绑定账号");
-            boolean loginUsed = store.list(context.tenantId(), "account").stream().anyMatch(item ->
-                    !accountDocId.equals(text(item, "id")) && text(input, "loginName").equals(text(item, "loginName")));
-            if (loginUsed) throw new ApiException(409, "PLATFORM_409_LOGIN_NAME_EXISTS",
-                    "登录名已存在", "更换登录名后重试");
-            return save(context, "account", "platform.account.manage", "账号",
-                    accountDocId.isBlank() ? "新增账号" : "修改账号", input);
         });
     }
 
@@ -574,6 +550,17 @@ public class PlatformService {
         if (value.containsKey("permissionCode")) return value.get("permissionCode").toString();
         if (value.containsKey("documentType")) return value.get("module") + " / " + value.get("documentType");
         return text(value, "id");
+    }
+
+    private String workbenchRole(String value) {
+        return switch (value == null ? "" : value) {
+            case "超级管理员", "系统管理员", "管理员" -> "TENANT_ADMIN";
+            case "老板" -> "TENANT_ADMIN"; case "人事" -> "HR_SPECIALIST";
+            case "计划员" -> "PRODUCTION_DIRECTOR";
+            case "车间" -> "PRODUCTION_WORKSHOP"; case "仓管" -> "WAREHOUSE_ADMIN";
+            case "采购" -> "PURCHASE_STAFF"; case "销售" -> "SALE_STAFF"; case "财务" -> "FINANCE_STAFF";
+            default -> null;
+        };
     }
 
     private boolean enabled(Map<String, Object> value) { return "enabled".equals(value.get("status")); }
