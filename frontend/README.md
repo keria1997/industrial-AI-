@@ -48,3 +48,5 @@ LIVE_WRITE=1 npm run test:live-backend
 迁移台账检查读取本地运行服务对应的 `backend/target/classes/db/migrations/*.sql`，逐份核对数据库记录的文件名和SHA-256；应先构建并启动对应Java服务。仅有台账条数或占位名称不能判定迁移通过。
 
 报告、截图写入 `artifacts/live-integration/`，已排除 Git。报告区分 DB/API 字段核对、API/UI 文本抽样、44个页面及子页签渲染、主数据关联和客户保存持久化；页面渲染通过不代表全部按钮与业务闭环验收。详见 `docs/前后端真实联调报告-2026-10-17.md`。
+
+退货管理和客户签收通过 `src/api/sales-aftercare.ts` 对接正式履约查询，每页20条；支持加载、空集、失败重试及订单稳定ID定位。签收兼容历史 `receiptStatus` 与当前 `status`，冲突提示待核实；红字AR金额缺币种显示“-”。办理写入仍待后端补齐PRD校验，不能用查询通过代表退货、签收和销售完成全部验收。当前真实复测为77项检查通过；后端业务缺口单列于报告，不含在该统计内。

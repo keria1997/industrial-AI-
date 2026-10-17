@@ -19,6 +19,9 @@ let ret = null;
 let salesDecision = null;
 let salesCanceled = false;
 let cancelFails = true;
+let aftercareMode = 'data';
+const rma = { id: 'rma-db', rmaNo: 'RMA-API-001', orderId: 'stable-so', orderNo: 'SO-API-001', productName: '接口产品', requestedQty: '3', approvedQty: '0', qualifiedQty: null, status: 'REQUESTED', creditArId: 'credit-reference', creditArAmount: '-99.00', createdAt: '2026-10-17T00:00:00Z' };
+const customerReceipt = { id: 'receipt-db', receiptNo: 'CR-API-001', orderId: 'stable-so', orderNo: 'SO-API-001', customerName: '接口签收客户', signedQty: '0', rejectedQty: '2', damagedQty: null, receiptStatus: 'DISPUTED' };
 const platform = {
   tenant: { id: 'TENANT-SHWS', code: 'SHWS', name: '接口企业', status: 'running' },
   roles: [{ id: 'role1', name: '接口角色', code: 'API_ROLE', description: '接口权限测试', status: 'enabled', dataScope: 'tenant', scopeValues: [], version: 7 }],
@@ -83,6 +86,14 @@ try {
       return envelope(route, so());
     }
     if (path.endsWith('/sales/sales-orders')) return envelope(route, { items: [so()], total: 1 });
+    if (path.endsWith('/fulfillment/rmas') || path.endsWith('/fulfillment/customer-receipts')) {
+      if (aftercareMode === 'error') return envelope(route, { error: { message: 'AFTERCARE_UNAVAILABLE' } }, 503);
+      if (aftercareMode === 'empty') return envelope(route, emptyPage);
+      const record = path.endsWith('/rmas') ? rma : customerReceipt;
+      const page = Number(url.searchParams.get('page') || 1);
+      if (page === 2) return envelope(route, { items: [{ ...record, id: `${record.id}-2`, rmaNo: 'RMA-API-PAGE2', receiptNo: 'CR-API-PAGE2' }], total: 21 });
+      return envelope(route, { items: [record], total: 21 });
+    }
     if (path.endsWith('/message/dashboard')) return envelope(route, { unread: currentMessage.isRead ? 0 : 23 });
     if (path.endsWith('/message/messages/msg1/read')) { currentMessage = { ...currentMessage, isRead: true, version: 2 }; return envelope(route, { message: currentMessage }); }
     if (path.endsWith('/message/messages/msg1/archive')) { currentMessage = { ...currentMessage, isArchived: true, version: 3 }; return envelope(route, { message: currentMessage }); }
@@ -303,6 +314,49 @@ try {
   platform.roles[0] = completeRole;
   console.log('PASS platform incomplete scope: missing/null/malformed values preserve the page, block publication and keep repair drafts usable');
 
+  for (const [tab, regionName, identifier] of [
+    ['rma', '退货记录', 'RMA-API-001'],
+    ['receipts', '客户签收记录', 'CR-API-001'],
+  ]) {
+    aftercareMode = 'data';
+    await go(`module=sales&tab=${tab}`);
+    const region = page.getByRole('region', { name: regionName, exact: true });
+    await region.getByRole('cell', { name: identifier, exact: true }).waitFor();
+    if (tab === 'rma') {
+      assert(await region.getByRole('button', { name: '创建 RMA', exact: true }).isDisabled());
+      const cells = region.getByRole('row').nth(1).getByRole('cell');
+      assert.equal(await cells.nth(4).innerText(), '0');
+      assert.equal(await cells.nth(6).innerText(), '-');
+      assert.equal(await cells.nth(9).innerText(), '-');
+    } else {
+      await region.getByText('争议中', { exact: true }).waitFor();
+      assert.equal(await region.getByRole('row').nth(1).getByRole('cell').nth(3).innerText(), '0');
+    }
+    await page.screenshot({ path: `/tmp/erp-remediation/${tab}-desktop.png`, fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `/tmp/erp-remediation/${tab}-mobile.png`, fullPage: true });
+    assert(!(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), `${tab}: viewport overflow`);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await region.getByRole('button', { name: '下一页', exact: true }).click();
+    await region.getByRole('cell', { name: tab === 'rma' ? 'RMA-API-PAGE2' : 'CR-API-PAGE2', exact: true }).waitFor();
+    aftercareMode = 'error';
+    await region.getByRole('button', { name: `刷新${regionName}`, exact: true }).click();
+    await region.getByRole('alert').filter({ hasText: 'AFTERCARE_UNAVAILABLE' }).waitFor();
+    assert.equal(await region.getByRole('table').count(), 0);
+    assert.equal(await region.getByText(`暂无${regionName}`, { exact: true }).count(), 0);
+    aftercareMode = 'empty';
+    await region.getByRole('button', { name: '重试', exact: true }).click();
+    await region.getByText(`暂无${regionName}`, { exact: true }).waitFor();
+    aftercareMode = 'data';
+    await region.getByRole('button', { name: `刷新${regionName}`, exact: true }).click();
+    await region.getByRole('button', { name: 'SO-API-001', exact: true }).click();
+    await page.getByRole('cell', { name: 'SO-API-001', exact: true }).click();
+    await page.getByRole('heading', { name: '订单详情', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).searchParams.get('focusOrder'), 'stable-so');
+  }
+  assert(!requests.some(r => r.path.includes('/fulfillment/') && r.method !== 'GET'));
+  console.log('PASS sales aftercare: persisted fields, missing currency, legacy receipt state, pagination, failed/empty/retry states and stable order links without writes');
+
   salesCanceled = false;
   effectivePermissions = ['sales.order.read'];
   await page.evaluate(() => {
@@ -315,6 +369,11 @@ try {
   await page.getByRole('heading', { name: '订单详情', exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: '取消订单', exact: true }).count(), 0);
   assert.equal(await page.getByRole('button', { name: '去发货', exact: true }).count(), 0);
+  const receiptReads = requests.filter(r => r.path.endsWith('/fulfillment/customer-receipts')).length;
+  await go('module=sales&tab=receipts');
+  await page.getByRole('alert').filter({ hasText: '无客户签收查看权限' }).waitFor();
+  assert.equal(requests.filter(r => r.path.endsWith('/fulfillment/customer-receipts')).length, receiptReads);
+  assert.equal(await page.getByText('CR-API-001', { exact: true }).count(), 0);
   console.log('PASS sales permissions: read-only access cannot cancel or ship from order details');
   effectivePermissions = ['*'];
   await page.evaluate(() => {

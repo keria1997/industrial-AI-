@@ -80,8 +80,8 @@ const lists = [
   ['supply/risks', '/supply-chain/risk-events', 'supplychain', 'riskEvent', ['riskNo', 'companyName', 'status', 'version'], 'module=supply-chain', 'riskType', '风险数据中心'],
   ['ai/insights', '/ai/insights', 'ai', 'insight', ['insightNo', 'title', 'status', 'sourceId', 'version']],
   ['messages', '/message/messages', 'message', 'record', ['msgNo', 'title', 'isRead', 'isArchived', 'version'], 'module=messages', 'title'],
-  ['sales/rmas', '/fulfillment/rmas', 'fulfillment', 'rma', ['rmaNo', 'status', 'version']],
-  ['sales/customer-receipts', '/fulfillment/customer-receipts', 'fulfillment', 'receipt', ['receiptNo', 'status', 'version']],
+  ['sales/rmas', '/fulfillment/rmas', 'fulfillment', 'rma', ['rmaNo', 'orderId', 'orderNo', 'productName', 'requestedQty', 'approvedQty', 'receivedQty', 'qualifiedQty', 'status', 'creditArId', 'creditArAmount', 'currency', 'createdAt', 'version'], 'module=sales&tab=rma', 'rmaNo'],
+  ['sales/customer-receipts', '/fulfillment/customer-receipts', 'fulfillment', 'receipt', ['receiptNo', 'orderId', 'orderNo', 'customerName', 'signedQty', 'rejectedQty', 'damagedQty', 'receiptStatus', 'status', 'signedAt', 'version'], 'module=sales&tab=receipts', 'receiptNo'],
 ];
 
 try {
@@ -176,6 +176,29 @@ try {
         const samples = items.slice(0, 10).filter(item => item[textKey]);
         const missing = samples.filter(item => !text.includes(String(item[textKey]))).map(item => item.id);
         check(`API/UI ${name}`, !missing.length, { sampled: samples.length, missing, empty: !items.length });
+        if (name === 'sales/rmas' || name === 'sales/customer-receipts') {
+          const differences = [];
+          for (const item of samples) {
+            const row = page.getByRole('row').filter({ has: page.getByRole('cell', { name: item[textKey], exact: true }) });
+            if (await row.count() !== 1) { differences.push(`${item.id}: row missing or ambiguous`); continue; }
+            const cells = await row.getByRole('cell').allInnerTexts();
+            const quantityFields = name === 'sales/rmas'
+              ? ['requestedQty', 'approvedQty', 'receivedQty', 'qualifiedQty']
+              : ['signedQty', 'rejectedQty', 'damagedQty'];
+            for (const [index, field] of quantityFields.entries()) {
+              if (cells[index + 3] !== (item[field] || '-')) differences.push(`${item.id}.${field}: UI differs`);
+            }
+            if (name === 'sales/customer-receipts') {
+              const labels = { PENDING: '待签收', PARTIALLY_SIGNED: '部分签收', SIGNED: '全部签收', REJECTED: '拒收', DISPUTED: '争议中' };
+              const status = item.receiptStatus || item.status;
+              if (cells[6] !== (labels[status] || status || '-')) differences.push(`${item.id}: receipt status differs`);
+            } else if (!item.currency && cells[9] !== '-') {
+              differences.push(`${item.id}: amount without currency displayed`);
+            }
+          }
+          check(`API/UI field facts ${name}`, !differences.length, { sampled: samples.length, differences });
+          await page.screenshot({ path: `${output}/${name.endsWith('/rmas') ? 'sales-rmas' : 'sales-receipts'}.png`, fullPage: true });
+        }
       }
     } catch (error) {
       check(`DB/API ${name}`, false, { error: error.message });

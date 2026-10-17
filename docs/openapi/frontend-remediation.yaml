@@ -4,18 +4,75 @@ info:
   version: '2026-10-17'
   description: |
     Integration of existing client contracts, not backend acceptance.
-    Existing client paths take precedence here. RMA, customer receipts, reversals and
-    grant-version review stay blocked until conflicting paths and schemas are resolved.
+    Existing client paths take precedence here. RMA and customer receipt reads use
+    the verified fulfillment routes. Their write workflows, reversals and grant-version
+    review remain blocked pending business-rule acceptance.
 servers:
   - url: /api/v1
 security:
   - bearerAuth: []
 paths:
+  /fulfillment/rmas:
+    get:
+      summary: Read persisted RMA records within the authorized tenant
+      description: |
+        Requires sales.order.read. Read integration does not approve the create,
+        inspection, restock or credit-note workflows. Missing amounts or currencies
+        must not be inferred from quantities or the original order.
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Persisted records; an empty items array with total=0 is a successful empty result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/RmaRead' }
+                  total: { type: integer, minimum: 0 }
+        '401': { description: Missing or expired session }
+        '403': { description: Permission or tenant access denied; never display as an empty result }
+        '5XX': { description: Read failed; clear the previous result and allow retry }
+  /fulfillment/customer-receipts:
+    get:
+      summary: Read persisted customer receipt records within the authorized tenant
+      description: |
+        Requires sales.receipt.read. receiptStatus is the persisted canonical field;
+        status is the current command response alias. When both exist but differ,
+        show a status conflict instead of choosing one silently.
+        Signing never changes the sales order completion state in the browser.
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Persisted records, independent from order completion
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReceiptRead' }
+                  total: { type: integer, minimum: 0 }
+        '401': { description: Missing or expired session }
+        '403': { description: Permission or tenant access denied; never display as an empty result }
+        '5XX': { description: Read failed; clear the previous result and allow retry }
   /sales/ai-insights:
     get:
       summary: Read sales monitoring facts with explicit source availability
       description: |
-        Target integration contract; the legacy controller has not implemented source provenance.
+        Source availability metadata is present in the current controller; aggregation
+        semantics still require business acceptance, especially cross-month open orders.
         A timestamp with fixed zeros is not an EMPTY result. Count/amount facts require
         verified database aggregation; unavailable facts must be null, never fabricated zeros.
       parameters:
@@ -198,6 +255,45 @@ components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
   parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     Id: { name: id, in: path, required: true, schema: { type: string } }
     CommandKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
     Version: { name: If-Match, in: header, required: true, schema: { type: string } }
+  schemas:
+    RmaRead:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, minLength: 1 }
+        rmaNo: { type: string, nullable: true }
+        orderId: { type: string, nullable: true }
+        orderNo: { type: string, nullable: true }
+        productName: { type: string, nullable: true }
+        requestedQty: { type: string, nullable: true }
+        approvedQty: { type: string, nullable: true }
+        receivedQty: { type: string, nullable: true }
+        qualifiedQty: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        creditArId: { type: string, nullable: true }
+        creditArAmount: { type: string, nullable: true, description: Decimal amount; display requires an explicit currency }
+        currency: { type: string, nullable: true }
+        createdAt: { type: string, nullable: true }
+        version: { type: integer, minimum: 1, nullable: true }
+    ReceiptRead:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, minLength: 1 }
+        receiptNo: { type: string, nullable: true }
+        orderId: { type: string, nullable: true }
+        orderNo: { type: string, nullable: true }
+        customerName: { type: string, nullable: true }
+        signedQty: { type: string, nullable: true }
+        rejectedQty: { type: string, nullable: true }
+        damagedQty: { type: string, nullable: true }
+        receiptStatus: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        signedAt: { type: string, nullable: true }
+        version: { type: integer, minimum: 1, nullable: true }
