@@ -1,0 +1,22 @@
+name: API contract drift
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate route-level OpenAPI
+        run: node scripts/generate-api-contracts.mjs
+      - name: Verify backend routes and contracts
+        run: node scripts/verify-api-contracts.mjs
+      - name: Fail on uncommitted generated contract changes
+        run: git diff --exit-code -- docs/openapi/backend/v1/generated/all-modules.openapi.json

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev:java-api": "node scripts/dev-java-api.mjs",
-    "dev:all": "node scripts/dev-all.mjs"
+    "dev:all": "node scripts/dev-all.mjs",
+    "generate:api-contracts": "node scripts/generate-api-contracts.mjs",
+    "verify:api-contracts": "node scripts/verify-api-contracts.mjs"
   }
 }

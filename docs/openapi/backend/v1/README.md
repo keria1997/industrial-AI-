@@ -3,6 +3,17 @@
 `route-inventory.json` is the generated baseline of every Spring MVC route. It is the authoritative
 coverage checklist while module OpenAPI files are being completed.
 
+`generated/all-modules.openapi.json` is the generated route-level OpenAPI document for all Spring MVC
+routes. Regenerate it after adding or moving a controller route:
+
+```bash
+npm run generate:api-contracts
+npm run verify:api-contracts
+```
+
+Curated module YAML files add P0 command detail. The generated document is the route coverage baseline;
+where both exist, the curated contract must remain compatible with the generated route.
+
 Status:
 
 - `public` routes must receive a complete OpenAPI operation.
