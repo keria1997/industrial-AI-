@@ -1,0 +1,282 @@
+openapi: 3.0.3
+info:
+  title: Personnel contract
+  version: '1.0.0'
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /personnel/employees:
+    get:
+      summary: Query employees
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: department, in: query, schema: { type: string } }
+        - { name: position, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Employee' } }
+                  total: { type: integer }
+    post:
+      summary: Create employee
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmployeeWrite' }
+      responses:
+        '201': { description: Created employee }
+  /personnel/employees/{id}:
+    get:
+      summary: Get employee
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Employee }
+    patch:
+      summary: Update employee
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmployeePatch' }
+      responses:
+        '200': { description: Updated employee }
+    delete:
+      summary: Delete unreferenced employee
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Deletion result }
+  /personnel/attendances:
+    get:
+      summary: Query attendance records
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: status, in: query, schema: { type: string } }
+        - { name: employeeId, in: query, schema: { type: string, format: uuid } }
+        - { name: recordDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Attendance' } }
+                  total: { type: integer }
+    post:
+      summary: Create attendance record
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttendanceWrite' }
+      responses:
+        '201': { description: Created attendance }
+  /personnel/attendances/{id}:
+    get:
+      summary: Get attendance
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Attendance }
+    patch:
+      summary: Update attendance
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated attendance }
+  /personnel/skills:
+    get:
+      summary: Query skill certificates
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: status, in: query, schema: { type: string } }
+        - { name: employeeId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Skill' } }
+                  total: { type: integer }
+    post:
+      summary: Create skill certificate
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SkillWrite' }
+      responses:
+        '201': { description: Created skill }
+  /personnel/skills/{id}:
+    get:
+      summary: Get skill certificate
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Skill }
+    patch:
+      summary: Update skill certificate
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated skill }
+  /personnel/skills/{id}/renew:
+    post:
+      summary: Renew skill certificate
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Renewed skill }
+  /personnel/dashboard:
+    get:
+      summary: Read personnel monitoring aggregate
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses:
+        '200': { description: Attendance, certificate and employee counts }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    IdempotencyKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+  schemas:
+    Employee:
+      type: object
+      required: [id, employeeNo, name, department, position, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        employeeNo: { type: string }
+        name: { type: string }
+        department: { type: string }
+        position: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        status: { type: string, enum: [active, transferring, leave, resigned] }
+        hireDate: { type: string, format: date, nullable: true }
+        leaveDate: { type: string, format: date, nullable: true }
+        metadata: { type: object, additionalProperties: true }
+        remark: { type: string }
+        version: { type: integer }
+    EmployeeWrite:
+      type: object
+      required: [employeeNo, name, department, position, status]
+      properties:
+        employeeNo: { type: string }
+        name: { type: string }
+        department: { type: string }
+        position: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        status: { type: string }
+        hireDate: { type: string, format: date }
+        metadata: { type: object, additionalProperties: true }
+        remark: { type: string }
+    EmployeePatch:
+      type: object
+      properties:
+        name: { type: string }
+        department: { type: string }
+        position: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        status: { type: string }
+        hireDate: { type: string, format: date }
+        leaveDate: { type: string, format: date, nullable: true }
+        metadata: { type: object, additionalProperties: true }
+        remark: { type: string }
+    Attendance:
+      type: object
+      required: [id, recordNo, employeeId, employeeName, recordDate, shift, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        recordNo: { type: string }
+        employeeId: { type: string, format: uuid }
+        employeeName: { type: string }
+        recordDate: { type: string, format: date }
+        shift: { type: string }
+        clockIn: { type: string, nullable: true }
+        clockOut: { type: string, nullable: true }
+        status: { type: string }
+        remark: { type: string }
+        version: { type: integer }
+    AttendanceWrite:
+      type: object
+      required: [employeeId, employeeName, recordDate]
+      properties:
+        employeeId: { type: string, format: uuid }
+        employeeName: { type: string }
+        recordDate: { type: string, format: date }
+        shift: { type: string }
+        clockIn: { type: string }
+        clockOut: { type: string }
+        status: { type: string }
+        remark: { type: string }
+    Skill:
+      type: object
+      required: [id, certNo, employeeId, employeeName, skillName, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        certNo: { type: string }
+        employeeId: { type: string, format: uuid }
+        employeeName: { type: string }
+        skillName: { type: string }
+        level: { type: string }
+        issueDate: { type: string, format: date, nullable: true }
+        expiryDate: { type: string, format: date, nullable: true }
+        status: { type: string }
+        issuer: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        remark: { type: string }
+        version: { type: integer }
+    SkillWrite:
+      type: object
+      required: [certNo, employeeId, employeeName, skillName]
+      properties:
+        certNo: { type: string }
+        employeeId: { type: string, format: uuid }
+        employeeName: { type: string }
+        skillName: { type: string }
+        level: { type: string }
+        issueDate: { type: string, format: date }
+        expiryDate: { type: string, format: date }
+        issuer: { type: string }
+        remark: { type: string }

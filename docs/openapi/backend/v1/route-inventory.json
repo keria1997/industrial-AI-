@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-10-17",
   "source": "Spring controller annotations",
-  "total": 305,
+  "total": 306,
   "routes": [
     {
       "method": "GET",
@@ -11,13 +11,13 @@
     },
     {
       "method": "POST",
-      "path": "/api/v1/ai/action-plans/submit",
+      "path": "/api/v1/ai/action-plans/{id}/review",
       "controller": "AiController",
       "classification": "public"
     },
     {
       "method": "POST",
-      "path": "/api/v1/ai/action-plans/{id}/review",
+      "path": "/api/v1/ai/action-plans/submit",
       "controller": "AiController",
       "classification": "public"
     },
@@ -127,6 +127,12 @@
       "method": "POST",
       "path": "/api/v1/ai/nl2sql",
       "controller": "AiController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance-documents/{id}/reverse",
+      "controller": "FinanceDocumentAliasController",
       "classification": "public"
     },
     {
@@ -365,12 +371,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/inventory/outbounds/query/{idempotencyKey}",
-      "controller": "FulfillmentController",
-      "classification": "public"
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/inventory/outbounds/{id}",
       "controller": "FulfillmentController",
       "classification": "public"
@@ -378,6 +378,12 @@
     {
       "method": "POST",
       "path": "/api/v1/inventory/outbounds/{id}/post",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/outbounds/query/{idempotencyKey}",
       "controller": "FulfillmentController",
       "classification": "public"
     },
@@ -413,12 +419,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/inventory/reservations/query/{idempotencyKey}",
-      "controller": "FulfillmentController",
-      "classification": "public"
-    },
-    {
-      "method": "GET",
       "path": "/api/v1/inventory/reservations/{id}",
       "controller": "FulfillmentController",
       "classification": "public"
@@ -426,6 +426,12 @@
     {
       "method": "POST",
       "path": "/api/v1/inventory/reservations/{id}/release",
+      "controller": "FulfillmentController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/reservations/query/{idempotencyKey}",
       "controller": "FulfillmentController",
       "classification": "public"
     },
@@ -592,18 +598,6 @@
       "classification": "public"
     },
     {
-      "method": "POST",
-      "path": "/api/v1/message/messages/batch",
-      "controller": "MessageController",
-      "classification": "public"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/message/messages/mark-all-read",
-      "controller": "MessageController",
-      "classification": "public"
-    },
-    {
       "method": "GET",
       "path": "/api/v1/message/messages/{id}",
       "controller": "MessageController",
@@ -624,6 +618,18 @@
     {
       "method": "POST",
       "path": "/api/v1/message/messages/{id}/star",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages/batch",
+      "controller": "MessageController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/message/messages/mark-all-read",
       "controller": "MessageController",
       "classification": "public"
     },
@@ -1006,18 +1012,6 @@
       "classification": "public"
     },
     {
-      "method": "GET",
-      "path": "/api/v1/platform/parameters/security",
-      "controller": "PlatformController",
-      "classification": "public"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/platform/parameters/security",
-      "controller": "PlatformController",
-      "classification": "public"
-    },
-    {
       "method": "DELETE",
       "path": "/api/v1/platform/parameters/{id}",
       "controller": "PlatformController",
@@ -1026,6 +1020,18 @@
     {
       "method": "PUT",
       "path": "/api/v1/platform/parameters/{id}",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platform/parameters/security",
+      "controller": "PlatformController",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/platform/parameters/security",
       "controller": "PlatformController",
       "classification": "public"
     },

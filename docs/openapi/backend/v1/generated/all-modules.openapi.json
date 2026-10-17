@@ -26,6 +26,9 @@
       "name": "Finance"
     },
     {
+      "name": "FinanceDocumentAlias"
+    },
+    {
       "name": "Fulfillment"
     },
     {
@@ -647,6 +650,37 @@
         ],
         "summary": "POST /api/v1/ai/nl2sql",
         "description": "Implemented by AiController.",
+        "x-classification": "public",
+        "responses": {
+          "200": {
+            "description": "Successful response follows the module DTO contract."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "401": {
+            "description": "Missing, expired or revoked session."
+          },
+          "403": {
+            "description": "Permission, tenant or resource scope denied."
+          },
+          "409": {
+            "description": "Version, state, idempotency or business conflict."
+          },
+          "500": {
+            "description": "Unexpected server error."
+          }
+        }
+      }
+    },
+    "/api/v1/finance-documents/{id}/reverse": {
+      "post": {
+        "operationId": "POSTapi_v1_finance_documents_id_reverse",
+        "tags": [
+          "FinanceDocumentAlias"
+        ],
+        "summary": "POST /api/v1/finance-documents/{id}/reverse",
+        "description": "Implemented by FinanceDocumentAliasController.",
         "x-classification": "public",
         "responses": {
           "200": {

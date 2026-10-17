@@ -1,0 +1,352 @@
+openapi: 3.0.3
+info:
+  title: Message center contract
+  version: '1.0.0'
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /message/templates:
+    get:
+      summary: List templates
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: channel, in: query, schema: { type: string } }
+        - { name: isActive, in: query, schema: { type: boolean } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/MessageTemplate' } }
+                  total: { type: integer }
+    post:
+      summary: Create template
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateWrite' }
+      responses:
+        '201': { description: Created template }
+  /message/templates/{id}:
+    get:
+      summary: Get template
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Template }
+    patch:
+      summary: Update template
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplatePatch' }
+      responses:
+        '200': { description: Updated template }
+    delete:
+      summary: Delete template
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Deletion result }
+  /message/messages:
+    get:
+      summary: Query message records
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: recipientId, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: isRead, in: query, schema: { type: boolean } }
+        - { name: isArchived, in: query, schema: { type: boolean } }
+        - { name: isStarred, in: query, schema: { type: boolean } }
+        - { name: priority, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/MessageRecord' } }
+                  total: { type: integer }
+    post:
+      summary: Send one message
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessage' }
+      responses:
+        '201': { description: Message created }
+  /message/messages/batch:
+    post:
+      summary: Send batch messages
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201': { description: Batch send result }
+  /message/messages/{id}:
+    get:
+      summary: Get message
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Message }
+  /message/messages/mark-all-read:
+    post:
+      summary: Mark all recipient messages read
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Marked count }
+  /message/messages/{id}/read:
+    post:
+      summary: Mark message read
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated message }
+  /message/messages/{id}/archive:
+    post:
+      summary: Archive message
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated message }
+  /message/messages/{id}/star:
+    post:
+      summary: Star or unstar message
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [starred]
+              properties: { starred: { type: boolean } }
+      responses:
+        '200': { description: Updated message }
+  /message/preferences:
+    get:
+      summary: List recipient preferences
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: userId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserPreference' }
+    put:
+      summary: Create or update preference
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreferenceWrite' }
+      responses:
+        '200': { description: Preference }
+  /message/subscriptions:
+    get:
+      summary: List event subscriptions
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: userId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Subscription' }
+    post:
+      summary: Create subscription
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201': { description: Subscription }
+  /message/subscriptions/{id}:
+    delete:
+      summary: Delete subscription
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Deletion result }
+  /message/dashboard:
+    get:
+      summary: Read message dashboard
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: recipientId, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Counts, aggregates and recent unread messages }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    IdempotencyKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+  schemas:
+    TemplateVariable:
+      type: object
+      required: [name, desc]
+      properties: { name: { type: string }, desc: { type: string } }
+    MessageTemplate:
+      type: object
+      required: [id, code, name, category, channel, titleTemplate, bodyTemplate, priority, isActive, version]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        category: { type: string, enum: [order, payment, shipping, inventory, production, procurement, finance, system] }
+        channel: { type: string, enum: [in_app, email, sms, webhook] }
+        titleTemplate: { type: string }
+        bodyTemplate: { type: string }
+        variables: { type: array, items: { $ref: '#/components/schemas/TemplateVariable' } }
+        priority: { type: string, enum: [urgent, high, normal, low] }
+        isActive: { type: boolean }
+        version: { type: integer }
+    TemplateWrite:
+      type: object
+      required: [code, name, category, channel, titleTemplate, bodyTemplate]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        category: { type: string }
+        channel: { type: string }
+        titleTemplate: { type: string }
+        bodyTemplate: { type: string }
+        variables: { type: array, items: { $ref: '#/components/schemas/TemplateVariable' } }
+        priority: { type: string }
+        remark: { type: string }
+    TemplatePatch:
+      type: object
+      properties:
+        name: { type: string }
+        category: { type: string }
+        channel: { type: string }
+        titleTemplate: { type: string }
+        bodyTemplate: { type: string }
+        variables: { type: array, items: { $ref: '#/components/schemas/TemplateVariable' } }
+        priority: { type: string }
+        isActive: { type: boolean }
+        remark: { type: string }
+    MessageRecord:
+      type: object
+      required: [id, msgNo, category, channel, priority, title, body, recipientId, isRead, isArchived, isStarred, version]
+      properties:
+        id: { type: string, format: uuid }
+        msgNo: { type: string }
+        templateCode: { type: string, nullable: true }
+        category: { type: string }
+        channel: { type: string }
+        priority: { type: string }
+        title: { type: string }
+        body: { type: string }
+        recipientId: { type: string }
+        recipientName: { type: string }
+        sourceType: { type: string }
+        sourceId: { type: string }
+        sourceDocNo: { type: string }
+        isRead: { type: boolean }
+        isArchived: { type: boolean }
+        isStarred: { type: boolean }
+        metadata: { type: object, additionalProperties: true }
+        status: { type: string }
+        errorMessage: { type: string }
+        sentAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+    SendMessage:
+      type: object
+      required: [category, recipientId, title, body]
+      properties:
+        templateCode: { type: string }
+        category: { type: string }
+        channel: { type: string }
+        priority: { type: string }
+        recipientId: { type: string }
+        recipientName: { type: string }
+        title: { type: string }
+        body: { type: string }
+        sourceType: { type: string }
+        sourceId: { type: string }
+        sourceDocNo: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        variables: { type: object, additionalProperties: { type: string } }
+    UserPreference:
+      type: object
+      required: [id, userId, category, channel, enabled, minPriority, version]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string }
+        category: { type: string }
+        channel: { type: string }
+        enabled: { type: boolean }
+        minPriority: { type: string }
+        quietHoursStart: { type: string }
+        quietHoursEnd: { type: string }
+        version: { type: integer }
+    PreferenceWrite:
+      type: object
+      required: [category, channel]
+      properties:
+        category: { type: string }
+        channel: { type: string }
+        enabled: { type: boolean }
+        minPriority: { type: string }
+        quietHoursStart: { type: string }
+        quietHoursEnd: { type: string }
+    Subscription:
+      type: object
+      required: [id, userId, eventType, category, enabled, version]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string }
+        eventType: { type: string }
+        category: { type: string }
+        enabled: { type: boolean }
+        version: { type: integer }

@@ -57,4 +57,12 @@ const document = {
 const target = "docs/openapi/backend/v1/generated/all-modules.openapi.json";
 mkdirSync(dirname(target), { recursive: true });
 writeFileSync(target, `${JSON.stringify(document, null, 2)}\n`);
+const inventoryTarget = "docs/openapi/backend/v1/route-inventory.json";
+mkdirSync(dirname(inventoryTarget), { recursive: true });
+writeFileSync(inventoryTarget, `${JSON.stringify({
+  generatedAt: new Date().toISOString().slice(0, 10),
+  source: "Spring controller annotations",
+  total: routes.length,
+  routes,
+}, null, 2)}\n`);
 console.log(`Generated ${routes.length} routes into ${target}`);

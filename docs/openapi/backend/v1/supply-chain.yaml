@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: Supply chain contract
+  version: '1.0.0'
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /supply-chain/suppliers:
+    get:
+      summary: Query suppliers
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: status, in: query, schema: { type: string, enum: [active, suspended, blacklisted] } }
+        - { name: rating, in: query, schema: { type: string, enum: [A, B, C, D] } }
+        - { name: riskLevel, in: query, schema: { type: string, enum: [低, 中, 高] } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: admittance, in: query, schema: { type: boolean } }
+        - { name: owner, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
+                  total: { type: integer }
+    post:
+      summary: Create supplier
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupplierWrite' }
+      responses:
+        '201': { description: Created supplier }
+  /supply-chain/suppliers/{id}:
+    get:
+      summary: Get supplier
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Supplier }
+    patch:
+      summary: Update supplier
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated supplier }
+    delete:
+      summary: Delete unreferenced supplier
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Deletion result }
+  /supply-chain/customers:
+    get:
+      summary: Query supply-chain customers
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: exposureLevel, in: query, schema: { type: string, enum: [低, 中, 高] } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Customer' } }
+                  total: { type: integer }
+    post:
+      summary: Create customer
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerWrite' }
+      responses:
+        '201': { description: Created customer }
+  /supply-chain/customers/{id}:
+    get:
+      summary: Get customer
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Customer }
+    patch:
+      summary: Update customer
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated customer }
+    delete:
+      summary: Delete unreferenced customer
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Deletion result }
+  /supply-chain/risk-events:
+    get:
+      summary: Query risk events
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: riskLevel, in: query, schema: { type: string, enum: [低, 中, 高] } }
+        - { name: companyType, in: query, schema: { type: string, enum: [customer, supplier] } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/RiskEvent' } }
+                  total: { type: integer }
+    post:
+      summary: Create risk event
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RiskEventWrite' }
+      responses:
+        '201': { description: Created risk event }
+  /supply-chain/risk-events/{id}:
+    get:
+      summary: Get risk event
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Risk event }
+    patch:
+      summary: Update risk event
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated risk event }
+  /supply-chain/risk-events/{id}/resolve:
+    post:
+      summary: Resolve risk event
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Resolved risk event }
+  /supply-chain/dashboard:
+    get:
+      summary: Read supply-chain monitoring aggregate
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses:
+        '200': { description: Supplier, customer and risk counts }
+  /supply-chain/company-verifications:
+    get:
+      summary: Verify company registration through external provider
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: name, in: query, required: true, schema: { type: string, maxLength: 200 } }
+        - { name: creditCode, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Verification candidates and NEEDS_REVIEW/NOT_FOUND/status result }
+        '503': { description: External company verification service is not configured }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    IdempotencyKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+  schemas:
+    Supplier:
+      type: object
+      required: [id, supplierNo, name, rating, riskLevel, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        supplierNo: { type: string }
+        name: { type: string }
+        creditCode: { type: string }
+        type: { type: string }
+        category: { type: string }
+        qualification: { type: string }
+        rating: { type: string, enum: [A, B, C, D] }
+        riskLevel: { type: string, enum: [低, 中, 高] }
+        owner: { type: string }
+        cooperationCount: { type: integer }
+        totalAmount: { type: string }
+        admittance: { type: boolean }
+        status: { type: string, enum: [active, suspended, blacklisted] }
+        metadata: { type: object, additionalProperties: true }
+        version: { type: integer }
+    SupplierWrite:
+      type: object
+      required: [supplierNo, name]
+      properties:
+        supplierNo: { type: string }
+        name: { type: string }
+        creditCode: { type: string }
+        type: { type: string }
+        category: { type: string }
+        qualification: { type: string }
+        rating: { type: string, enum: [A, B, C, D] }
+        riskLevel: { type: string, enum: [低, 中, 高] }
+        owner: { type: string }
+        admittance: { type: boolean }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        remark: { type: string }
+    Customer:
+      type: object
+      required: [id, customerNo, name, exposureLevel, pressureLevel, status, version]
+      properties:
+        id: { type: string }
+        customerNo: { type: string }
+        name: { type: string }
+        creditCode: { type: string }
+        industry: { type: string }
+        revenue: { type: string }
+        receivable: { type: string }
+        overdueDays: { type: integer }
+        exposureLevel: { type: string, enum: [低, 中, 高] }
+        pressureLevel: { type: string, enum: [低, 中, 高] }
+        role: { type: string }
+        alerts: { type: array, items: { type: string } }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        version: { type: integer }
+    CustomerWrite:
+      type: object
+      required: [customerNo, name]
+      properties:
+        customerNo: { type: string }
+        name: { type: string }
+        creditCode: { type: string }
+        industry: { type: string }
+        revenue: { type: string }
+        receivable: { type: string }
+        overdueDays: { type: integer }
+        exposureLevel: { type: string, enum: [低, 中, 高] }
+        pressureLevel: { type: string, enum: [低, 中, 高] }
+        role: { type: string }
+        alerts: { type: array, items: { type: string } }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        remark: { type: string }
+    RiskEvent:
+      type: object
+      required: [id, riskNo, companyName, riskType, riskLevel, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        riskNo: { type: string }
+        companyName: { type: string }
+        companyType: { type: string, enum: [customer, supplier] }
+        riskType: { type: string }
+        riskLevel: { type: string, enum: [低, 中, 高] }
+        owner: { type: string }
+        action: { type: string }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        version: { type: integer }
+    RiskEventWrite:
+      type: object
+      required: [companyName, riskType]
+      properties:
+        companyName: { type: string }
+        companyType: { type: string, enum: [customer, supplier] }
+        riskType: { type: string }
+        riskLevel: { type: string, enum: [低, 中, 高] }
+        owner: { type: string }
+        action: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        remark: { type: string }

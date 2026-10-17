@@ -1,0 +1,414 @@
+openapi: 3.0.3
+info:
+  title: AI hub contract
+  version: '1.0.0'
+  description: Field-level contract for model gateway, assistant conversations, insights and action plans.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /ai/models:
+    get:
+      summary: List model configurations
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses:
+        '200':
+          description: Model configurations; apiKeyCiphertext is never exposed in UI payloads
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ModelConfig' }
+    post:
+      summary: Create model configuration
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModelWrite' }
+      responses:
+        '201': { description: Created configuration }
+  /ai/models/{id}:
+    get:
+      summary: Get model configuration
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Model configuration }
+    patch:
+      summary: Update model configuration
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModelPatch' }
+      responses:
+        '200': { description: Updated configuration }
+    delete:
+      summary: Delete model configuration
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Deletion result }
+  /ai/chat:
+    post:
+      summary: Submit an assistant message
+      description: Creates or appends to a conversation and returns assistant content plus optional action plan.
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                conversationId: { type: string, format: uuid }
+                message: { type: string, maxLength: 4000 }
+                domain: { type: string, enum: [inventory, sales, production, procurement, finance, general] }
+                context: { type: object, additionalProperties: true }
+      responses:
+        '201': { description: Assistant response }
+  /ai/conversations:
+    get:
+      summary: List conversations
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
+                  total: { type: integer }
+  /ai/conversations/{id}:
+    get:
+      summary: Get conversation
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Conversation }
+  /ai/messages:
+    get:
+      summary: List assistant messages
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: conversationId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/AssistantMessage' } }
+                  total: { type: integer }
+  /ai/messages/{id}/feedback:
+    post:
+      summary: Submit helpful or not-helpful feedback
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isHelpful]
+              properties:
+                isHelpful: { type: boolean }
+                feedback: { type: string }
+      responses:
+        '200': { description: Feedback accepted }
+  /ai/insights:
+    get:
+      summary: List insights
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: severity, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, default: active } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Insight' } }
+                  total: { type: integer }
+    post:
+      summary: Create an insight
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightWrite' }
+      responses:
+        '201': { description: Created insight }
+  /ai/insights/{id}:
+    get:
+      summary: Get insight
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Insight }
+  /ai/insights/{id}/dismiss:
+    post:
+      summary: Dismiss insight
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Insight dismissed }
+  /ai/action-plans:
+    get:
+      summary: List action plans
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: status, in: query, schema: { type: string } }
+        - { name: conversationId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/ActionPlan' } }
+                  total: { type: integer }
+  /ai/action-plans/submit:
+    post:
+      summary: Submit an action plan
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messageId, conversationId, actionPlan]
+              properties:
+                messageId: { type: string, format: uuid }
+                conversationId: { type: string, format: uuid }
+                actionPlan: { $ref: '#/components/schemas/ActionPlanData' }
+      responses:
+        '201': { description: Action plan submitted }
+  /ai/action-plans/{id}/review:
+    post:
+      summary: Approve or reject an action plan
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approve, reject] }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: Review result }
+  /ai/dashboard:
+    get:
+      summary: Read AI monitoring aggregate
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses:
+        '200': { description: Counts, severity aggregate and recent insights }
+  /ai/map-columns:
+    post:
+      summary: Map imported source columns
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+      responses:
+        '200': { description: Column mapping result }
+  /ai/nl2sql:
+    post:
+      summary: Convert a natural-language question to SQL preview
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses:
+        '200': { description: SQL preview; response may omit result }
+  /ai/analyze-production:
+    post:
+      summary: Analyze production exceptions
+      parameters: [{ $ref: '#/components/parameters/Tenant' }]
+      responses:
+        '200': { description: Production analysis result }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    IdempotencyKey: { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+  schemas:
+    ModelConfig:
+      type: object
+      required: [id, code, name, provider, modelName, isActive, version]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        provider: { type: string, enum: [openai, anthropic, azure, local, custom] }
+        modelName: { type: string }
+        apiKeyMasked: { type: string }
+        baseUrl: { type: string }
+        temperature: { type: string }
+        maxTokens: { type: integer }
+        timeoutSeconds: { type: integer }
+        isActive: { type: boolean }
+        isPrimary: { type: boolean }
+        fallbackModelId: { type: string, nullable: true }
+        metadata: { type: object, additionalProperties: true }
+        version: { type: integer }
+    ModelWrite:
+      type: object
+      required: [code, name, provider, modelName]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        provider: { type: string, enum: [openai, anthropic, azure, local, custom] }
+        modelName: { type: string }
+        apiKey: { type: string, writeOnly: true }
+        baseUrl: { type: string }
+        temperature: { type: string }
+        maxTokens: { type: integer }
+        timeoutSeconds: { type: integer }
+        isPrimary: { type: boolean }
+        metadata: { type: object, additionalProperties: true }
+    ModelPatch:
+      type: object
+      properties:
+        name: { type: string }
+        provider: { type: string }
+        modelName: { type: string }
+        apiKey: { type: string, writeOnly: true }
+        baseUrl: { type: string }
+        temperature: { type: string }
+        maxTokens: { type: integer }
+        timeoutSeconds: { type: integer }
+        isActive: { type: boolean }
+        isPrimary: { type: boolean }
+        fallbackModelId: { type: string, nullable: true }
+    Conversation:
+      type: object
+      required: [id, conversationNo, userId, title, domain, status, messageCount, version]
+      properties:
+        id: { type: string, format: uuid }
+        conversationNo: { type: string }
+        userId: { type: string }
+        title: { type: string }
+        domain: { type: string }
+        status: { type: string }
+        messageCount: { type: integer }
+        metadata: { type: object, additionalProperties: true }
+        version: { type: integer }
+    AssistantMessage:
+      type: object
+      required: [id, conversationId, role, content, domain, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        conversationId: { type: string, format: uuid }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        intent: { type: string }
+        domain: { type: string }
+        tokensUsed: { type: integer }
+        modelName: { type: string, nullable: true }
+        actionPlan: { type: object, nullable: true, additionalProperties: true }
+        metadata: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    ActionPlanData:
+      type: object
+      required: [title, description, targetModule, targetEntity, targetAction]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        targetModule: { type: string }
+        targetEntity: { type: string }
+        targetAction: { type: string }
+        parameters: { type: object, additionalProperties: true }
+        impactScope: { type: string }
+        riskLevel: { type: string, enum: [low, medium, high, critical] }
+        dataEvidence:
+          type: array
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              value: { type: string }
+        approvalPath: { type: string }
+    ActionPlan:
+      allOf:
+        - $ref: '#/components/schemas/ActionPlanData'
+        - type: object
+          required: [id, messageId, conversationId, status, version]
+          properties:
+            id: { type: string, format: uuid }
+            messageId: { type: string, format: uuid }
+            conversationId: { type: string, format: uuid }
+            status: { type: string, enum: [draft, submitted, approved, rejected, executed, cancelled] }
+            version: { type: integer }
+    Insight:
+      type: object
+      required: [id, insightNo, type, domain, severity, title, summary, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        insightNo: { type: string }
+        type: { type: string, enum: [anomaly, prediction, recommendation, optimization, alert] }
+        domain: { type: string, enum: [inventory, sales, production, procurement, finance, general] }
+        severity: { type: string, enum: [critical, warning, info, success] }
+        title: { type: string }
+        summary: { type: string }
+        sourceType: { type: string }
+        sourceId: { type: string }
+        confidence: { type: string }
+        status: { type: string, enum: [active, dismissed, expired, applied] }
+        version: { type: integer }
+    InsightWrite:
+      type: object
+      required: [type, domain, severity, title, summary]
+      properties:
+        type: { type: string }
+        domain: { type: string }
+        severity: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        detail: { type: object, additionalProperties: true }
+        sourceType: { type: string }
+        sourceId: { type: string }
+        confidence: { type: string }

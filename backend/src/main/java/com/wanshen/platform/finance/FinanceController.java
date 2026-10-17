@@ -371,7 +371,7 @@ public class FinanceController {
                 throw bad("核销单据类型不合法", "使用 RECEIVABLE 或 PAYABLE");
             }
             allocationLines.add(new AllocationLine(documentType, text(line, "documentId"), text(line, "amount")));
-            allocatedTotal[0] = add(allocatedTotal[0].toPlainString(), text(line, "amount"));
+            allocatedTotal[0] = new BigDecimal(add(allocatedTotal[0].toPlainString(), text(line, "amount")));
         }
         return command(context, "finance.allocation.create", input, () -> {
             Payment payment = store.payment(context.tenantId(), text(input, "paymentId"))
