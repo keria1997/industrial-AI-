@@ -49,6 +49,8 @@ try {
     const body = req.postData() ? req.postDataJSON() : null;
     requests.push({ path, query: Object.fromEntries(url.searchParams), method: req.method(), body, key: req.headers()['x-idempotency-key'], version: req.headers()['if-match'] });
     if (path.endsWith('/production/readiness')) return envelope(route, { permissions: effectivePermissions });
+    if (['/production/bom-snapshots', '/production/inspections', '/production/completions', '/production/work-order-closes']
+      .some(suffix => path.endsWith(suffix))) return envelope(route, []);
     if (path.endsWith('/platform/snapshot')) return envelope(route, platform);
     if (path.endsWith('/platform/roles/role1/grants')) {
       platform.roleGrants = body.grants.map(grant => ({ ...grant, roleId: 'role1' }));
@@ -113,6 +115,20 @@ try {
   });
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
+  const typeWithStableFocus = async (field, value) => {
+    await field.fill('');
+    await field.focus();
+    await field.press('ControlOrMeta+A');
+    const original = await field.elementHandle();
+    try {
+      for (const character of value) {
+        await page.keyboard.insertText(character);
+        assert(await original.evaluate(node => node.isConnected && document.activeElement === node),
+          `Input remounted or lost focus while typing ${value}`);
+      }
+      assert.equal(await field.inputValue(), value);
+    } finally { await original.dispose(); }
+  };
   const go = async query => { await page.goto(`${baseUrl}/?${query}`); await page.waitForLoadState('networkidle'); };
   await go('module=finance&finance=receivable&focusAr=ar1');
   await page.getByRole('button', { name: '收款', exact: true }).click();
@@ -121,7 +137,8 @@ try {
   await dialog.getByRole('button', { name: '登记待确认' }).click();
   await dialog.getByRole('alert').filter({ hasText: '不能超过' }).waitFor();
   assert.equal(requests.filter(r => r.path.endsWith('/finance/payments') && r.method === 'POST').length, 0);
-  await dialog.getByLabel('收付款金额', { exact: true }).fill('40');
+  await typeWithStableFocus(dialog.getByLabel('收付款金额', { exact: true }), '40');
+  await typeWithStableFocus(dialog.getByLabel('备注', { exact: true }), '收款连续输入备注ABC');
   await dialog.getByRole('button', { name: '登记待确认' }).click();
   await dialog.getByRole('alert').filter({ hasText: 'REGISTER_UNAVAILABLE' }).waitFor();
   assert.equal(await dialog.getByLabel('收付款金额', { exact: true }).inputValue(), '40');
@@ -154,7 +171,7 @@ try {
   await page.getByRole('button', { name: '送货', exact: true }).click();
   const receive = page.getByRole('dialog', { name: '登记分批收货', exact: true });
   await receive.getByLabel('本次收货数量', { exact: true }).fill('7');
-  await receive.getByLabel('本批送货单号', { exact: true }).fill('DELIVERY-ONE');
+  await typeWithStableFocus(receive.getByLabel('本批送货单号', { exact: true }), 'DELIVERY-ONE');
   await receive.getByRole('button', { name: '登记收货', exact: true }).click();
   await receive.getByRole('alert').filter({ hasText: '不能超过' }).waitFor();
   await receive.getByLabel('本次收货数量', { exact: true }).fill('2');
@@ -167,7 +184,7 @@ try {
   await page.getByRole('button', { name: '申请退货', exact: true }).click();
   const returnDialog = page.getByRole('dialog', { name: '申请采购退货', exact: true });
   await returnDialog.getByLabel('退货数量', { exact: true }).fill('1');
-  await returnDialog.getByLabel('原因或检验备注', { exact: true }).fill('接口退货原因');
+  await typeWithStableFocus(returnDialog.getByLabel('原因或检验备注', { exact: true }), '接口退货原因');
   await returnDialog.getByRole('button', { name: '提交', exact: true }).click();
   await page.getByRole('button', { name: '采购退货', exact: true }).click();
   await page.getByText('RET-API-001', { exact: true }).waitFor();
@@ -186,7 +203,7 @@ try {
   console.log('PASS procurement: partial receipt remains actionable, quantity bounds, IQC, return approval gate and distinct batches');
 
   await go('module=messages');
-  await page.getByLabel('搜索消息', { exact: true }).fill('接口销售');
+  await typeWithStableFocus(page.getByLabel('搜索消息', { exact: true }), '接口销售');
   await page.getByRole('button', { name: '查询', exact: true }).click();
   await page.waitForLoadState('networkidle');
   assert(requests.some(r => r.path.endsWith('/message/messages') && r.query.search === '接口销售'));
@@ -203,7 +220,7 @@ try {
   await review.getByRole('button', { name: '提交复核结果', exact: true }).click();
   await review.getByRole('alert').filter({ hasText: '必须填写原因' }).waitFor();
   assert.equal(salesDecision, null);
-  await review.getByLabel('复核处理意见', { exact: true }).fill('接口核验拒绝原因');
+  await typeWithStableFocus(review.getByLabel('复核处理意见', { exact: true }), '接口核验拒绝原因');
   await review.getByRole('button', { name: '提交复核结果', exact: true }).click();
   await review.waitFor({ state: 'hidden' });
   assert.equal(salesDecision, 'REJECT');
@@ -215,7 +232,7 @@ try {
   await cancellation.getByRole('button', { name: '确认取消订单', exact: true }).click();
   await cancellation.getByRole('alert').filter({ hasText: '请填写取消原因' }).waitFor();
   assert.equal(requests.filter(request => request.path.endsWith('/stable-so/cancel')).length, 0);
-  await cancellation.getByLabel('取消原因', { exact: true }).fill('客户变更采购计划');
+  await typeWithStableFocus(cancellation.getByLabel('取消原因', { exact: true }), '客户变更采购计划');
   await cancellation.getByRole('button', { name: '确认取消订单', exact: true }).click();
   await cancellation.getByRole('alert').filter({ hasText: 'CANCEL_UNAVAILABLE' }).waitFor();
   assert(await cancellation.getByLabel('取消原因', { exact: true }).isDisabled());
@@ -274,6 +291,16 @@ try {
   assert(!overflow, 'Page should not overflow the mobile viewport');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await go('module=platform&platform=access');
+  await page.getByRole('button', { name: '新建', exact: true }).click();
+  const roleEditor = page.getByRole('dialog', { name: '新建角色', exact: true });
+  // Let the drawer's initial autofocus run before deliberately moving to another field.
+  await roleEditor.locator('#editor-name').waitFor();
+  await page.waitForFunction(() => document.activeElement?.id === 'editor-name');
+  await typeWithStableFocus(roleEditor.locator('#editor-name'), '角色连续输入ABC');
+  await typeWithStableFocus(roleEditor.locator('#editor-code'), 'FOCUS_ROLE_123');
+  await typeWithStableFocus(roleEditor.locator('#editor-description'), '角色说明连续输入');
+  await roleEditor.getByRole('button', { name: '暂不保存', exact: true }).click();
+  console.log('PASS form focus: finance, procurement, sales, message search and platform drawer preserve input nodes/focus');
   await page.getByRole('radio', { name: '销售制单-拒绝', exact: true }).click();
   await page.getByRole('button', { name: '预览草稿', exact: true }).click();
   await page.getByRole('dialog').getByText('销售制单 (sales.order.create)：未设置 → 拒绝', { exact: true }).waitFor();
@@ -383,6 +410,20 @@ try {
   });
   await go('module=finance&finance=payments');
   await page.screenshot({ path: '/tmp/erp-remediation/finance-desktop.png', fullPage: true });
+
+  await go('module=production&production=bom');
+  await page.getByRole('button', { name: '发布生效 BOM', exact: true }).click();
+  const bomEditor = page.getByRole('dialog', { name: '发布生效 BOM', exact: true });
+  await typeWithStableFocus(bomEditor.getByLabel('产品编码', { exact: true }), 'PRODUCT-FOCUS-123');
+  await typeWithStableFocus(bomEditor.getByLabel('产品名称', { exact: true }), '生产连续输入ABC');
+  await bomEditor.getByRole('button', { name: '添加物料', exact: true }).click();
+  await typeWithStableFocus(bomEditor.getByLabel('materialId-0', { exact: true }), 'MATERIAL-FOCUS');
+  await typeWithStableFocus(bomEditor.getByLabel('qtyPer-0', { exact: true }), '12.3456');
+  await bomEditor.getByRole('button', { name: '添加工序', exact: true }).click();
+  await typeWithStableFocus(bomEditor.getByLabel('name-0', { exact: true }), '装配连续输入');
+  await bomEditor.getByRole('button', { name: '取消', exact: true }).click();
+  assert(!requests.some(request => request.path.endsWith('/production/bom-snapshots') && request.method !== 'GET'));
+  console.log('PASS production form focus: product, material, decimal quantity and routing inputs preserve nodes/focus without publishing');
 
   effectivePermissions = [];
   await page.evaluate(async () => {

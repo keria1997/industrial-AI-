@@ -12,6 +12,10 @@ const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const errors = [];
 const writes = [];
+let inventoryReadError = false;
+let releaseInventoryRead;
+let inventoryReadStarted;
+let inventoryReadGate;
 try {
   if (!live) {
     await context.addInitScript(() => {
@@ -20,7 +24,7 @@ try {
         tenantIds: ['TENANT-SHWS'], accessToken: 'controlled-focus', expiresAt: '2099-01-01T00:00:00Z',
       }));
     });
-    await context.route('**/api/**', route => {
+    await context.route('**/api/**', async route => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       if (!path.startsWith('/api/')) return route.fallback();
@@ -29,11 +33,18 @@ try {
         return route.fulfill({ status: 503, json: { error: { message: 'FOCUS_SAVE_UNAVAILABLE' } } });
       }
       if (path.endsWith('/production/readiness')) return route.fulfill({ json: { permissions: ['*'] } });
-      if (path.endsWith('/inventory/warehouses')) return route.fulfill({ json: {
-        items: [{ id: 'focus-warehouse', code: 'WH-FOCUS', name: '焦点回归仓库', type: '原材料仓',
-          organization: '回归组织', manager: '回归负责人', address: '回归地址', capacity: '100',
-          usedCapacity: '0', status: 'active', version: 3, updatedAt: '2026-10-17T00:00:00Z' }], total: 1,
-      } });
+      if (path.endsWith('/inventory/warehouses')) {
+        if (inventoryReadGate) {
+          inventoryReadStarted();
+          await inventoryReadGate;
+        }
+        if (inventoryReadError) return route.fulfill({ status: 503, json: { error: { message: 'FOCUS_REFRESH_UNAVAILABLE' } } });
+        return route.fulfill({ json: {
+          items: [{ id: 'focus-warehouse', code: 'WH-FOCUS', name: '焦点回归仓库', type: '原材料仓',
+            organization: '回归组织', manager: '回归负责人', address: '回归地址', capacity: '100',
+            usedCapacity: '0', status: 'active', version: 3, updatedAt: '2026-10-17T00:00:00Z' }], total: 1,
+        } });
+      }
       if (path.endsWith('/platform/snapshot')) return route.fulfill({ json: {
         tenant: { id: 'TENANT-SHWS', name: '焦点回归租户', status: 'running' },
         roles: [], permissions: [], roleGrants: [], orgUnits: [], resources: [], employees: [], accounts: [],
@@ -128,6 +139,63 @@ try {
       await typeContinuously(dialog.getByLabel('基本单位', { exact: true }), 'PCS');
       await typeContinuously(dialog.getByLabel('安全库存', { exact: true }), '123');
     }
+    if (!live) {
+      const draftName = await name.inputValue();
+      await name.focus();
+      const original = await name.elementHandle();
+      try {
+        const started = new Promise(resolve => { inventoryReadStarted = resolve; });
+        inventoryReadGate = new Promise(resolve => { releaseInventoryRead = resolve; });
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await started;
+        assert(await original.evaluate(node => node.isConnected && document.activeElement === node),
+          `${entity}: window-focus refresh must not unmount the draft or steal focus`);
+        assert(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled());
+        await page.keyboard.insertText('刷新中');
+        assert.equal(await name.inputValue(), `${draftName}刷新中`);
+        inventoryReadError = true;
+        inventoryReadGate = null;
+        releaseInventoryRead();
+        await dialog.getByRole('alert').filter({ hasText: 'FOCUS_REFRESH_UNAVAILABLE' }).waitFor();
+        assert(await original.evaluate(node => node.isConnected && document.activeElement === node));
+        assert(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled());
+        await page.keyboard.insertText('失败后');
+        inventoryReadError = false;
+        await dialog.getByRole('button', { name: '重新加载', exact: true }).click();
+        await dialog.getByRole('button', { name: '保存', exact: true }).waitFor({ state: 'visible' });
+        await page.waitForFunction(() => {
+          const dialog = document.querySelector('[role="dialog"]');
+          return Array.from(dialog?.querySelectorAll('button') || []).some(button => button.textContent === '保存' && !button.disabled);
+        });
+        assert(await original.evaluate(node => node.isConnected));
+        assert.equal(await name.inputValue(), `${draftName}刷新中失败后`);
+        await name.focus();
+        await page.keyboard.insertText('恢复后');
+        assert(await original.evaluate(node => node.isConnected && document.activeElement === node));
+      } finally {
+        inventoryReadGate = null;
+        releaseInventoryRead?.();
+        await original.dispose();
+      }
+      console.log(`PASS controlled ${entity}: draft and input survive background refresh, read failure and retry`);
+    } else {
+      const draftName = await name.inputValue();
+      await name.focus();
+      const original = await name.elementHandle();
+      try {
+        await Promise.all([
+          page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/inventory/warehouses')),
+          page.evaluate(() => window.dispatchEvent(new Event('focus'))),
+        ]);
+        await page.waitForFunction(() => {
+          const dialog = document.querySelector('[role="dialog"]');
+          return Array.from(dialog?.querySelectorAll('button') || []).some(button => button.textContent === '保存' && !button.disabled);
+        });
+        assert(await original.evaluate(node => node.isConnected && document.activeElement === node));
+        assert.equal(await name.inputValue(), draftName);
+      } finally { await original.dispose(); }
+      console.log(`PASS live ${entity}: real window-focus refresh preserves the draft and original input`);
+    }
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
     console.log(`PASS ${live ? 'live' : 'controlled'} ${entity}: continuous input, stable nodes/focus and canceled draft`);
   }
@@ -139,6 +207,23 @@ try {
     await typeContinuously(dialog.getByLabel('仓库名称', { exact: true }), '编辑仓库连续输入');
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
     console.log('PASS controlled warehouse edit: locked code, continuous input, failed save preserves draft');
+    await page.getByRole('button', { name: '进入仓库', exact: true }).click();
+    await page.getByRole('button', { name: '编辑仓库', exact: true }).click();
+    await typeContinuously(dialog.getByLabel('仓库名称', { exact: true }), '详情编辑草稿');
+    const original = await dialog.getByLabel('仓库名称', { exact: true }).elementHandle();
+    try {
+      inventoryReadError = true;
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await dialog.getByRole('alert').filter({ hasText: 'FOCUS_REFRESH_UNAVAILABLE' }).waitFor();
+      assert(await original.evaluate(node => node.isConnected && document.activeElement === node));
+      inventoryReadError = false;
+      await dialog.getByRole('button', { name: '重新加载', exact: true }).click();
+      await page.getByRole('button', { name: '返回仓库列表', exact: true }).waitFor();
+      assert(await original.evaluate(node => node.isConnected));
+      assert.equal(await dialog.getByLabel('仓库名称', { exact: true }).inputValue(), '详情编辑草稿');
+      await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    } finally { await original.dispose(); }
+    console.log('PASS controlled warehouse detail: editor survives missing refreshed data and detail/list branch changes');
   } else assert.equal(writes.length, 0, 'Live focus verification must not modify business data');
   assert.deepEqual(errors, []);
 } finally {

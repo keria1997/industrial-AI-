@@ -128,9 +128,12 @@ const MasterEditorSelect = ({ label, name, draft, readOnly, onChange, options, l
   </label>
 );
 
-const MasterEditor = ({ state, data, onClose, onSave }: {
+const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, onClose, onSave }: {
   state: EditorState;
   data: InventoryMasterData;
+  sourceReady: boolean;
+  sourceError?: string;
+  onRefreshSource?: () => void;
   onClose: () => void;
   onSave: (draft: Record<string, string | number>) => Promise<void>;
 }) => {
@@ -162,7 +165,7 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
   };
 
   const submit = async () => {
-    if (saving) return;
+    if (saving || !sourceReady) return;
     const nextError = validate();
     if (nextError) {
       setError(nextError);
@@ -212,11 +215,15 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
               : <MasterEditorSelect {...controlProps} label="采购策略" name="procurementType" locked options={['外购', '自制', '委外']} />}
             <MasterEditorSelect {...controlProps} label="状态" name="status" locked={state.mode === 'create'} options={['启用', '停用']} />
           </>}
+          {!sourceReady && <div className="sm:col-span-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800" role={sourceError ? 'alert' : 'status'}>
+            {sourceError ? `${sourceError}。草稿已保留，重新加载成功后可保存。` : '正在刷新库存资料，草稿已保留，可继续填写，刷新完成后可保存。'}
+            {sourceError && onRefreshSource && <button type="button" onClick={onRefreshSource} className="ml-3 font-bold text-blue-700">重新加载</button>}
+          </div>}
           {error && <div className="sm:col-span-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-medium text-rose-700" role="alert">{error}</div>}
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
           <button type="button" onClick={onClose} className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[13px] font-bold text-slate-700 hover:bg-slate-100">{readOnly ? '关闭' : '取消'}</button>
-          {!readOnly && <button type="button" disabled={saving} onClick={submit} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[13px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check size={15} />{saving ? '保存中' : '保存'}</button>}
+          {!readOnly && <button type="button" disabled={saving || !sourceReady} onClick={submit} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[13px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"><Check size={15} />{saving ? '保存中' : '保存'}</button>}
         </div>
       </div>
     </div>
@@ -421,18 +428,21 @@ export const InventoryMasterDataPanel = ({
 
   const openEditor = (entity: MasterEntity, mode: EditorMode, record?: InventoryWarehouse | InventoryProduct | InventoryMaterial) => setEditor({ entity, mode, record: (record ? { ...record } : newRecord(entity)) as Record<string, string | number> });
   const currentEntity: MasterEntity = activeTab === 'warehouses' ? 'warehouse' : activeTab === 'products' ? 'product' : 'material';
+  // Keep the editor at the same tree position across loading, error and detail/list branches.
+  const editorPanel = editor && <MasterEditor state={editor} data={data} sourceReady={stockReady}
+    sourceError={stockStatus === 'error' ? stockError || '库存加载失败，请重试' : undefined}
+    onRefreshSource={onRefreshStock} onClose={() => setEditor(null)} onSave={saveRecord} />;
 
-  if (!stockReady) return <div role={stockStatus === 'error' ? 'alert' : 'status'} className="border-y border-slate-200 bg-white px-6 py-10 text-center text-[13px] text-slate-600">
+  if (!stockReady) return <>{editorPanel}<div role={stockStatus === 'error' ? 'alert' : 'status'} className="border-y border-slate-200 bg-white px-6 py-10 text-center text-[13px] text-slate-600">
     {stockStatus === 'error' ? stockError || '库存加载失败，请重试' : '正在加载仓库库存…'}
     {stockStatus === 'error' && <button type="button" onClick={onRefreshStock} className="ml-3 font-bold text-blue-700">重新加载</button>}
-  </div>;
+  </div></>;
 
   if (selectedWarehouse) {
     const usedRate = selectedWarehouse.capacity > 0 ? Math.min(100, Math.round((selectedWarehouse.usedCapacity / selectedWarehouse.capacity) * 100)) : 0;
     const productCount = warehouseRows.filter((item) => item.kind === '产品').length;
     const materialCount = warehouseRows.filter((item) => item.kind === '物料').length;
-    return <div className="animate-in fade-in duration-200">
-      {editor && <MasterEditor state={editor} data={data} onClose={() => setEditor(null)} onSave={saveRecord} />}
+    return <>{editorPanel}<div className="animate-in fade-in duration-200">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={() => onSelectWarehouse('')} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50"><ArrowLeft size={15} />返回仓库列表</button>
         <button type="button" onClick={() => openEditor('warehouse', 'edit', selectedWarehouse)} className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-[13px] font-bold text-blue-700 hover:bg-blue-100"><Edit2 size={15} />编辑仓库</button>
@@ -514,7 +524,7 @@ export const InventoryMasterDataPanel = ({
           </table>
         </div>
       </section>
-    </div>;
+    </div></>;
   }
 
   const titles = activeTab === 'warehouses'
@@ -524,8 +534,7 @@ export const InventoryMasterDataPanel = ({
       : { title: '物料资料', subtitle: `${data.materials.length} 项物料`, icon: Box };
   const TitleIcon = titles.icon;
 
-  return <section className="animate-in overflow-hidden rounded-lg border border-slate-200 bg-white fade-in duration-200">
-    {editor && <MasterEditor state={editor} data={data} onClose={() => setEditor(null)} onSave={saveRecord} />}
+  return <>{editorPanel}<section className="animate-in overflow-hidden rounded-lg border border-slate-200 bg-white fade-in duration-200">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
       <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-blue-700"><TitleIcon size={17} /></div><div><h2 className="text-[15px] font-bold text-slate-900">{titles.title}</h2><p className="mt-0.5 text-[11px] text-slate-500">{titles.subtitle}</p></div></div>
       <div className="flex flex-wrap items-center gap-2"><label className="relative"><Search className="absolute left-3 top-2.5 text-slate-400" size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索编码、名称或规格" className="h-9 w-56 rounded-md border border-slate-200 bg-white pl-9 pr-3 text-[12px] outline-none focus:border-blue-500" /></label><select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 outline-none focus:border-blue-500"><option>全部</option><option>启用</option><option>停用</option></select><button type="button" onClick={() => openEditor(currentEntity, 'create')} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-bold text-white hover:bg-blue-700"><Plus size={15} />新建{entityLabels[currentEntity]}</button></div>
@@ -639,5 +648,5 @@ export const InventoryMasterDataPanel = ({
         </table>
       )}
     </div>
-  </section>;
+  </section></>;
 };
