@@ -40,12 +40,26 @@ public class FulfillmentStore {
     Map<String, JsonNode> receipts = new LinkedHashMap<>();
     Map<String, JsonNode> quotes = new LinkedHashMap<>();
     Map<String, JsonNode> customers = new LinkedHashMap<>();
+    Map<String, JsonNode> outreachSettings = new LinkedHashMap<>();
     List<JsonNode> audits = new ArrayList<>();
 
     public Map<String, JsonNode> rmas(String tenantId) { return filterByTenant(rmas, tenantId); }
     public Map<String, JsonNode> receipts(String tenantId) { return filterByTenant(receipts, tenantId); }
     public Map<String, JsonNode> quotes(String tenantId) { return filterByTenant(quotes, tenantId); }
     public Map<String, JsonNode> customers(String tenantId) { return filterByTenant(customers, tenantId); }
+    public Map<String, JsonNode> outreachSettings(String tenantId) { return filterByTenant(outreachSettings, tenantId); }
+
+    public synchronized void saveRma(JsonNode value) {
+        rmas.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
+    }
+
+    public synchronized void saveReceipt(JsonNode value) {
+        receipts.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
+    }
+
+    public synchronized void saveQuote(JsonNode value) {
+        quotes.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
+    }
 
     private Map<String, JsonNode> filterByTenant(Map<String, JsonNode> source, String tenantId) {
         Map<String, JsonNode> result = new LinkedHashMap<>();
@@ -63,7 +77,7 @@ public class FulfillmentStore {
         List<Map<String, JsonNode>> maps = List.of(orders, shipmentRequests, shipmentTasks, availability,
                 reservations, outbounds, transactions, purchaseRequests, purchaseOrders, purchaseReceipts,
                 suppliers, purchaseReturns, warehouses, products, materials, transferOrders, stocktakeTasks,
-                inbox, outbox, idempotency, wmsResults);
+                inbox, outbox, idempotency, wmsResults, rmas, receipts, quotes, customers);
         List<Map<String, JsonNode>> before = maps.stream().map(source -> {
             Map<String, JsonNode> values = new LinkedHashMap<>();
             source.forEach((key, value) -> values.put(key, copy(value)));
