@@ -1,0 +1,481 @@
+openapi: 3.0.3
+info:
+  title: Industrial AI ERP Backend PRD API v1
+  version: '1.0.0'
+  description: |
+    Canonical backend contract for the PRD sales aftercare and monitoring commands.
+    The API runs behind the business backend. AI services are never called by browsers.
+    All command requests require Bearer authentication, X-Tenant-Id and X-Idempotency-Key.
+    Optimistic concurrency uses If-Match or body.version. Amounts and quantities are decimal strings.
+    Historical facts are never rewritten to make a command pass.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: RMA
+  - name: Customer Receipt
+  - name: Sales Completion
+  - name: Sales Monitoring
+  - name: Sales SLA
+paths:
+  /rmas:
+    post:
+      tags: [RMA]
+      summary: Create a source-line RMA
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RmaCreateRequest' }
+      responses:
+        '200': { description: Created or idempotently replayed RMA; content contains Rma }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessError' }
+  /rmas/{id}/transition:
+    post:
+      tags: [RMA]
+      summary: Execute one PRD RMA state transition
+      description: |
+        Actions: APPROVE, TRANSIT_UPDATE, RECEIVE, START_INSPECTION, INSPECT,
+        RESTOCK, CREDIT_NOTE, CLOSE. CREDIT_NOTE creates a finance-domain credit
+        Receivable and stores creditNoteFinanceId on the RMA; it does not change RMA status.
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer }, description: Current RMA version }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RmaTransitionRequest' }
+      responses:
+        '200': { description: Transitioned or idempotently replayed RMA }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Invalid state, version conflict, idempotency conflict or close condition not met
+        '422': { $ref: '#/components/responses/BusinessError' }
+  /fulfillment/rmas:
+    get:
+      tags: [RMA]
+      summary: List persisted RMA read models
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Authorized tenant page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, page, pageSize]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Rma' } }
+                  total: { type: integer, minimum: 0 }
+                  page: { type: integer, minimum: 1 }
+                  pageSize: { type: integer, minimum: 1 }
+  /sales-orders/{orderId}/receipts:
+    post:
+      tags: [Customer Receipt]
+      summary: Create the customer receipt aggregate for a fully shipped sales order
+      description: |
+        Shipped quantity is read from the server-side outbound/shipment fact. The request cannot
+        supply totalShippedQty. receiptStatus is canonical; status is returned only as a read alias.
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReceiptCreateRequest' }
+      responses:
+        '200': { description: Created or idempotently replayed receipt }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessError' }
+  /fulfillment/customer-receipts:
+    get:
+      tags: [Customer Receipt]
+      summary: List persisted customer receipt read models
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Authorized tenant page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, page, pageSize]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/CustomerReceipt' } }
+                  total: { type: integer, minimum: 0 }
+                  page: { type: integer, minimum: 1 }
+                  pageSize: { type: integer, minimum: 1 }
+  /sales-orders/{orderId}/complete-check:
+    post:
+      tags: [Sales Completion]
+      summary: Check sales completion preconditions
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Check result; canComplete may be false with missingConditions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompletionCheck' }
+  /sales-orders/{orderId}/complete:
+    post:
+      tags: [Sales Completion]
+      summary: Complete a sales order after all PRD preconditions pass
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: { type: integer, minimum: 1 }
+                comment: { type: string }
+      responses:
+        '200': { description: Sales order is COMPLETED and carries an immutable closureFactId }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Version conflict or missing completion condition }
+  /sales/ai-insights:
+    get:
+      tags: [Sales Monitoring]
+      summary: Read sales monitoring facts and delivery risks
+      description: |
+        Monthly facts and all open-order delivery risks are separate datasets.
+        Risk covers PENDING_CONFIRMATION, CONFIRMED, REPLENISHING and PARTIALLY_SHIPPED orders.
+        Missing facts set metricCompleteness=INCOMPLETE; unavailable source facts return UNAVAILABLE/null.
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+      responses:
+        '200':
+          description: Monitoring projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalesInsights' }
+  /sales/sla-rules:
+    get:
+      tags: [Sales SLA]
+      summary: List SLA rules
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+      responses:
+        '200':
+          description: Authorized rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SlaRule' }
+    post:
+      tags: [Sales SLA]
+      summary: Create an SLA rule
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlaRuleRequest' }
+      responses:
+        '200': { description: Created or replayed rule }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/BusinessError' }
+  /sales/sla-rules/{id}:
+    patch:
+      tags: [Sales SLA]
+      summary: Update an SLA rule with optimistic concurrency
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlaRuleRequest' }
+      responses:
+        '200': { description: Updated or replayed rule }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /sales/sla-notifications:
+    get:
+      tags: [Sales SLA]
+      summary: List persisted SLA breach notifications
+      parameters:
+        - $ref: '#/components/parameters/Tenant'
+      responses:
+        '200':
+          description: Idempotent notification facts generated by the hourly scanner
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SlaNotification' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Tenant:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: false
+      schema: { type: string }
+    Page: { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 200 } }
+  responses:
+    Unauthorized:
+      description: Missing, expired or revoked session
+    Forbidden:
+      description: Resource permission, tenant scope or row scope denied
+    Conflict:
+      description: State, version or idempotency conflict
+    BusinessError:
+      description: Business validation failed; no aggregate was advanced
+  schemas:
+    RmaCreateRequest:
+      type: object
+      required: [orderId, outboundId, outboundLineId, requestedQty, reason, evidence]
+      properties:
+        orderId: { type: string }
+        outboundId: { type: string }
+        outboundLineId: { type: string }
+        requestedQty: { type: string, pattern: '^(0|[1-9]\d*)(\.\d+)?$', description: Positive decimal }
+        reason: { type: string }
+        evidence:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/Evidence' }
+        sourceOutboundVersion: { type: integer, minimum: 1 }
+    RmaTransitionRequest:
+      type: object
+      required: [transition, toStatus]
+      properties:
+        transition:
+          type: string
+          enum: [APPROVE, TRANSIT_UPDATE, RECEIVE, START_INSPECTION, INSPECT, RESTOCK, CREDIT_NOTE, CLOSE]
+        toStatus:
+          type: string
+          enum: [REQUESTED, APPROVED, REJECTED, IN_TRANSIT, RECEIVED, INSPECTING, INSPECTION_COMPLETED, RESTOCKED, CLOSED]
+        decision: { type: string, enum: [APPROVE, REJECT] }
+        comment: { type: string }
+        approvedQty: { type: string }
+        expectedCreditAmount: { type: string }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        carrier: { type: string }
+        trackingNo: { type: string }
+        shippedAt: { type: string, format: date-time }
+        receivedQty: { type: string }
+        warehouseId: { type: string }
+        batchNo: { type: string }
+        serialNo: { type: string }
+        qualifiedQty: { type: string }
+        reworkQty: { type: string }
+        scrapQty: { type: string }
+        scrapReason: { type: string }
+        result: { type: string }
+        restockedQty: { type: string }
+        location: { type: string }
+        inventoryIdempotencyKey: { type: string }
+        taxBasis: { type: string }
+        reason: { type: string }
+        lines: { type: array, items: { type: object, additionalProperties: true } }
+        closureCheckId: { type: string }
+        version: { type: integer, minimum: 1 }
+    Rma:
+      type: object
+      required: [id, tenantId, orderId, outboundId, outboundLineId, requestedQty, status, version]
+      properties:
+        id: { type: string }
+        rmaNo: { type: string }
+        tenantId: { type: string }
+        orderId: { type: string }
+        orderNo: { type: string }
+        outboundId: { type: string }
+        outboundLineId: { type: string }
+        productId: { type: string }
+        productName: { type: string }
+        requestedQty: { type: string }
+        approvedQty: { type: string, nullable: true }
+        receivedQty: { type: string, nullable: true }
+        qualifiedQty: { type: string, nullable: true }
+        reworkQty: { type: string, nullable: true }
+        scrapQty: { type: string, nullable: true }
+        status: { type: string, enum: [REQUESTED, APPROVED, REJECTED, IN_TRANSIT, RECEIVED, INSPECTING, INSPECTION_COMPLETED, RESTOCKED, CLOSED] }
+        reason: { type: string }
+        evidence: { type: array, items: { $ref: '#/components/schemas/Evidence' } }
+        transitionHistory: { type: array, items: { type: object, additionalProperties: true } }
+        creditNoteFinanceId: { type: string, nullable: true }
+        creditNoteAmount: { type: string, nullable: true }
+        currency: { type: string, nullable: true }
+        sourceOutboundVersion: { type: integer }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer }
+    ReceiptCreateRequest:
+      type: object
+      required: [signedBy, signedAt, lines]
+      properties:
+        signedBy: { type: string }
+        signedAt: { type: string, format: date-time }
+        evidence: { type: array, items: { $ref: '#/components/schemas/Evidence' } }
+        remark: { type: string }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [orderLineId, outboundId, outboundLineId, signedQty, rejectedQty, damagedQty]
+            properties:
+              orderLineId: { type: string }
+              outboundId: { type: string }
+              outboundLineId: { type: string }
+              signedQty: { type: string }
+              rejectedQty: { type: string }
+              damagedQty: { type: string }
+              remark: { type: string }
+    CustomerReceipt:
+      type: object
+      required: [id, tenantId, orderId, receiptStatus, lines, version]
+      properties:
+        id: { type: string }
+        receiptNo: { type: string }
+        tenantId: { type: string }
+        orderId: { type: string }
+        orderNo: { type: string }
+        customerName: { type: string }
+        receiptStatus: { type: string, enum: [PENDING, PARTIALLY_SIGNED, SIGNED, REJECTED, DISPUTED] }
+        status: { type: string, description: Read-only compatibility alias of receiptStatus }
+        lines: { type: array, items: { type: object, additionalProperties: true } }
+        evidence: { type: array, items: { $ref: '#/components/schemas/Evidence' } }
+        sourceOutboundVersion: { type: string }
+        sourceFactVersion: { type: string }
+        version: { type: integer }
+    CompletionCheck:
+      type: object
+      required: [orderId, canComplete, missingConditions, checkedAt]
+      properties:
+        orderId: { type: string }
+        canComplete: { type: boolean }
+        missingConditions: { type: array, items: { type: string } }
+        checkedAt: { type: string, format: date-time }
+    SalesInsights:
+      type: object
+      required: [availability, businessDate, timeZone, dataAsOf, sourceVersion, monthlyOrderCount, totalSalesAmount, stalledCount, deliveryRiskCount, stalledOrders, deliveryRiskOrders, metricCompleteness]
+      properties:
+        availability: { type: string, enum: [AVAILABLE, EMPTY, UNAVAILABLE] }
+        businessDate: { type: string, format: date }
+        timeZone: { type: string }
+        currency: { type: string, nullable: true }
+        dataAsOf: { type: string, format: date-time, nullable: true }
+        sourceVersion: { type: string, nullable: true }
+        monthlyOrderCount: { type: integer, nullable: true }
+        totalSalesAmount: { type: string, nullable: true }
+        stalledCount: { type: integer, nullable: true }
+        deliveryRiskCount: { type: integer, nullable: true }
+        stalledOrders: { type: array, items: { type: object, additionalProperties: true } }
+        deliveryRiskOrders: { type: array, items: { $ref: '#/components/schemas/DeliveryRiskOrder' } }
+        metricCompleteness: { type: string, enum: [COMPLETE, INCOMPLETE] }
+        incompleteFactCount: { type: integer, minimum: 0 }
+        generatedAt: { type: string, format: date-time }
+    DeliveryRiskOrder:
+      type: object
+      required: [orderId, orderNo, deliveryDate, overallStatus, severity, overdueDays]
+      properties:
+        orderId: { type: string, description: Stable ID used for navigation }
+        orderNo: { type: string, description: Display number only }
+        customerName: { type: string }
+        deliveryDate: { type: string, format: date }
+        overallStatus: { type: string }
+        severity: { type: string, enum: [MEDIUM, HIGH, CRITICAL] }
+        overdueDays: { type: integer, minimum: 0 }
+    SlaRuleRequest:
+      type: object
+      required: [listenStatus, timeoutThresholdHours, notifyTarget, channel, escalationThresholdHours]
+      properties:
+        listenStatus: { type: string }
+        timeoutThresholdHours: { type: integer, minimum: 1 }
+        notifyTarget: { type: string }
+        channel: { type: string }
+        escalationThresholdHours: { type: integer, minimum: 0 }
+        enabled: { type: boolean, default: true }
+        version: { type: integer, description: Required for PATCH }
+    SlaRule:
+      type: object
+      required: [id, tenantId, listenStatus, timeoutThresholdHours, notifyTarget, channel, escalationThresholdHours, enabled, version]
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        listenStatus: { type: string }
+        timeoutThresholdHours: { type: integer }
+        notifyTarget: { type: string }
+        channel: { type: string }
+        escalationThresholdHours: { type: integer }
+        enabled: { type: boolean }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SlaNotification:
+      type: object
+      required: [id, tenantId, ruleId, orderId, orderVersion, channel, status, createdAt]
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        ruleId: { type: string }
+        orderId: { type: string }
+        orderNo: { type: string }
+        orderVersion: { type: integer }
+        channel: { type: string }
+        notifyTarget: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        detectedAt: { type: string, format: date-time }
+    Evidence:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string }
+        name: { type: string }
+        type: { type: string }

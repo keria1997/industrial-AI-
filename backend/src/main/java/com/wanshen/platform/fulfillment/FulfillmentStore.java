@@ -41,6 +41,8 @@ public class FulfillmentStore {
     Map<String, JsonNode> quotes = new LinkedHashMap<>();
     Map<String, JsonNode> customers = new LinkedHashMap<>();
     Map<String, JsonNode> outreachSettings = new LinkedHashMap<>();
+    Map<String, JsonNode> slaRules = new LinkedHashMap<>();
+    Map<String, JsonNode> slaNotifications = new LinkedHashMap<>();
     List<JsonNode> audits = new ArrayList<>();
 
     public Map<String, JsonNode> rmas(String tenantId) { return filterByTenant(rmas, tenantId); }
@@ -48,6 +50,8 @@ public class FulfillmentStore {
     public Map<String, JsonNode> quotes(String tenantId) { return filterByTenant(quotes, tenantId); }
     public Map<String, JsonNode> customers(String tenantId) { return filterByTenant(customers, tenantId); }
     public Map<String, JsonNode> outreachSettings(String tenantId) { return filterByTenant(outreachSettings, tenantId); }
+    public Map<String, JsonNode> slaRules(String tenantId) { return filterByTenant(slaRules, tenantId); }
+    public Map<String, JsonNode> slaNotifications(String tenantId) { return filterByTenant(slaNotifications, tenantId); }
 
     public synchronized void saveRma(JsonNode value) {
         rmas.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
@@ -59,6 +63,21 @@ public class FulfillmentStore {
 
     public synchronized void saveQuote(JsonNode value) {
         quotes.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
+    }
+
+    public synchronized void saveSlaRule(JsonNode value) {
+        slaRules.put(key(text(value, "tenantId"), text(value, "id")), value.deepCopy());
+    }
+
+    public synchronized boolean saveSlaNotification(JsonNode value) {
+        String mapKey = key(text(value, "tenantId"), text(value, "id"));
+        if (slaNotifications.containsKey(mapKey)) return false;
+        slaNotifications.put(mapKey, value.deepCopy());
+        return true;
+    }
+
+    public synchronized void publishEvent(String tenantId, String eventId, JsonNode value) {
+        addOutbox(tenantId, eventId, value);
     }
 
     private Map<String, JsonNode> filterByTenant(Map<String, JsonNode> source, String tenantId) {
@@ -77,7 +96,8 @@ public class FulfillmentStore {
         List<Map<String, JsonNode>> maps = List.of(orders, shipmentRequests, shipmentTasks, availability,
                 reservations, outbounds, transactions, purchaseRequests, purchaseOrders, purchaseReceipts,
                 suppliers, purchaseReturns, warehouses, products, materials, transferOrders, stocktakeTasks,
-                inbox, outbox, idempotency, wmsResults, rmas, receipts, quotes, customers);
+                inbox, outbox, idempotency, wmsResults, rmas, receipts, quotes, customers,
+                slaRules, slaNotifications);
         List<Map<String, JsonNode>> before = maps.stream().map(source -> {
             Map<String, JsonNode> values = new LinkedHashMap<>();
             source.forEach((key, value) -> values.put(key, copy(value)));
@@ -173,6 +193,10 @@ public class FulfillmentStore {
                         && text(value, "shipmentRequestId").equals(requestId))
                 .findFirst()
                 .map(FulfillmentStore::copy);
+    }
+
+    public synchronized Optional<JsonNode> shipmentTask(String tenantId, String id) {
+        return Optional.ofNullable(shipmentTasks.get(key(tenantId, id))).map(FulfillmentStore::copy);
     }
 
     public synchronized void saveShipmentTask(JsonNode value) {
@@ -286,6 +310,16 @@ public class FulfillmentStore {
         return transactions.values().stream()
                 .filter(value -> text(value, "tenantId").equals(tenantId))
                 .map(FulfillmentStore::copy)
+                .toList();
+    }
+
+    public synchronized List<String> activeTenantIds() {
+        return java.util.stream.Stream.of(orders, rmas, receipts, slaRules, availability)
+                .flatMap(values -> values.values().stream())
+                .map(value -> text(value, "tenantId"))
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .sorted()
                 .toList();
     }
 

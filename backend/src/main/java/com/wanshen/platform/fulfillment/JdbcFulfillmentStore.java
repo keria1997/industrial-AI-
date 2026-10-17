@@ -37,6 +37,8 @@ public class JdbcFulfillmentStore extends FulfillmentStore implements AutoClosea
         receipts = collections.jsonMap("receipt");
         quotes = collections.jsonMap("quote");
         customers = collections.jsonMap("customer");
+        slaRules = collections.jsonMap("slaRule");
+        slaNotifications = collections.jsonMap("slaNotification");
         audits = collections.jsonList("audit", value -> value.path("id").asText(""));
     }
 

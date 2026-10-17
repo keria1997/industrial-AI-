@@ -57,7 +57,7 @@ class SessionSecurityTests {
                 .content("{\"email\":\"employee@example.test\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.resetToken").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(mailedToken.get()).hasSize(43);
+        assertThat(mailedToken.get()).hasSize(6).matches("\\d{6}");
         String unknown = mvc.perform(post("/api/v1/session/password/forgot").contentType("application/json")
                 .content("{\"email\":\"unknown@example.test\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

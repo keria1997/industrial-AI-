@@ -75,7 +75,9 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         limit(httpRequest, "login", 10);
         validateLogin(request);
-        if (!captchaService.verify(request.captchaId(), request.captchaCode())) throw bad("图形验证码错误或已过期", "刷新验证码后重新输入");
+        if (!captchaService.verify(request.captchaId(), request.captchaCode())) {
+            throw bad("图形验证码错误或已过期", "刷新验证码后重新输入");
+        }
         if (demoAuthEnabled && demoAccounts.contains(request.account()) && demoPassword.equals(request.password())) {
             SessionUser user = developmentUser(request.account());
             return ResponseEntity.ok(response(issue(user, "development-session-v1"), user, null));
@@ -146,12 +148,12 @@ public class AuthController {
         emailCodes.put(email.toLowerCase(java.util.Locale.ROOT),
                 new EmailCode(code, Instant.now().plusSeconds(600)));
         emailCodes.values().removeIf(ec -> ec.expiresAt().isBefore(Instant.now()));
-        log.info("[认证] 忘记密码验证码已生成 | 邮箱: {} | 验证码: {}", email, code);
-        Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("message", "验证码已发送到您的邮箱");
-        result.put("expiresIn", 600);
-        result.put("devCode", code);
-        return result;
+        try {
+            sendResetEmail(email, code);
+        } catch (RuntimeException exception) {
+            log.warn("忘记密码邮件发送失败 | 邮箱: {}", email, exception);
+        }
+        return Map.of("message", "如果该邮箱已注册，验证码已发送");
     }
 
     @PostMapping("/api/v1/session/password/reset")

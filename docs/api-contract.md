@@ -5,7 +5,7 @@
 - 前端只请求业务后端，禁止直连 AI 服务
 - 业务后端通过 HTTP 请求 AI 服务
 - 流式输出使用 SSE（Server-Sent Events）
-- 当前 ERP 使用直接 DTO/分页集合与 `{error: ...}` 错误结构；目标新增契约见 `docs/openapi/frontend-remediation.yaml`
+- 当前 ERP 使用直接 DTO/分页集合与 `{error: ...}` 错误结构；销售履约 P0 后端契约见 `docs/openapi/backend-prd-v1.yaml`，前端联调读取契约见 `docs/openapi/frontend-remediation.yaml`
 
 ## 2. 统一响应格式
 
@@ -65,7 +65,26 @@
 
 登录前通过 `POST /api/v1/session/captcha` 获取图形验证码，`GET /api/v1/session/me` 复核会话。业务请求携带 `Authorization: Bearer {accessToken}` 和签名会话内的 `X-Tenant-Id`。上述响应只列出联调必要字段，不作为全部会话字段清单。
 
-现有 ERP 使用 `/api/v1/{sales,inventory,production,procurement,finance,personnel,supply-chain,ai,message,platform}` 各业务 client 的已验证端点。RMA、客户签收、报价等新 Controller 仍有持久化和鉴权阻断，不能仅因路径存在便认定可上线，详见 `docs/前后端真实联调报告-2026-10-17.md`。
+现有 ERP 使用 `/api/v1/{sales,inventory,production,procurement,finance,personnel,supply-chain,ai,message,platform}` 各业务 client 的已验证端点。
+
+### 4.1.1 PRD 销售履约命令契约（2026-10-17 冻结）
+
+`docs/openapi/backend-prd-v1.yaml` 是以下后端命令的唯一正式契约：
+
+| 方法 | 路径 | 用途 | 关键要求 |
+| --- | --- | --- | --- |
+| POST | `/api/v1/rmas` | 创建来源行级 RMA | 原出库行、可退余量、证据、幂等键；创建时 `approvedQty=null` |
+| POST | `/api/v1/rmas/{id}/transition` | 统一执行 RMA 状态机 | `If-Match`、动作/目标状态一致、数量守恒；支持审批、物流、收货、检验、回入库、红字 AR、关闭 |
+| GET | `/api/v1/fulfillment/rmas` | 查询 RMA 只读投影 | 租户和 `sales.order.read` 隔离 |
+| POST | `/api/v1/sales-orders/{orderId}/receipts` | 创建客户签收聚合 | 只信任服务端出库数量；正式字段为 `receiptStatus` |
+| GET | `/api/v1/fulfillment/customer-receipts` | 查询签收只读投影 | 租户和 `sales.receipt.read` 隔离 |
+| POST | `/api/v1/sales-orders/{orderId}/complete-check` | 完成前置检查 | 返回 `canComplete` 和 `missingConditions` |
+| POST | `/api/v1/sales-orders/{orderId}/complete` | 销售完成关闭 | 全部发货、签收完成、AR 结算、无未关闭 RMA/争议 |
+| GET | `/api/v1/sales/ai-insights` | 销售监控事实 | 区分月度统计与全量交期风险；携带可用性、时区、来源版本 |
+| GET/POST/PATCH | `/api/v1/sales/sla-rules` | 查询/维护 SLA 规则 | 持久化、版本、幂等、审计 |
+| GET | `/api/v1/sales/sla-notifications` | 查询 SLA 违约通知 | 小时扫描生成的幂等事实 |
+
+已废弃写路径 `POST /api/v1/fulfillment/rmas`、`PATCH /api/v1/fulfillment/rmas/{id}/approve|inspect|close`、`POST /api/v1/fulfillment/customer-receipts` 和 `GET/PUT /api/v1/platform/outreach-settings` 返回 `410 SALES_410_LEGACY_COMMAND_RETIRED`。读取路径继续可用。前端必须迁移后再调用正式完成关闭。
 
 下面4.2至第5节保留为早期聊天/SSE目标设计，未在本轮验证为当前 ERP 可用路由。当前页面聊天使用既有 `POST /api/v1/ai/chat`；不能将下面的 `/chat/*` 直接当作已部署接口，也不能将普通JSON回复宣称为SSE全链路验收通过。
 

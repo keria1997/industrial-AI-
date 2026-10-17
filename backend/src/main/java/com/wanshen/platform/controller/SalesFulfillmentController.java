@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wanshen.platform.fulfillment.FulfillmentStore;
+import com.wanshen.platform.fulfillment.SalesAftercareService;
 import com.wanshen.platform.web.ApiException;
 import com.wanshen.platform.web.RequestContextService;
 import com.wanshen.platform.web.RequestContextService.RequestContext;
@@ -32,11 +33,18 @@ public class SalesFulfillmentController {
     private final FulfillmentStore store;
     private final ObjectMapper mapper;
     private final RequestContextService contexts;
+    private final SalesAftercareService aftercare;
 
-    public SalesFulfillmentController(FulfillmentStore store, ObjectMapper mapper, RequestContextService contexts) {
+    public SalesFulfillmentController(
+            FulfillmentStore store,
+            SalesAftercareService aftercare,
+            ObjectMapper mapper,
+            RequestContextService contexts
+    ) {
         this.store = store;
         this.mapper = mapper;
         this.contexts = contexts;
+        this.aftercare = aftercare;
     }
 
     private RequestContext auth(HttpServletRequest request) {
@@ -200,143 +208,45 @@ public class SalesFulfillmentController {
         return paged(store.rmas(ctx.tenantId()).values(), page, pageSize);
     }
 
-    // ===== B-02: 创建 RMA =====
-    @PostMapping("/api/v1/fulfillment/rmas")
+    // ===== PRD RMA 命令：创建和统一 transition =====
+    @PostMapping("/api/v1/rmas")
     public Map<String, Object> createRma(@RequestBody Map<String, Object> body, HttpServletRequest request) {
-        RequestContext ctx = auth(request);
-        require(ctx, "sales.rma.create");
-        String idempotencyKey = requireIdempotencyKey(ctx, "RMA_CREATE");
-        return store.transaction(ctx.tenantId(), ignored -> {
-            Optional<Map<String, Object>> replay = replayCommand(ctx, "RMA_CREATE", idempotencyKey, body);
-            if (replay.isPresent()) return replay.get();
-            rejectCommandKeyConflict(ctx, "RMA_CREATE", idempotencyKey, body);
-            String orderId = requiredText(body, "orderId");
-            if (store.order(ctx.tenantId(), orderId).isEmpty()) {
-                throw new ApiException(422, "SALES_422_ORDER_NOT_FOUND",
-                        "销售订单不存在: " + orderId, "检查 orderId 后重试");
-            }
-            String id = UUID.randomUUID().toString();
-            ObjectNode value = mapper.valueToTree(body).deepCopy();
-            BigDecimal requestedQty = positiveDecimal(body, "requestedQty");
-            value.put("id", id);
-            value.put("rmaNo", nextDocumentNo("RMA"));
-            value.put("status", "REQUESTED");
-            value.put("tenantId", ctx.tenantId());
-            value.put("requestedQty", requestedQty.toPlainString());
-            value.put("approvedQty", BigDecimal.ZERO.toPlainString());
-            value.put("version", 1);
-            value.put("createdBy", ctx.actorId());
-            value.put("createdAt", Instant.now().toString());
-            value.put("updatedAt", Instant.now().toString());
-            store.saveRma(value);
-            saveCommandIdempotency(ctx, "RMA_CREATE", idempotencyKey, body, value);
-            return mapper.convertValue(value, new TypeReference<Map<String, Object>>() { });
-        });
+        return aftercare.createRma(auth(request), body);
     }
 
-    // ===== B-03: 审批 RMA =====
+    @PostMapping("/api/v1/rmas/{id}/transition")
+    public Map<String, Object> transitionRma(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        return aftercare.transitionRma(auth(request), id, body);
+    }
+
+    // Retired compatibility endpoint. The PRD requires the source-line RMA transition contract.
+    @PostMapping("/api/v1/fulfillment/rmas")
+    public Map<String, Object> createLegacyRma(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        throw legacyCommandRetired("/api/v1/rmas");
+    }
+
+    @Deprecated
     @PatchMapping("/api/v1/fulfillment/rmas/{id}/approve")
     public Map<String, Object> approveRma(@PathVariable String id,
             @RequestBody(required = false) Map<String, Object> body, HttpServletRequest request) {
-        RequestContext ctx = auth(request);
-        require(ctx, "sales.rma.approve");
-        Map<String, Object> command = body == null ? Map.of() : body;
-        String idempotencyKey = requireIdempotencyKey(ctx, "RMA_APPROVE");
-        return store.transaction(ctx.tenantId(), ignored -> {
-            Optional<Map<String, Object>> replay = replayCommand(ctx, "RMA_APPROVE", idempotencyKey, command);
-            if (replay.isPresent()) return replay.get();
-            rejectCommandKeyConflict(ctx, "RMA_APPROVE", idempotencyKey, command);
-            JsonNode current = store.get(ctx.tenantId(), id, store.rmas(ctx.tenantId()))
-                    .orElseThrow(() -> rmaNotFound(id));
-            requireVersion(ctx, command, current);
-            if (!"REQUESTED".equals(text(current, "status"))) {
-                throw new ApiException(409, "SALES_409_RMA_STATE", "RMA当前状态不允许审批",
-                        "只有 REQUESTED 状态可以审批");
-            }
-            BigDecimal approvedQty = positiveDecimal(command, "approvedQty");
-            if (approvedQty.compareTo(decimal(current, "requestedQty")) > 0) {
-                throw new ApiException(422, "SALES_422_RMA_QTY", "审批数量不能超过申请数量", "检查 approvedQty");
-            }
-            ObjectNode updated = current.deepCopy();
-            updated.put("status", "APPROVED").put("approvedQty", approvedQty.toPlainString());
-            touch(updated, ctx.actorId());
-            store.saveRma(updated);
-            saveCommandIdempotency(ctx, "RMA_APPROVE", idempotencyKey, command, updated);
-            return toMap(updated);
-        });
+        throw legacyCommandRetired("/api/v1/rmas/" + id + "/transition");
     }
 
-    // ===== B-04: RMA 检验 =====
+    @Deprecated
     @PatchMapping("/api/v1/fulfillment/rmas/{id}/inspect")
     public Map<String, Object> inspectRma(@PathVariable String id,
             @RequestBody(required = false) Map<String, Object> body, HttpServletRequest request) {
-        RequestContext ctx = auth(request);
-        require(ctx, "sales.rma.inspect");
-        Map<String, Object> command = body == null ? Map.of() : body;
-        String idempotencyKey = requireIdempotencyKey(ctx, "RMA_INSPECT");
-        return store.transaction(ctx.tenantId(), ignored -> {
-            Optional<Map<String, Object>> replay = replayCommand(ctx, "RMA_INSPECT", idempotencyKey, command);
-            if (replay.isPresent()) return replay.get();
-            rejectCommandKeyConflict(ctx, "RMA_INSPECT", idempotencyKey, command);
-            JsonNode current = store.get(ctx.tenantId(), id, store.rmas(ctx.tenantId()))
-                    .orElseThrow(() -> rmaNotFound(id));
-            requireVersion(ctx, command, current);
-            if (!"APPROVED".equals(text(current, "status"))) {
-                throw new ApiException(409, "SALES_409_RMA_STATE", "RMA当前状态不允许检验",
-                        "只有 APPROVED 状态可以录入检验结果");
-            }
-            BigDecimal receivedQty = nonNegativeDecimal(command, "receivedQty");
-            BigDecimal qualifiedQty = nonNegativeDecimal(command, "qualifiedQty");
-            BigDecimal scrapQty = nonNegativeDecimal(command, "scrapQty");
-            if (qualifiedQty.add(scrapQty).compareTo(receivedQty) != 0) {
-                throw new ApiException(422, "SALES_422_INSPECTION_QTY",
-                        "合格数量加报废数量必须等于实收数量", "检查 receivedQty、qualifiedQty、scrapQty");
-            }
-            if (receivedQty.compareTo(decimal(current, "approvedQty")) != 0) {
-                throw new ApiException(422, "SALES_422_RECEIVE_QTY",
-                        "实收数量必须等于审批数量", "检查 receivedQty");
-            }
-            ObjectNode updated = current.deepCopy();
-            updated.put("status", "INSPECTION_COMPLETED")
-                    .put("receivedQty", receivedQty.toPlainString())
-                    .put("qualifiedQty", qualifiedQty.toPlainString())
-                    .put("scrapQty", scrapQty.toPlainString());
-            touch(updated, ctx.actorId());
-            store.saveRma(updated);
-            saveCommandIdempotency(ctx, "RMA_INSPECT", idempotencyKey, command, updated);
-            return toMap(updated);
-        });
+        throw legacyCommandRetired("/api/v1/rmas/" + id + "/transition");
     }
 
-    // ===== B-05: 关闭 RMA =====
+    @Deprecated
     @PatchMapping("/api/v1/fulfillment/rmas/{id}/close")
     public Map<String, Object> closeRma(@PathVariable String id, HttpServletRequest request) {
-        RequestContext ctx = auth(request);
-        require(ctx, "sales.rma.close");
-        String idempotencyKey = requireIdempotencyKey(ctx, "RMA_CLOSE");
-        return store.transaction(ctx.tenantId(), ignored -> {
-            Optional<Map<String, Object>> replay = replayCommand(ctx, "RMA_CLOSE", idempotencyKey, Map.of());
-            if (replay.isPresent()) return replay.get();
-            rejectCommandKeyConflict(ctx, "RMA_CLOSE", idempotencyKey, Map.of());
-            JsonNode current = store.get(ctx.tenantId(), id, store.rmas(ctx.tenantId()))
-                    .orElseThrow(() -> rmaNotFound(id));
-            requireVersion(ctx, Map.of(), current);
-            if (!"INSPECTION_COMPLETED".equals(text(current, "status"))) {
-                throw new ApiException(409, "SALES_409_RMA_STATE", "RMA当前状态不允许关闭",
-                        "只有检验完成的 RMA 可以关闭");
-            }
-            ObjectNode updated = current.deepCopy();
-            if (text(updated, "creditArId").isBlank()) {
-                // Finance consumes this command id through the fulfillment outbox worker integration.
-                updated.put("creditArId", "ar-rma-" + id);
-                updated.put("creditArAmount", decimal(current, "requestedQty").negate().toPlainString());
-            }
-            updated.put("status", "CLOSED");
-            touch(updated, ctx.actorId());
-            store.saveRma(updated);
-            saveCommandIdempotency(ctx, "RMA_CLOSE", idempotencyKey, Map.of(), updated);
-            return toMap(updated);
-        });
+        throw legacyCommandRetired("/api/v1/rmas/" + id + "/transition");
     }
 
     // ===== B-06: 客户签收列表 =====
@@ -350,42 +260,63 @@ public class SalesFulfillmentController {
         return paged(store.receipts(ctx.tenantId()).values(), page, pageSize);
     }
 
-    // ===== B-07: 登记客户签收 =====
+    // ===== PRD 客户签收与销售完成 =====
+    @PostMapping("/api/v1/sales-orders/{orderId}/receipts")
+    public Map<String, Object> createOrderReceipt(
+            @PathVariable String orderId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        return aftercare.createReceipt(auth(request), orderId, body);
+    }
+
+    @PostMapping("/api/v1/sales-orders/{orderId}/complete-check")
+    public Map<String, Object> completeCheck(@PathVariable String orderId, HttpServletRequest request) {
+        return aftercare.completeCheck(auth(request), orderId);
+    }
+
+    @PostMapping("/api/v1/sales-orders/{orderId}/complete")
+    public Map<String, Object> completeOrder(
+            @PathVariable String orderId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        return aftercare.complete(auth(request), orderId, body);
+    }
+
+    @Deprecated
     @PostMapping("/api/v1/fulfillment/customer-receipts")
     public Map<String, Object> createReceipt(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        throw legacyCommandRetired("/api/v1/sales-orders/{orderId}/receipts");
+    }
+
+    // ===== PRD 销售 SLA 规则与通知 =====
+    @GetMapping("/api/v1/sales/sla-rules")
+    public List<Map<String, Object>> listSlaRules(HttpServletRequest request) {
+        return aftercare.slaRules(auth(request));
+    }
+
+    @PostMapping("/api/v1/sales/sla-rules")
+    public Map<String, Object> createSlaRule(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        require(auth(request), "sales.settings.manage");
+        return aftercare.saveSlaRule(auth(request), null, body);
+    }
+
+    @PatchMapping("/api/v1/sales/sla-rules/{id}")
+    public Map<String, Object> updateSlaRule(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        require(auth(request), "sales.settings.manage");
+        return aftercare.saveSlaRule(auth(request), id, body);
+    }
+
+    @GetMapping("/api/v1/sales/sla-notifications")
+    public List<Map<String, Object>> listSlaNotifications(HttpServletRequest request) {
         RequestContext ctx = auth(request);
-        require(ctx, "sales.receipt.create");
-        String idempotencyKey = requireIdempotencyKey(ctx, "RECEIPT_CREATE");
-        return store.transaction(ctx.tenantId(), ignored -> {
-            Optional<Map<String, Object>> replay = replayCommand(ctx, "RECEIPT_CREATE", idempotencyKey, body);
-            if (replay.isPresent()) return replay.get();
-            rejectCommandKeyConflict(ctx, "RECEIPT_CREATE", idempotencyKey, body);
-            String orderId = requiredText(body, "orderId");
-            if (store.order(ctx.tenantId(), orderId).isEmpty()) {
-                throw new ApiException(422, "SALES_422_ORDER_NOT_FOUND",
-                        "销售订单不存在: " + orderId, "检查 orderId 后重试");
-            }
-            BigDecimal signedQty = nonNegativeDecimal(body, "signedQty");
-            BigDecimal rejectedQty = nonNegativeDecimal(body, "rejectedQty");
-            BigDecimal damagedQty = nonNegativeDecimal(body, "damagedQty");
-            BigDecimal totalShippedQty = nonNegativeDecimal(body, "totalShippedQty");
-            if (signedQty.add(rejectedQty).add(damagedQty).compareTo(totalShippedQty) > 0) {
-                throw new ApiException(422, "SALES_422_RECEIPT_QTY",
-                        "签收、拒收和破损合计不能超过发货总量", "检查签收数量");
-            }
-            String id = UUID.randomUUID().toString();
-            ObjectNode value = mapper.valueToTree(body).deepCopy();
-            value.put("id", id);
-            value.put("receiptNo", nextDocumentNo("CR"));
-            value.put("status", receiptStatus(signedQty, rejectedQty, damagedQty, totalShippedQty));
-            value.put("tenantId", ctx.tenantId());
-            value.put("version", 1);
-            value.put("createdAt", Instant.now().toString());
-            value.put("updatedAt", Instant.now().toString());
-            store.saveReceipt(value);
-            saveCommandIdempotency(ctx, "RECEIPT_CREATE", idempotencyKey, body, value);
-            return toMap(value);
-        });
+        require(ctx, "sales.order.read");
+        return aftercare.slaNotifications(ctx);
     }
 
     // ===== B-08: 报价列表 =====
@@ -425,17 +356,17 @@ public class SalesFulfillmentController {
     }
 
     // ===== 触达设置 =====
+    @Deprecated
     @GetMapping("/api/v1/platform/outreach-settings")
     public Map<String, Object> getOutreachSettings(HttpServletRequest request) {
-        auth(request);
-        return Map.of("thresholdDays", 3, "reminderEnabled", true);
+        throw legacyCommandRetired("/api/v1/sales/sla-rules");
     }
 
+    @Deprecated
     @PutMapping("/api/v1/platform/outreach-settings")
     public Map<String, Object> updateOutreachSettings(
             @RequestBody Map<String, Object> body, HttpServletRequest request) {
-        auth(request);
-        return body;
+        throw legacyCommandRetired("/api/v1/sales/sla-rules");
     }
 
     // ===== AI 洞察（从 Store 订单数据计算） =====
@@ -444,82 +375,111 @@ public class SalesFulfillmentController {
         RequestContext ctx = auth(request);
         require(ctx, "sales.order.read");
         try {
-            List<JsonNode> orders = store.orders(ctx.tenantId()).stream()
-                    .filter(order -> !"CANCELED".equals(text(order, "overallStatus")))
-                    .toList();
-            if (orders.isEmpty()) return insightResult("EMPTY", null, null, null, null, List.of(), List.of());
+            List<JsonNode> orders = store.orders(ctx.tenantId());
+            if (orders.isEmpty()) return insights("EMPTY", null, null, null, 0, null,
+                    0, 0, List.of(), List.of(), 0);
 
             Set<String> currencies = orders.stream().map(order -> text(order, "currency"))
                     .filter(value -> value.matches("[A-Z]{3}")).collect(Collectors.toSet());
             if (currencies.size() != 1) {
-                return insightResult("UNAVAILABLE", null, null, null, null, List.of(), List.of());
+                return insights("UNAVAILABLE", null, null, null, 0, null, 0, 0,
+                        List.of(), List.of(), orders.size());
             }
             String currency = currencies.iterator().next();
             String dataAsOf = orders.stream().map(this::orderFactTime)
                     .filter(Optional::isPresent).map(Optional::get).max(Instant::compareTo)
                     .map(Instant::toString).orElse(null);
-            if (dataAsOf == null) return insightResult("UNAVAILABLE", currency, null, null, null, List.of(), List.of());
+            if (dataAsOf == null) return insights("UNAVAILABLE", currency, null, null, 0, null,
+                    0, 0, List.of(), List.of(), orders.size());
 
             YearMonth currentMonth = YearMonth.now(ZONE);
             List<JsonNode> monthlyOrders = orders.stream().filter(order -> monthOf(orderFactTime(order))
                     .map(currentMonth::equals).orElse(false)).toList();
             BigDecimal totalSalesAmount = monthlyOrders.stream()
                     .map(order -> decimal(order, "totalAmount")).reduce(BigDecimal.ZERO, BigDecimal::add);
-            Instant stalledBefore = Instant.now().minus(Duration.ofDays(outreachThreshold(ctx)));
-            List<Map<String, Object>> stalledOrders = monthlyOrders.stream()
+            Instant stalledBefore = Instant.now().minus(Duration.ofHours(slaThresholdHours(ctx)));
+            List<Map<String, Object>> stalledOrders = orders.stream()
                     .filter(order -> "PENDING_CONFIRMATION".equals(text(order, "overallStatus")))
                     .filter(order -> orderFactTime(order).map(time -> time.isBefore(stalledBefore)).orElse(false))
                     .map(order -> Map.<String, Object>of(
-                            "orderId", text(order, "orderNo"), "customerName", text(order, "customerName"),
+                            "orderId", text(order, "id"), "orderNo", text(order, "orderNo"),
+                            "customerName", text(order, "customerName"),
                             "totalAmount", decimal(order, "totalAmount").toPlainString()))
                     .toList();
             LocalDate deliveryRiskLimit = LocalDate.now(ZONE).plusDays(3);
-            List<Map<String, Object>> deliveryRiskOrders = monthlyOrders.stream()
-                    .filter(order -> !Set.of("SHIPPED", "COMPLETED", "CANCELED").contains(text(order, "overallStatus")))
+            List<JsonNode> riskyOrders = orders.stream()
+                    .filter(order -> OPEN_DELIVERY_STATES.contains(text(order, "overallStatus")))
                     .filter(order -> {
                         String date = text(order, "requestedDeliveryDate");
-                        return !date.isBlank() && !parseDate(date).isAfter(deliveryRiskLimit);
+                        return !date.isBlank();
                     })
-                    .map(order -> Map.<String, Object>of(
-                            "orderId", text(order, "orderNo"), "customerName", text(order, "customerName"),
-                            "deliveryDate", text(order, "requestedDeliveryDate")))
+                    .filter(order -> !parseDate(text(order, "requestedDeliveryDate")).isAfter(deliveryRiskLimit))
                     .toList();
-            Map<String, Object> result = insightResult("AVAILABLE", currency, dataAsOf, "sales-order-v1",
-                    monthlyOrders, stalledOrders, deliveryRiskOrders);
-            result.put("totalSalesAmount", totalSalesAmount.stripTrailingZeros().toPlainString());
-            return result;
+            List<Map<String, Object>> deliveryRiskOrders = riskyOrders.stream().map(order -> {
+                LocalDate dueDate = parseDate(text(order, "requestedDeliveryDate"));
+                long overdueDays = Math.max(0, LocalDate.now(ZONE).toEpochDay() - dueDate.toEpochDay());
+                String severity = overdueDays == 0 ? "MEDIUM" : overdueDays <= 7 ? "HIGH" : "CRITICAL";
+                Map<String, Object> item = new LinkedHashMap<String, Object>();
+                item.put("orderId", text(order, "id"));
+                item.put("orderNo", text(order, "orderNo"));
+                item.put("customerName", text(order, "customerName"));
+                item.put("deliveryDate", text(order, "requestedDeliveryDate"));
+                item.put("overallStatus", text(order, "overallStatus"));
+                item.put("severity", severity);
+                item.put("overdueDays", overdueDays);
+                return item;
+            }).toList();
+            int invalidAmounts = (int) monthlyOrders.stream()
+                    .filter(order -> text(order, "totalAmount").isBlank()
+                            || !text(order, "totalAmount").matches("\\d+(\\.\\d+)?")).count();
+            return insights("AVAILABLE", currency, dataAsOf, "sales-order-v1",
+                    monthlyOrders.size(), totalSalesAmount.stripTrailingZeros().toPlainString(),
+                    stalledOrders.size(), deliveryRiskOrders.size(), stalledOrders, deliveryRiskOrders,
+                    invalidAmounts);
         } catch (RuntimeException exception) {
-            return insightResult("UNAVAILABLE", null, null, null, null, List.of(), List.of());
+            return insights("UNAVAILABLE", null, null, null, 0, null, 0, 0,
+                    List.of(), List.of(), 0);
         }
     }
 
-    private Map<String, Object> insightResult(
+    private Map<String, Object> insights(
             String availability, String currency, String dataAsOf, String sourceVersion,
-            List<JsonNode> monthlyOrders, List<Map<String, Object>> stalledOrders,
-            List<Map<String, Object>> deliveryRiskOrders) {
+            int monthlyOrderCount, String totalSalesAmount, int stalledCount, int deliveryRiskCount,
+            List<Map<String, Object>> stalledOrders, List<Map<String, Object>> deliveryRiskOrders,
+            int incompleteFactCount
+    ) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("availability", availability);
+        result.put("businessDate", LocalDate.now(ZONE).toString());
+        result.put("timeZone", ZONE.getId());
         result.put("currency", currency);
         result.put("dataAsOf", dataAsOf);
         result.put("sourceVersion", sourceVersion);
-        result.put("monthlyOrderCount", "UNAVAILABLE".equals(availability)
-                ? null : (monthlyOrders == null ? 0 : monthlyOrders.size()));
-        result.put("totalSalesAmount", availability.equals("AVAILABLE") && monthlyOrders != null
-                ? monthlyOrders.stream().map(order -> decimal(order, "totalAmount"))
-                        .reduce(BigDecimal.ZERO, BigDecimal::add).toPlainString() : null);
-        result.put("stalledCount", "UNAVAILABLE".equals(availability)
-                ? null : (stalledOrders == null ? 0 : stalledOrders.size()));
-        result.put("deliveryRiskCount", "UNAVAILABLE".equals(availability)
-                ? null : (deliveryRiskOrders == null ? 0 : deliveryRiskOrders.size()));
-        result.put("stalledOrders", stalledOrders == null ? List.of() : stalledOrders);
-        result.put("deliveryRiskOrders", deliveryRiskOrders == null ? List.of() : deliveryRiskOrders);
+        result.put("monthlyOrderCount", "UNAVAILABLE".equals(availability) ? null : monthlyOrderCount);
+        result.put("totalSalesAmount", "UNAVAILABLE".equals(availability) ? null : totalSalesAmount);
+        result.put("stalledCount", "UNAVAILABLE".equals(availability) ? null : stalledCount);
+        result.put("deliveryRiskCount", "UNAVAILABLE".equals(availability) ? null : deliveryRiskCount);
+        result.put("stalledOrders", stalledOrders);
+        result.put("deliveryRiskOrders", deliveryRiskOrders);
+        result.put("metricCompleteness", incompleteFactCount == 0 ? "COMPLETE" : "INCOMPLETE");
+        result.put("incompleteFactCount", incompleteFactCount);
         result.put("generatedAt", Instant.now().toString());
         return result;
     }
 
-    private int outreachThreshold(RequestContext ctx) {
-        return store.outreachSettings(ctx.tenantId()).entrySet().stream()
-                .findFirst().map(entry -> entry.getValue().path("thresholdDays").asInt(3)).orElse(3);
+    private long slaThresholdHours(RequestContext ctx) {
+        return store.slaRules(ctx.tenantId()).values().stream()
+                .filter(rule -> "PENDING_CONFIRMATION".equals(text(rule, "listenStatus")))
+                .filter(rule -> rule.path("enabled").asBoolean(true))
+                .findFirst().map(rule -> rule.path("timeoutThresholdHours").asLong(72)).orElse(72L);
+    }
+
+    private static final Set<String> OPEN_DELIVERY_STATES = Set.of(
+            "PENDING_CONFIRMATION", "CONFIRMED", "REPLENISHING", "PARTIALLY_SHIPPED");
+
+    private ApiException legacyCommandRetired(String canonicalPath) {
+        return new ApiException(410, "SALES_410_LEGACY_COMMAND_RETIRED",
+                "旧命令已下线，请使用PRD契约接口", "调用 " + canonicalPath);
     }
 
     private Optional<Instant> orderFactTime(JsonNode order) {

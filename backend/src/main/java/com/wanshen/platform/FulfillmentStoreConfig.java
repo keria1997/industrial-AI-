@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wanshen.platform.fulfillment.FulfillmentService;
 import com.wanshen.platform.fulfillment.FulfillmentStore;
 import com.wanshen.platform.fulfillment.JdbcFulfillmentStore;
+import com.wanshen.platform.finance.AbstractFinanceStore;
+import com.wanshen.platform.fulfillment.SalesAftercareService;
+import com.wanshen.platform.fulfillment.SalesSlaScanner;
+import com.wanshen.platform.fulfillment.SalesAftercareService;
 import com.wanshen.platform.production.ProductionStore;
 import com.wanshen.platform.production.ProductionService;
 import org.springframework.beans.factory.ObjectProvider;
@@ -49,5 +53,19 @@ public class FulfillmentStoreConfig {
             return productionService.createDemand(demandContext, input).body();
         });
         return service;
+    }
+
+    @Bean
+    public SalesAftercareService salesAftercareService(
+            FulfillmentStore store,
+            AbstractFinanceStore financeStore,
+            ObjectMapper mapper
+    ) {
+        return new SalesAftercareService(store, financeStore, mapper);
+    }
+
+    @Bean
+    public SalesSlaScanner salesSlaScanner(FulfillmentStore store, SalesAftercareService aftercareService) {
+        return new SalesSlaScanner(store, aftercareService);
     }
 }
