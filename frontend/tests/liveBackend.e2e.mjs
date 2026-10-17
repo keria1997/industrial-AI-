@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -89,7 +90,7 @@ try {
   await mkdir(output, { recursive: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const pageErrors = [];
-  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('pageerror', error => pageErrors.push(error.stack || error.message));
   page.on('response', response => {
     const url = new URL(response.url());
     if (url.pathname.startsWith('/api/') && response.status() >= 400) report.httpErrors.push({ path: url.pathname, status: response.status() });
@@ -115,8 +116,20 @@ try {
   assert(session.tenantIds?.[0] && session.accessToken);
   report.tenantId = session.tenantIds[0];
   check('UI captcha/password -> real session', true, { status: login.status(), tenantId: report.tenantId });
-  check('migration ledger', Number(sql('SELECT count(*) FROM schema_migrations')) > 0,
-    { applied: Number(sql('SELECT count(*) FROM schema_migrations')) });
+  // A nonempty ledger can contain placeholders; verify the deployed migration names and SHA-256.
+  const migrationDirectory = `${root}backend/target/classes/db/migrations`;
+  const migrationFiles = readdirSync(migrationDirectory).filter(name => name.endsWith('.sql')).sort();
+  const ledger = JSON.parse(sql("SELECT coalesce(json_agg(json_build_object('filename',filename,'checksum',checksum)), '[]') FROM schema_migrations"));
+  const missing = [];
+  const mismatched = [];
+  for (const filename of migrationFiles) {
+    const entry = ledger.find(row => row.filename === filename);
+    if (!entry) { missing.push(filename); continue; }
+    const hash = createHash('sha256').update(readFileSync(`${migrationDirectory}/${filename}`)).digest('hex');
+    if (entry.checksum !== hash) mismatched.push(filename);
+  }
+  check('migration ledger', migrationFiles.length > 0 && !missing.length && !mismatched.length,
+    { applied: ledger.length, expected: migrationFiles.length, missing, mismatched });
 
   for (const [name, endpoint, module, kind, fields, query, textKey, tab] of lists) {
     try {
@@ -240,6 +253,7 @@ try {
     }
     if (query === 'module=personnel') check('personnel hides attendance entry', !text.includes('考勤与排班'), {});
     if (query === 'module=platform') await page.screenshot({ path: `${output}/platform.png`, fullPage: true });
+    if (query === 'module=platform&platform=access') await page.screenshot({ path: `${output}/platform-access.png`, fullPage: true });
   }
   check('module/subtab render smoke (not feature acceptance)', report.pages.every(item => item.passed),
     { pages: report.pages.length, failed: report.pages.filter(item => !item.passed).map(item => item.query), pageErrors });

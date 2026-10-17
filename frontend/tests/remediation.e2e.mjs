@@ -287,6 +287,22 @@ try {
   assert(requests.filter(request => request.path.endsWith('/production/readiness')).length >= 2);
   console.log('PASS platform grants: real selected role, per-code changes, snapshot version 42 reused and current permissions refreshed');
 
+  const completeRole = { ...platform.roles[0] };
+  const publishedCount = publications.length;
+  for (const scopeValues of [undefined, null, 'invalid']) {
+    platform.roles[0] = { ...completeRole, scopeValues };
+    await go('module=platform&platform=access');
+    await page.getByText('数据范围待补全', { exact: true }).waitFor();
+    await page.getByRole('radio', { name: '销售制单-拒绝', exact: true }).click();
+    assert(await page.getByRole('button', { name: '发布变更', exact: true }).isDisabled());
+    await page.getByRole('button', { name: '调整范围', exact: true }).click();
+    await page.getByRole('dialog', { name: '调整数据范围', exact: true }).waitFor();
+    await page.getByRole('button', { name: '暂不保存', exact: true }).click();
+  }
+  assert.equal(requests.filter(request => request.path.endsWith('/platform/roles/role1/grants')).length, publishedCount);
+  platform.roles[0] = completeRole;
+  console.log('PASS platform incomplete scope: missing/null/malformed values preserve the page, block publication and keep repair drafts usable');
+
   salesCanceled = false;
   effectivePermissions = ['sales.order.read'];
   await page.evaluate(() => {
