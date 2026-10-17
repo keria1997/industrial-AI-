@@ -29,7 +29,7 @@
 | ISSUE-020 | 工作台来源 undefined | P1 | 工作台 | L4 基础层 | 前端, 后端 | ✅ 已修复 | [ISSUE-020](ISSUE-020-工作台来源undefined.md) |
 | ISSUE-021 | 工作台刷新数据失效 | P1 | 工作台 | L4 基础层 | 前端, 后端 | ✅ 已修复 | [ISSUE-021](ISSUE-021-工作台刷新数据失效.md) |
 | ISSUE-022 | 消息路由占位符 | P2 | 消息 | L2 协同层 | 前端 | 🔴 待修复 | [ISSUE-022](ISSUE-022-消息路由占位符.md) |
-| ISSUE-023 | 出库显示 UUID | P1 | 库存 | L1 业务域层 | 前端 | 🔴 待修复 | [ISSUE-023](ISSUE-023-出库管理显示UUID.md) |
+| ISSUE-023 | 出库显示 UUID | P1 | 库存 | L1 业务域层 | 前端 | ⏭️ 前端本地已修复，部署待更新复测 | [ISSUE-023](ISSUE-023-出库管理显示UUID.md) |
 | ISSUE-024 | 生产 BOM 阻断 + Toast 过短 | P1 | 生产 | L1 业务域层 | 前端, 后端 | ⏭️ 暂缓确认生效，BOM 和 Toast 待有数据后复测 | [ISSUE-024](ISSUE-024-生产BOM阻断与Toast过短.md) |
 | ISSUE-025 | 设备下拉硬编码 | P2 | 生产 | L1 业务域层 | 前端 | 🔴 待修复（部署验证确认未修复）| [ISSUE-025](ISSUE-025-设备下拉硬编码.md) |
 | ISSUE-026 | 数字输入框无法清空 | P1 | 全局 | L4 基础层 | 前端 | ✅ 已修复 | [ISSUE-026](ISSUE-026-数字输入框无法清空.md) |
@@ -45,8 +45,8 @@
 
 | 状态 | 数量 |
 |---|---|
-| ✅ 已修复/已解锁 | 12 |
-| 🔴 待修复 | 10 |
+| ✅ 已修复/已解锁 | 15 |
+| 🔴 待修复 | 9 |
 | ⏭️ 待复测 | 8 |
 | 📋 已确认待排期 | 1 |
 
@@ -54,17 +54,17 @@
 
 | 层级 | 数量 |
 |---|---|
-| L1 业务域层 | 17 |
+| L1 业务域层 | 18 |
 | L2 协同层 | 1 |
 | L3 智能层 | 1 |
-| L4 基础层 | 12 |
+| L4 基础层 | 13 |
 
 ### 按影响范围统计
 
 | 影响范围 | 数量 |
 |---|---|
-| 前端 | 24 |
-| 后端 | 21 |
+| 前端 | 26 |
+| 后端 | 24 |
 | PRD | 0 |
 | 设计文档 | 0 |
 
@@ -213,4 +213,5 @@
 | E2E 执行 | [reports/e2e-execution-report.md](reports/e2e-execution-report.md) |
 | 前端数据审计 | [reports/frontend-test-data-audit.md](reports/frontend-test-data-audit.md) |
 | ISSUE-029 前端验收 | [reports/2026-10-17-issue-029-frontend-verification.md](reports/2026-10-17-issue-029-frontend-verification.md) |
+| ISSUE-023 前端验收 | [reports/2026-10-17-issue-023-frontend-verification.md](reports/2026-10-17-issue-023-frontend-verification.md) |
 

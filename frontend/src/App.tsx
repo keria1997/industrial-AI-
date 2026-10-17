@@ -100,6 +100,8 @@ import {
 } from './features/inventory/model/salesOutboundBridge';
 import { InventoryMasterDataPanel } from './features/inventory/pages/InventoryMasterDataPanel';
 import { InventoryStockQueryPanel } from './features/inventory/pages/InventoryStockQueryPanel';
+import { ManualInboundModal } from './features/inventory/components/ManualInboundModal';
+import { formatOutboundError, formatOutboundProductSummary, presentOutboundLine, presentOutboundRecord } from './features/inventory/model/outboundPresentation';
 import { useFormalInventory } from './features/inventory/model/useFormalInventory';
 import { resolveWarehouse } from './features/inventory/model/formalInventory';
 import { createInventoryReplenishmentDemand, resolveFactoryForWarehouse } from './features/inventory/model/replenishmentDemand';
@@ -5625,8 +5627,9 @@ const invRecordFields = {
   ]
 };
 
-const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
-  const [draft, setDraft] = useState(record || {});
+const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit, products = [] }) => {
+  const [draftSource, setDraft] = useState(record || {});
+  const draft = type === 'outbound' ? presentOutboundRecord(draftSource, products) : draftSource;
   const fields = invRecordFields[type] || [];
   const readOnly = mode === 'view';
   const titlePrefix = mode === 'create' ? '新增' : readOnly ? '查看' : '编辑';
@@ -5679,7 +5682,7 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
                       const shipped = Number(line.shippedQty || 0);
                       const remaining = Math.max(0, Number(line.qty || 0) - shipped);
                       return <tr key={idx} className="border-b border-slate-100 last:border-0">
-                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productCode}</td>
                         <td className="px-3 py-2.5 text-slate-800">{line.productName}</td>
                         <td className="px-3 py-2.5 text-center text-slate-500">{line.spec || '-'}</td>
                         <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.qty}</td>
@@ -5706,6 +5709,7 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
                   <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
                     <tr>
                       <th className="px-3 py-2.5 font-medium">产品编码</th>
+                      <th className="px-3 py-2.5 font-medium">产品名称</th>
                       <th className="px-3 py-2.5 font-medium text-center">申请数量</th>
                       <th className="px-3 py-2.5 font-medium text-center">预留数量</th>
                       <th className="px-3 py-2.5 font-medium text-center">单位</th>
@@ -5714,7 +5718,8 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
                   <tbody>
                     {draft.formalTask.lines.map((line, idx) => (
                       <tr key={idx} className="border-b border-slate-100 last:border-0">
-                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productCode}</td>
+                        <td className="px-3 py-2.5 text-slate-800">{line.productName}</td>
                         <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.requestedQty}</td>
                         <td className="px-3 py-2.5 text-center font-mono text-slate-600">{line.reservedQty}</td>
                         <td className="px-3 py-2.5 text-center text-slate-500">{line.uom || '-'}</td>
@@ -5736,7 +5741,10 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
 };
 
 const Inv_ActionReviewModal = ({
-  action,
+  action: sourceAction,
+  products = [],
+  onViewStock,
+  onInboundGuide,
   onCancel,
   onConfirm,
   onGapProduction,
@@ -5748,6 +5756,14 @@ const Inv_ActionReviewModal = ({
   stockState = { status: 'idle' } as OutboundStockState,
   warehouseLoadError = '',
 }) => {
+  const isOutboundAction = ['processOutbound', 'partialShipment', 'productionRequest'].includes(sourceAction.kind);
+  const action = {
+    ...sourceAction,
+    record: isOutboundAction && sourceAction.record ? presentOutboundRecord(sourceAction.record, products) : sourceAction.record,
+    lineStockInfo: sourceAction.lineStockInfo?.map(line => presentOutboundLine(line, products)),
+    details: sourceAction.details?.map(detail => isOutboundAction && detail.label === '产品' && sourceAction.record
+      ? { ...detail, value: formatOutboundProductSummary(sourceAction.record, products) } : detail),
+  };
   const [values, setValues] = useState(() => Object.fromEntries([
     ...(action.quantityFields || []).map((field) => [field.id, String(field.value)]),
     ...(action.dateFields || []).map((field) => [field.id, String(field.value)]),
@@ -5773,7 +5789,7 @@ const Inv_ActionReviewModal = ({
         return [fieldId, String(maxQty)];
       }));
     setValues(nextValues);
-  }, [action.lineStockInfo, requiresWarehouse, selectedWarehouseId]);
+  }, [sourceAction.lineStockInfo, requiresWarehouse, selectedWarehouseId]);
 
   const handleWarehouseSwitch = async (newWarehouseId) => {
     setSelectedWarehouseId(newWarehouseId);
@@ -5871,14 +5887,14 @@ const Inv_ActionReviewModal = ({
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 transition-opacity animate-in fade-in zoom-in-95 duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[860px] max-h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-48px)] overflow-hidden flex flex-col border border-slate-100">
+      <div role="dialog" aria-modal="true" aria-labelledby="inventory-action-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-[860px] max-h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-48px)] overflow-hidden flex flex-col border border-slate-100">
         <div className="p-5 shrink-0 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
           <div className="flex gap-3">
             <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${toneMap[tone] || toneMap.blue}`}>
               <Icon size={18} />
             </div>
             <div>
-              <h3 className="font-bold text-slate-800 text-[15px]">{action.title}</h3>
+              <h3 id="inventory-action-title" className="font-bold text-slate-800 text-[15px]">{action.title}</h3>
               <p className="text-[12px] text-slate-500 mt-1 leading-relaxed">{action.desc}</p>
             </div>
           </div>
@@ -5914,13 +5930,25 @@ const Inv_ActionReviewModal = ({
             <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[12px] font-bold text-blue-700">正在读取选定仓库的真实可用量...</div>
           )}
           {requiresWarehouse && selectedWarehouseId && stockState.status === 'error' && (
-            <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-700">{stockState.error || '仓库可用量读取失败，请重新选择仓库'}</div>
+            <div role="alert" className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-700">{stockState.error || '仓库可用量读取失败，请重试'}</div>
           )}
           {requiresWarehouse && selectedWarehouseId && stockState.status === 'missing-product' && (
-            <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] font-bold text-amber-700">{stockState.error}</div>
+            <div role="status" className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] font-bold text-amber-700">{stockState.error}</div>
           )}
-          {requiresWarehouse && selectedWarehouseId && !stockReady && stockState.status !== 'loading' && stockState.status !== 'error' && (
-            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-[12px] font-bold text-slate-600">请重新选择发货仓库以加载真实可用量</div>
+          {requiresWarehouse && selectedWarehouseId && stockState.warning && (
+            <div role="status" className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-700">{stockState.warning}</div>
+          )}
+          {requiresWarehouse && selectedWarehouseId && stockState.status !== 'loading' && (
+            <div className="mb-4 flex flex-wrap gap-3 text-[12px] font-bold text-blue-700">
+              <button type="button" disabled={isSwitchingWarehouse || submitting} onClick={() => handleWarehouseSwitch(selectedWarehouseId)} className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-3 py-2 disabled:opacity-50"><RefreshCw size={14} />重新查询库存</button>
+              {(stockState.status === 'missing-product' || stockState.warning) && <>
+                {onViewStock && <button type="button" disabled={submitting} onClick={onViewStock} className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-3 py-2"><Database size={14} />查看库存台账</button>}
+                {onInboundGuide && <button type="button" disabled={submitting} onClick={onInboundGuide} className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-3 py-2"><Import size={14} />查看入库办理指引</button>}
+              </>}
+            </div>
+          )}
+          {requiresWarehouse && selectedWarehouseId && !stockReady && stockState.status === 'idle' && (
+            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-[12px] font-bold text-slate-600">请点击重新查询库存以读取当前仓库的可用量</div>
           )}
           <div className="grid grid-cols-2 gap-3">
             {(action.details || []).map(item => (
@@ -5948,7 +5976,7 @@ const Inv_ActionReviewModal = ({
                   <tbody>
                     {action.record.lines.map((line, idx) => (
                       <tr key={idx} className="border-b border-slate-100 last:border-0">
-                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productCode}</td>
                         <td className="px-3 py-2.5 text-slate-800">{line.productName}</td>
                         <td className="px-3 py-2.5 text-center text-slate-500">{line.spec || '-'}</td>
                         <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.qty}</td>
@@ -5969,6 +5997,7 @@ const Inv_ActionReviewModal = ({
                   <thead className="bg-[#fafafa] text-slate-500 border-b border-slate-200 font-bold">
                     <tr>
                       <th className="px-3 py-2.5 font-medium">产品编码</th>
+                      <th className="px-3 py-2.5 font-medium">产品名称</th>
                       <th className="px-3 py-2.5 font-medium text-center">申请数量</th>
                       <th className="px-3 py-2.5 font-medium text-center">预留数量</th>
                       <th className="px-3 py-2.5 font-medium text-center">单位</th>
@@ -5977,7 +6006,8 @@ const Inv_ActionReviewModal = ({
                   <tbody>
                     {action.record.formalTask.lines.map((line, idx) => (
                       <tr key={idx} className="border-b border-slate-100 last:border-0">
-                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productId}</td>
+                        <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{line.productCode}</td>
+                        <td className="px-3 py-2.5 text-slate-800">{line.productName}</td>
                         <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{line.requestedQty}</td>
                         <td className="px-3 py-2.5 text-center font-mono text-slate-600">{line.reservedQty}</td>
                         <td className="px-3 py-2.5 text-center text-slate-500">{line.uom || '-'}</td>
@@ -6016,7 +6046,7 @@ const Inv_ActionReviewModal = ({
                     const currentVal = (rawVal == null || rawVal === '') ? NaN : Number(rawVal);
                     const isValid = isShippable && !isNaN(currentVal) && currentVal > 0 && currentVal <= maxQty;
                     return <tr key={idx} className={`border-b border-slate-100 last:border-0 ${!isShippable ? 'bg-slate-50/50' : ''}`}>
-                      <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{ls.productId}</td>
+                      <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{ls.productCode}</td>
                       <td className="px-3 py-2.5 text-slate-800">{ls.productName || '-'}</td>
                       <td className="px-3 py-2.5 text-slate-500">{(() => { const line = action.record?.lines?.find(l => l.productId === ls.productId); return line?.spec || '-'; })()}</td>
                       <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{ls.qty}</td>
@@ -6031,7 +6061,7 @@ const Inv_ActionReviewModal = ({
                       <td className="px-3 py-2.5 text-center">
                         {isShippable
                           ? <div className="flex flex-col items-center">
-                              <input type="number" aria-label={`${ls.productId} 本次发货数量`} min={0.000001} max={maxQty} step={0.000001} value={values[fieldId] ?? maxQty} onChange={(event) => { const raw = event.target.value; if (raw === '') { setValues((current) => ({ ...current, [fieldId]: '' })); return; } const v = Number(raw); if (!Number.isFinite(v)) return; setValues((current) => ({ ...current, [fieldId]: v < 0 ? '0' : v > maxQty ? String(maxQty) : raw })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
+                              <input type="number" aria-label={`${ls.productLabel} 本次发货数量`} min={0.000001} max={maxQty} step={0.000001} value={values[fieldId] ?? maxQty} onChange={(event) => { const raw = event.target.value; if (raw === '') { setValues((current) => ({ ...current, [fieldId]: '' })); return; } const v = Number(raw); if (!Number.isFinite(v)) return; setValues((current) => ({ ...current, [fieldId]: v < 0 ? '0' : v > maxQty ? String(maxQty) : raw })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
                               {!isValid && <span className="text-[10px] text-rose-500 mt-0.5 whitespace-nowrap">大于0且不超过{maxQty}</span>}
                             </div>
                           : <span className="text-slate-400">-</span>}
@@ -6069,7 +6099,7 @@ const Inv_ActionReviewModal = ({
                     const currentVal = parseNumericDraft(values[fieldId] ?? defaultVal, { min: ls.shortage, fractionDigits: 6 });
                     const isValid = currentVal !== null;
                     return <tr key={idx} className="border-b border-slate-100 last:border-0">
-                      <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{ls.productId}</td>
+                      <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{ls.productCode}</td>
                       <td className="px-3 py-2.5 text-slate-800">{ls.productName || '-'}</td>
                       <td className="px-3 py-2.5 text-slate-500">{(() => { const line = action.record?.lines?.find(l => l.productId === ls.productId); return line?.spec || '-'; })()}</td>
                       <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800">{ls.qty}</td>
@@ -6081,7 +6111,7 @@ const Inv_ActionReviewModal = ({
                           <span className="font-mono font-bold text-slate-800">{ls.shortage}</span>
                         ) : (
                           <>
-                            <input inputMode="decimal" aria-label={`${ls.productId} 需生产数量`} value={values[fieldId] ?? defaultVal} onChange={(event) => setValues((current) => ({ ...current, [fieldId]: event.target.value }))} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
+                            <input inputMode="decimal" aria-label={`${ls.productLabel} 需生产数量`} value={values[fieldId] ?? defaultVal} onChange={(event) => setValues((current) => ({ ...current, [fieldId]: event.target.value }))} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
                             {!isValid && <div className="text-[10px] text-rose-500 mt-0.5">不可少于{ls.shortage}</div>}
                           </>
                         )}
@@ -6140,40 +6170,6 @@ const Inv_ActionReviewModal = ({
       </div>
     </div>
   );
-};
-
-const formatOutboundProductSummary = (row) => {
-  const formalLines = row?.formalTask?.lines;
-  if (formalLines && formalLines.length > 0) {
-    return formalLines.map((line) => {
-      const stockItem = inv_stockData.find(s => s.id === line.productId);
-      const name = stockItem?.name || '';
-      return name ? `${line.productId} ${name}` : line.productId;
-    }).join('；');
-  }
-  const localLines = row?.lines;
-  if (localLines && localLines.length > 1) {
-    return localLines.map((line) => {
-      const stockItem = inv_stockData.find(s => s.id === line.productId);
-      const name = stockItem?.name || line.productName || '';
-      return name ? `${line.productId} ${name}` : line.productId;
-    }).join('；');
-  }
-  if (localLines && localLines.length === 1) {
-    const line = localLines[0];
-    const stockItem = inv_stockData.find(s => s.id === line.productId);
-    const name = stockItem?.name || line.productName || '';
-    return name ? `${line.productId} ${name}` : (line.productId || line.productName || '-');
-  }
-  const productId = row?.productId;
-  const item = row?.item;
-  if (item && productId && item.startsWith(productId)) {
-    return item;
-  }
-  if (productId && item && productId !== item) {
-    return `${productId} ${item}`;
-  }
-  return item || productId || '-';
 };
 
 // 下载出库凭证：生成 HTML 文件并触发下载
@@ -6252,10 +6248,12 @@ type OutboundStockState = {
   warehouseId?: string;
   factVersions?: Record<string, number>;
   error?: string;
+  warning?: string;
 };
 
 const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateModule, currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState(() => resolveInventoryTab(window.location.search));
+  const [showInboundModal, setShowInboundModal] = useState(false);
   const [requestedSalesOrderId, setRequestedSalesOrderId] = useState(() => resolveSalesOutboundOrderId(window.location.search));
   const focusedOutboundId = new URLSearchParams(window.location.search).get('focusOutbound');
   const [outboundSourceSearch, setOutboundSourceSearch] = useState('');
@@ -6396,7 +6394,10 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     };
   };
 
-  const [outboundData, setOutboundData] = useState([]);
+  const [outboundSourceData, setOutboundData] = useState([]);
+  const outboundProducts = formalInventory.masterData?.products || [];
+  const outboundData = useMemo(() => outboundSourceData.map(row => presentOutboundRecord(row, outboundProducts)),
+    [outboundSourceData, formalInventory.masterData]);
   const filteredOutboundData = useMemo(() => {
     const keyword = outboundSourceSearch.trim().toLowerCase();
     return outboundData.filter(row => (!focusedOutboundId || [row.id, row.taskId, row.formalTask?.id, row.outboundId].includes(focusedOutboundId)) && (!keyword || String(row.source || '').toLowerCase().includes(keyword)));
@@ -6428,7 +6429,9 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     if (task) return formalShipmentStock({
       ...task,
       warehouseId: resolveWarehouse(formalInventory.warehouses, task.warehouseId)?.id || task.warehouseId,
-    }, facts, selectedWarehouseId);
+    }, facts, selectedWarehouseId).map(line => presentOutboundLine({
+      ...line, productName: task.lines.find(source => source.id === line.lineId)?.productName,
+    }, outboundProducts));
     const factMap = new Map((facts || []).map(fact => [fact.productId, fact]));
     return getOutboundSourceLines(row).map(line => {
       const productId = line.productId;
@@ -6593,7 +6596,8 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       facts = await inventoryApi.getAvailability(formalContext, warehouseId, productIds);
     } catch (error) {
       if (request !== outboundStockRevision.current) return [];
-      const message = error instanceof Error ? error.message : '仓库库存加载失败，请重试';
+      const message = formatOutboundError(error instanceof Error ? error.message : '仓库库存加载失败，请重试',
+        getOutboundSourceLines(row), outboundProducts);
       setOutboundStockState({ status: 'error', warehouseId, error: message });
       showToast(message, 'error');
       return [];
@@ -6603,7 +6607,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const incompatibleLines = lineStockInfo.filter(item => item.unitMismatch);
     if (incompatibleLines.length > 0) {
       const message = incompatibleLines.map(item =>
-        `${item.productId}：订单单位 ${item.uom}，库存单位 ${item.inventoryUom}，请核对单位换算`,
+        `${presentOutboundLine(item, outboundProducts).productLabel}：订单单位 ${item.uom}，库存单位 ${item.inventoryUom}，请核对单位换算`,
       ).join('；');
       setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
       setOutboundStockState({ status: 'error', warehouseId, error: message });
@@ -6613,8 +6617,13 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       .filter(item => item.factVersion == null || item.warehouseId == null)
       .map(item => item.productId)
       .filter(Boolean))];
-    if (lineStockInfo.length > 0 && missingProductIds.length === lineStockInfo.length) {
-      const message = `${warehouseName(warehouseId)}未查询到库存记录：${missingProductIds.join('、')}`;
+    const missingLabels = missingProductIds.map(productId =>
+      presentOutboundLine(getOutboundSourceLines(row).find(line => line.productId === productId) || { productId }, outboundProducts).productLabel);
+    const missingMessage = missingProductIds.length
+      ? `${warehouseName(warehouseId)}未查询到以下产品的库存记录：${missingLabels.join('、')}。请核对来源入库单据是否已过账；办理采购收货或生产完工入库后，重新查询库存。`
+      : '';
+    if (lineStockInfo.length > 0 && lineStockInfo.every(item => item.factVersion == null || item.warehouseId == null)) {
+      const message = missingMessage;
       setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
       setOutboundStockState({
         status: 'missing-product',
@@ -6622,17 +6631,14 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         factVersions: Object.fromEntries((facts || []).map(fact => [fact.productId, fact.factVersion])),
         error: message,
       });
-      showToast(message, 'warning');
       return lineStockInfo;
-    }
-    if (missingProductIds.length > 0) {
-      showToast(`${warehouseName(warehouseId)}未查询到库存记录：${missingProductIds.join('、')}，仅可部分发货或申请生产`, 'warning');
     }
     setActionReview(prev => prev ? { ...prev, lineStockInfo } : prev);
     setOutboundStockState({
       status: 'ready',
       warehouseId,
       factVersions: Object.fromEntries((facts || []).map(fact => [fact.productId, fact.factVersion])),
+      warning: missingMessage,
     });
     return lineStockInfo;
   };
@@ -6739,7 +6745,24 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     if (nextUrl !== currentUrl) window.history.pushState({}, '', nextUrl);
   };
 
-  const handleManualInbound = () => showToast('未执行：手工入库尚缺正式提交契约，请使用采购收货或生产完工入库', 'error');
+  const handleManualInbound = () => setShowInboundModal(true);
+  const canViewStock = hasPermission(currentUser?.permissions, 'inventory.read', 'inventory.availability.read', 'INV_VIEW');
+  const authorizedModules = getAuthorizedModules(currentUser?.permissions);
+  const canViewProcurement = authorizedModules.some(module => module.id === 'procurement')
+    && hasPermission(currentUser?.permissions, 'procurement.receipt.read');
+  const canViewProduction = authorizedModules.some(module => module.id === 'production')
+    && hasPermission(currentUser?.permissions, 'production.work-order.read');
+  const viewStock = () => {
+    setActionReview(null);
+    setShowInboundModal(false);
+    navigateInventoryTab('stock');
+    void formalInventory.refresh();
+  };
+  const openInboundGuide = () => { setActionReview(null); setShowInboundModal(true); };
+  const openInboundSource = (module, query) => {
+    setShowInboundModal(false);
+    onNavigateModule?.(module, { query });
+  };
   const saveStock = (_data?: unknown) => showToast('库存数量以正式过账为准，不能直接编辑', 'error');
   const saveInbound = (_data?: unknown) => showToast('未保存：入库记录须由正式收货/完工接口生成', 'error');
   const saveOutbound = (_data?: unknown) => showToast('未保存：请通过正式出库任务处理', 'error');
@@ -7121,7 +7144,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
             const rawValue = shipmentQuantities[`shipQty_${line.id}`];
             const requestedQty = rawValue == null || rawValue === '' ? reservedRemaining : String(rawValue);
             if (compareQuantity(requestedQty, '0') <= 0 || compareQuantity(requestedQty, reservedRemaining) > 0) {
-              throw new Error(`${line.productId} 本次发货数量必须大于 0 且不超过 ${reservedRemaining}`);
+              throw new Error(`${presentOutboundLine(line, outboundProducts).productLabel} 本次发货数量必须大于 0 且不超过 ${reservedRemaining}`);
             }
             quantitiesByOrderLineId[line.orderLineId] = requestedQty;
             actualShipLines.push({ productId: line.productId, shipQty: Number(requestedQty), orderLineId: line.orderLineId });
@@ -7139,7 +7162,8 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           showToast(`销售出库单 [${outbound.id}] 已${remainingAfterShip > 0 ? '部分' : '全量'}发货并回写销售订单`, 'success');
           setActionReview(null);
         } catch (error) {
-          const message = error instanceof Error ? error.message : '请稍后重试';
+          const message = formatOutboundError(error instanceof Error ? error.message : '请稍后重试',
+            getOutboundSourceLines(row), outboundProducts);
           showToast('销售出库失败：' + message, 'error');
           setOutboundStockState({ status: 'error', error: message });
           refreshFormalTasks().catch(() => {});
@@ -7167,11 +7191,20 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   return (
     <div className="w-full h-full font-sans flex flex-col relative">
       <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
-      {recordModal && <Inv_RecordModal type={recordModal.type} mode={recordModal.mode} record={recordModal.record} onClose={() => setRecordModal(null)} onSubmit={(draft) => { recordModal.type === 'stock' ? saveStock(draft) : recordModal.type === 'inbound' ? saveInbound(draft) : saveOutbound(draft); setRecordModal(null); }} />}
+      {recordModal && <Inv_RecordModal type={recordModal.type} mode={recordModal.mode} record={recordModal.record} products={outboundProducts} onClose={() => setRecordModal(null)} onSubmit={(draft) => { recordModal.type === 'stock' ? saveStock(draft) : recordModal.type === 'inbound' ? saveInbound(draft) : saveOutbound(draft); setRecordModal(null); }} />}
+      {showInboundModal && <ManualInboundModal
+        onClose={() => setShowInboundModal(false)}
+        onViewStock={canViewStock ? viewStock : undefined}
+        onProcurement={canViewProcurement ? () => openInboundSource('采购管理', { procurement: 'receipts' }) : undefined}
+        onProduction={canViewProduction ? () => openInboundSource('生产管理', { production: 'qc_cost' }) : undefined}
+      />}
       {deleteTarget && <Sales_ConfirmModal title={`删除${invEntityLabels[deleteTarget.type]}`} desc={`确定删除 ${deleteTarget.record.id} 吗？该操作仅影响当前演示数据。`} confirmText="删除" tone="danger" onCancel={() => setDeleteTarget(null)} onConfirm={deleteRecord} />}
       {actionReview && (
         <Inv_ActionReviewModal
           action={actionReview}
+          products={outboundProducts}
+          onViewStock={canViewStock ? viewStock : undefined}
+          onInboundGuide={openInboundGuide}
           submitting={isActionSubmitting}
           onCancel={() => setActionReview(null)}
           onConfirm={confirmInventoryAction}
@@ -7345,7 +7378,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                         <td className="px-4 py-3"><span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-bold text-[11px] border border-slate-200">{row.type}</span></td>
                                         <td className="px-4 py-3 text-slate-600 font-mono font-bold text-[12px]">{row.source}</td>
                                         <td className="px-4 py-3 font-bold text-slate-800 max-w-[200px] truncate">
-                                            <div title={formatOutboundProductSummary(row)} className="truncate">{formatOutboundProductSummary(row)}</div>
+                                            <div title={formatOutboundProductSummary(row, outboundProducts)} className="truncate">{formatOutboundProductSummary(row, outboundProducts)}</div>
                                             {row.shipmentDetails && row.shipmentDetails.length > 0 && <div className="mt-0.5 text-[10px] text-emerald-600 font-mono font-bold">已发: {row.shipmentDetails.map(s => `${s.productId}×${s.shipQty}`).join('、')}</div>}
                                         </td>
                                         <td className="px-4 py-3 text-right font-mono font-bold text-[14px] text-rose-500">
@@ -7373,7 +7406,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                                               return <div className="mt-1 space-y-0.5">
                                                 {ss.lineStatuses.map((ls, i) => (
                                                   <div key={i} className={`text-[10px] font-mono ${ls.shortage > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>
-                                                    {ls.productId}{row.warehouse && warehouseList.length > 0 ? <span className="text-slate-400"> ({warehouseName(row.warehouse)})</span> : ''}: 可用 {ls.availQty}{ls.shortage > 0 ? <span className="text-rose-600"> · 缺口 {ls.shortage}</span> : ''}{ls.shippedQty > 0 && <span className="text-emerald-600"> · 已发 {ls.shippedQty}</span>}
+                                                    {presentOutboundLine(ls, outboundProducts).productLabel}{row.warehouse && warehouseList.length > 0 ? <span className="text-slate-400"> ({warehouseName(row.warehouse)})</span> : ''}: 可用 {ls.availQty}{ls.shortage > 0 ? <span className="text-rose-600"> · 缺口 {ls.shortage}</span> : ''}{ls.shippedQty > 0 && <span className="text-emerald-600"> · 已发 {ls.shippedQty}</span>}
                                                   </div>
                                                 ))}
                                               </div>;

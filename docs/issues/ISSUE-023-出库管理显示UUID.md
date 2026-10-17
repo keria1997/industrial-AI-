@@ -1,119 +1,68 @@
-# ISSUE-018：出库管理发货时显示产品 UUID 而非名称，缺少"先入库"引导，且手工入库弹窗未渲染
+# ISSUE-023：出库产品显示 UUID、缺库存处理引导及手工入库入口
 
-> 发现日期：2026-10-17
-> 环境：http://124.222.114.67/（部署环境）
-> 模块：销售管理 → 出库管理
-> 级别：P1 体验
-> 状态：**新增**
+- 发现日期：2026-10-17
+- 级别：P1
+- 模块：库存管理 → 出库管理（来源为销售发货）
+- 层级：L1 业务域层
+- 影响范围：前端
+- 状态：⏭️ 前端本地已修复，部署待更新复测
 
-## 问题描述
+## 问题
 
-出库订单去发货时，选择仓库 `saa (AAA)` 后系统报错：
+选择发货仓库后，缺库存提示与产品明细显示产品 UUID，没有名称、编码和有效处理入口。“手工入库”按钮修改了状态，但弹窗未挂载。
 
-> saa未查询到库存记录： 2c4bf33d-78df-4d3c-b418-46683d010d2e
+历史复现对象为仓库 `saa (AAA)`、产品 `ssa (SAS)`，产品 ID 为
+`2c4bf33d-78df-4d3c-b418-46683d010d2e`，销售订单为 `SO-20261017-68ECB5B5`。
+原记录中的数据库排查属于历史证据，本轮未重复验证原租户数据库。
 
-存在两个问题：
+## 原因
 
-1. **错误信息显示 UUID 而非产品名称**：应显示"产品 ssa 在仓库 saa 中无库存记录"而非显示 UUID `2c4bf33d-78df-4d3c-b418-46683d010d2e`
-2. **缺少解决引导**：错误提示"请重新选择发货仓库以加载真实可用量"，但实际原因是该仓库无库存，用户应被引导去"库存管理 → 手工入库"添加库存
+1. 出库行直接拼接 `productId`；旧名称查找使用恒为空的原型库存数组。
+2. 缺少库存事实时仍提示重新选择仓库，将“缺事实”与“查询未完成”混淆。
+3. 已有手工入库组件没有挂载；其草稿实现将 `import/availability` 当作入库提交，固定填写预留、冻结等零值以及版本 1，不能作为正式入库办理方式。
 
-## 排查数据
+库存事实不存在不等同于真实零库存，也不能断言从未入库，应先核对来源单据和同步情况。无事实、单位异常等场景继续遵守 PRD 7.5.9 的出库守卫。
 
-| 检查项 | 结果 |
-|---|---|
-| 产品 `ssa`（编码 SAS，ID `2c4bf33d...`） | ✅ 存在（`module_document` kind=product） |
-| 仓库 `saa`（编码 AAA，ID `7d907d3b...`） | ✅ 存在（`module_document` kind=warehouse） |
-| 销售订单 SO-20261017-68ECB5B5 | ✅ 存在 |
-| 出库任务 f31a832f | ✅ 存在 |
-| **库存可用量记录** | ❌ **不存在**（`module_document` 中无 availability 类型记录） |
+## 确认后的方案
 
-## 业务逻辑判定
+2026-10-17 用户确认“实施”。本轮仅修前端，不修改后端、数据库或 PRD。
 
-**系统阻止无库存发货是正确行为**（PRD 7.5.9 出库守卫）。这是新部署环境首次使用的正常场景——尚未入库。
+| 修改层面 | 文件 | 具体改动 |
+|---|---|---|
+| 前端 | `frontend/src/features/inventory/model/outboundPresentation.ts` | 通过稳定 ID 关联正式产品主数据；统一名称、编码、错误文案，保留接口身份和数量 |
+| 前端 | `frontend/src/App.tsx` | 修复出库列表、详情、发货及缺口明细；缺事实持续提示；同仓重新查询；库存台账及入库指引入口 |
+| 前端 | `frontend/src/features/inventory/components/ManualInboundModal.tsx` | 挂载办理指引；删除快照冒充入库的提交逻辑；按有效权限展示采购/生产路径 |
+| 验证 | `frontend/src/app/tests/outboundPresentation.test.ts`、`frontend/tests/outboundPresentation.e2e.mjs` | 单测、受控浏览器回归、真实 API 只读验证 |
+| 说明 | `frontend/src/features/inventory/README.md` | 记录主数据映射、库存事实与入库指引的职责 |
 
-## 关联问题：手工入库弹窗未渲染（DEF-D）
+默认显示规则：
 
-### 现象
+- 主数据正常且库存为空：显示产品名称和业务编码，例如 `ssa（SAS）`。
+- 主数据未返回或不可解析：显示“产品名称未获取”“编码未获取”，不把 UUID 填入名称或编码栏。
+- 所有产品行缺事实：禁止确认发货，提供“重新查询库存”“查看库存台账”“查看入库办理指引”。
+- 部分产品缺事实：保留持续警告；合法部分发货仍由原分批规则及服务端预留守卫控制。
+- 真实零库存、接口错误、单位不一致分别展示；重试保留当前仓库并重新 GET 真实可用量。
+- “手工入库”显示“手工入库暂不可用”，引导正式采购收货或生产完工入库；不提交快照、不伪造入库成功。
 
-库存管理页面"手工入库"按钮可点击，但点击后**无任何弹窗或界面变化**。
+## 验收标准
 
-### 代码排查
+1. 没有库存事实时仍能显示有权限读取的正式产品名称和编码。
+2. 产品名称映射不修改产品 ID、订单行 ID、任务版本或数量。
+3. 全部缺事实禁止发货；重复产品多行不误判为已有库存；部分可发、不允许分批、单位不符保持原守卫。
+4. 点击重新查询读取当前仓库 API；失败不沿用上一次可发状态，成功可恢复。
+5. 入库指引可打开和关闭；移动端正常展示；无权限不显示跨模块入口。
+6. 库存台账、采购收货、生产完工入库使用现有模块路由；不执行库存导入。
+7. 本地验收与部署验收分开记录。
 
-| 检查项 | 文件 | 状态 | 说明 |
-|---|---|---|---|
-| 按钮绑定 | `App.tsx` line 7100 | ✅ 已绑定 | `onClick={handleManualInbound}` |
-| 点击处理函数 | `App.tsx` line 6644 | ✅ 已修改 | `setShowInboundModal(true)`（替代了原来的 toast 占位） |
-| `showInboundModal` state | `App.tsx` line 6160 | ✅ 已添加 | `useState(false)` |
-| **`ManualInboundModal` 组件文件** | `features/inventory/components/ManualInboundModal.tsx` | ✅ **已创建** | 包含完整表单（仓库/产品/数量）+ `inventoryApi.importAvailability` API 调用 |
-| **组件 JSX 渲染** | `App.tsx` InventoryManagement 组件 return 块 | ❌ **缺失** | **`<ManualInboundModal />` 仅被 import，从未作为 JSX 元素放入 return 语句中** |
+## 后端依赖与范围限制
 
-### 根因
+独立手工入库提交仍缺正式业务契约。后续应先冻结来源单据、数量与单位、权限与仓库范围、版本/幂等、实际库存及流水变更和回读结果，再接入前端。库存快照导入接口不得直接替代该业务。
 
-`InventoryManagement` 组件的 JSX 中缺少 `<ManualInboundModal />` 渲染。import、state、事件处理函数均已到位，但弹窗组件从未被挂载到 DOM。
+本轮修复的是上述前端展示和处理引导，不代表手工入库提交能力已交付，也不代表采购收货/生产完工的写入闭环已经在生产租户验证。
 
-### 需补充的代码（1 处）
+## 进展
 
-在 `InventoryManagement` 组件 return JSX 的末尾（`</div>` 闭合前）添加：
-
-```tsx
-{showInboundModal && (
-    <ManualInboundModal
-        open={showInboundModal}
-        context={formalContext}
-        warehouses={formalInventory.warehouses}
-        products={formalInventory.stockData}
-        onClose={() => setShowInboundModal(false)}
-        onSuccess={(msg) => showToast(msg, 'success')}
-    />
-)}
-```
-
-## 需修复的展示缺陷
-
-| 编号 | 问题 | 修改位置 | 修改内容 |
-|---|---|---|---|
-| DEF-A | 错误提示显示 UUID | `FulfillmentController.java` 或前端出库页面 | 将 `productId` 映射为产品名称后拼接错误信息 |
-| DEF-B | 缺少操作引导 | 前端出库管理页面 | 无库存时提示"请先通过库存管理 → 手工入库 添加库存"并提供跳转链接 |
-| DEF-C | 产品字段显示 UUID | `frontend/src/App.tsx` 出库管理区域 | 从 `module_document` 加载产品名称，用 `productName` 替换 `productId` 展示 |
-| DEF-D | 手工入库弹窗未渲染 | `App.tsx` InventoryManagement 组件 JSX | 在 return 块中添加 `<ManualInboundModal />` 渲染 |
-
-## 复现步骤
-
-1. 创建仓库 saa (AAA)
-2. 创建产品 ssa (SAS)
-3. 销售管理 → 快速开单 → 选仓库 saa → 选产品 ssa → 提交
-4. 销售订单 → 去发货 → 生成出库任务
-5. 出库管理 → 选择仓库 saa
-6. **实际**：报错"saa未查询到库存记录： {UUID}"
-7. **期望**：显示"产品 ssa 在仓库 saa 中无库存记录，请先入库"并提供入库引导链接
-
-## 临时解决方案
-
-**当前不可用**：手工入库弹窗因 DEF-D 未渲染，用户无法通过 UI 入库。
-
-**解除阻塞方式（二选一）：**
-
-1. **修复 DEF-D**（前端添加 1 行 JSX），然后手工入库功能即可用
-2. **通过 API 直接调用**：
-```bash
-curl -X POST http://124.222.114.67/api/v1/inventory/import/availability \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer {token}" \
-  -H "X-Tenant-Id: TENANT-6B94B1A4" \
-  -d '{
-    "eventId": "manual-inbound-001",
-    "warehouseId": "7d907d3b-73f4-4d3c-8215-6b0ebc6fca68",
-    "productId": "2c4bf33d-78df-4d3c-b418-46683d010d2e",
-    "qualifiedOnHandQty": "100",
-    "allocatedReservedQty": "0",
-    "frozenQty": "0",
-    "safetyStockQty": "0",
-    "inTransitQty": "0",
-    "fulfillableQty": "100",
-    "uom": "dads",
-    "factVersion": 1,
-    "formulaVersion": "qualified-reserved-frozen-safety-v1",
-    "sourceSystem": "MANUAL_INBOUND"
-  }'
-```
+- 已完成前端实现、单元测试、类型检查、构建以及本地真实登录/API 只读验证。
+- 部署环境仍未展示本次新增入库指引，保留“部署待更新复测”状态。
+- 详细证据与执行命令见 [ISSUE-023 前端验证报告](reports/2026-10-17-issue-023-frontend-verification.md)。
 
