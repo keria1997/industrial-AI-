@@ -30,6 +30,7 @@ import {
   type InventoryWarehouse,
 } from '../model/inventoryMasterData';
 import { inventoryApi, type ApiContext, type ProductDto, type WarehouseDto } from '../../../api/fulfillment';
+import { normalizeNumericDraft, parseNumericDraft } from '../../../shared/numericDraft';
 
 type MasterTab = 'warehouses' | 'products' | 'materials';
 type MasterEntity = 'warehouse' | 'product' | 'material';
@@ -103,18 +104,25 @@ type EditorControlProps = {
   draft: EditorState['record'];
   readOnly: boolean;
   locked?: boolean;
+  showValidation?: boolean;
   onChange: (name: string, value: string | number) => void;
 };
 
 const editorFieldClass = (readOnly: boolean, locked = false) => `h-10 w-full rounded-md border px-3 text-[13px] outline-none ${readOnly || locked ? 'border-slate-100 bg-slate-50 text-slate-600' : 'border-slate-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'}`;
 
 // Stable component identities preserve the input node, focus and selection on draft updates.
-const MasterEditorField = ({ label, name, draft, readOnly, onChange, type = 'text', locked = false, step }: EditorControlProps & { type?: string; step?: string }) => (
-  <label className="block">
+const MasterEditorField = ({ label, name, draft, readOnly, onChange, type = 'text', locked = false, showValidation = false }: EditorControlProps & { type?: string }) => {
+  const invalid = showValidation && type === 'number' && !readOnly && !locked
+    && parseNumericDraft(draft[name], { positive: name === 'capacity', fractionDigits: 6 }) === null;
+  return <label className="block">
     <span className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}</span>
-    <input type={type} step={step} value={draft[name] ?? ''} readOnly={readOnly || locked} onChange={(event) => onChange(name, type === 'number' ? Number(event.target.value) : event.target.value)} className={editorFieldClass(readOnly, locked)} />
-  </label>
-);
+    <input type={type === 'number' ? 'text' : type} inputMode={type === 'number' ? 'decimal' : undefined}
+      aria-label={label} value={draft[name] ?? ''} readOnly={readOnly || locked} aria-invalid={invalid || undefined}
+      aria-describedby={invalid ? `inventory-${name}-error` : undefined}
+      onChange={(event) => onChange(name, event.target.value)} className={editorFieldClass(readOnly, locked)} />
+    {invalid && <span id={`inventory-${name}-error`} className="mt-1 block text-[11px] text-rose-600">{label}须为{name === 'capacity' ? '大于 0' : '非负'}的数字，最多 6 位小数</span>}
+  </label>;
+};
 
 const MasterEditorSelect = ({ label, name, draft, readOnly, onChange, options, locked = false, placeholder, placeholderDisabled = false }: EditorControlProps & { options: string[] | Array<{ value: string; label: string; disabled?: boolean }>; placeholder?: string; placeholderDisabled?: boolean }) => (
   <label className="block">
@@ -137,8 +145,13 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
   onClose: () => void;
   onSave: (draft: Record<string, string | number>) => Promise<void>;
 }) => {
-  const [draft, setDraft] = useState(state.record);
+  const [draft, setDraft] = useState(() => ({
+    ...state.record,
+    ...Object.fromEntries((state.entity === 'warehouse' ? ['capacity'] : ['unitPrice', 'safetyStock'])
+      .map(field => [field, String(state.record[field] ?? '')])),
+  }));
   const [error, setError] = useState('');
+  const [showValidation, setShowValidation] = useState(false);
   const [saving, setSaving] = useState(false);
   const readOnly = state.mode === 'view';
   const editLocked = state.mode !== 'create';
@@ -156,7 +169,7 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
     });
   }
   const update = (key: string, value: string | number) => setDraft((current) => ({ ...current, [key]: value }));
-  const controlProps = { draft, readOnly, onChange: update };
+  const controlProps = { draft, readOnly, onChange: update, showValidation };
 
   const validate = () => {
     const code = normalizeInventoryCode(String(draft.id || ''));
@@ -165,13 +178,15 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
     if (!String(draft.name || '').trim()) return `请输入${entityLabels[state.entity]}名称`;
     if (state.entity === 'warehouse') {
       if (!String(draft.type || '') || !String(draft.organization || '') || !String(draft.manager || '') || !String(draft.address || '')) return '请填写完整的仓库类型、组织、负责人和地址';
-      if (Number(draft.capacity) <= 0 || Number(draft.capacity) < Number(draft.usedCapacity || 0)) return '仓库容量必须大于已用容量';
+      const capacity = parseNumericDraft(draft.capacity, { positive: true, fractionDigits: 6 });
+      if (capacity === null) return '请输入大于 0 的仓库容量，最多保留 6 位小数';
+      if (capacity < Number(draft.usedCapacity || 0)) return '仓库容量不能小于已用容量';
       const duplicateName = data.warehouses.some((item) => item.id !== state.record.id && item.status === '启用' && item.name.trim() === String(draft.name).trim());
       if (duplicateName) return '仓库名称已存在';
     } else {
       if (!String(draft.specification || '').trim() || !String(draft.unit || '').trim()) return '请填写规格型号和基本单位';
-      if (Number(draft.unitPrice) < 0) return '价格不能小于 0';
-      if (Number(draft.safetyStock) < 0) return '安全库存不能小于 0';
+      if (parseNumericDraft(draft.unitPrice, { fractionDigits: 6 }) === null) return '请输入非负价格（可填写 0），最多保留 6 位小数';
+      if (parseNumericDraft(draft.safetyStock, { fractionDigits: 6 }) === null) return '请输入非负安全库存（可填写 0），最多保留 6 位小数';
       if (state.entity === 'product' && draft.defaultWarehouseId
         && draft.defaultWarehouseId !== state.record.defaultWarehouseId
         && !data.warehouses.some(item => item.id === draft.defaultWarehouseId && item.status === '启用')) {
@@ -183,6 +198,7 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
 
   const submit = async () => {
     if (saving || !sourceReady) return;
+    setShowValidation(true);
     const nextError = validate();
     if (nextError) {
       setError(nextError);
@@ -190,7 +206,9 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
     }
     setSaving(true);
     try {
-      await onSave({ ...draft, id: editLocked ? String(draft.id) : normalizeInventoryCode(String(draft.id)), name: String(draft.name).trim() });
+      const numericFields = state.entity === 'warehouse' ? ['capacity'] : ['unitPrice', 'safetyStock'];
+      const normalized = Object.fromEntries(numericFields.map(field => [field, normalizeNumericDraft(draft[field], { fractionDigits: 6 })!]));
+      await onSave({ ...draft, ...normalized, id: editLocked ? String(draft.id) : normalizeInventoryCode(String(draft.id)), name: String(draft.name).trim() });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '保存失败，请重试');
     } finally { setSaving(false); }
@@ -224,7 +242,7 @@ const MasterEditor = ({ state, data, sourceReady, sourceError, onRefreshSource, 
               ? <MasterEditorSelect {...controlProps} label="产品分类" name="category" options={['成品', '半成品']} />
               : <MasterEditorSelect {...controlProps} label="物料类型" name="materialType" options={['原材料', '辅料', '半成品', '包装材料']} />}
             <MasterEditorField {...controlProps} label="基本单位" name="unit" />
-            <MasterEditorField {...controlProps} label="价格 (元)" name="unitPrice" type="number" step="0.01" />
+            <MasterEditorField {...controlProps} label="价格 (元)" name="unitPrice" type="number" />
             <div>
               {state.entity === 'product' ? <>
                 <MasterEditorSelect {...controlProps} label="库存仓库" name="defaultWarehouseId"

@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Plus, RefreshCw, Trash2, Upload, X } from "lucide-react";
 import type { ApiContext } from "../../../api/client";
 import { productionOperationsApi, type BomSnapshot } from "../../../api/production/operations";
+import { parseNumericDraft } from "../../../shared/numericDraft";
 
 const initialLines: BomSnapshot["lines"] = [];
-const initialOperations: BomSnapshot["routingSnapshot"]["operations"] = [];
+type OperationDraft = Omit<BomSnapshot["routingSnapshot"]["operations"][number], "sequence"> & { sequence: string };
+const initialOperations: OperationDraft[] = [];
 const fieldClass = "w-full min-w-0 rounded border border-slate-200 px-2 py-1.5 text-xs text-slate-800";
 
 export function FormalBomPanel({ context }: { context: ApiContext }) {
@@ -37,13 +39,15 @@ export function FormalBomPanel({ context }: { context: ApiContext }) {
     setProductId(bom?.productId || "");
     setProductName(bom?.productName || "");
     setLines(bom?.lines.map(line => ({ ...line })) || initialLines.map(line => ({ ...line })));
-    setOperations(bom?.routingSnapshot?.operations.map(operation => ({ ...operation })) || initialOperations.map(operation => ({ ...operation })));
+    setOperations(bom?.routingSnapshot?.operations.map(operation => ({ ...operation, sequence: String(operation.sequence) })) || []);
     key.current = crypto.randomUUID();
     setError(""); setMessage(""); setOpen(true);
   };
   const publish = async () => {
     if (busy) return;
     if (!lines.length || !operations.length) { setError("请填写物料和工序后再发布"); return; }
+    const sequences = operations.map(operation => parseNumericDraft(operation.sequence, { integer: true, min: 1 }));
+    if (sequences.some(sequence => sequence === null)) { setError("工序顺序须为大于 0 的安全整数"); return; }
     setBusy(true); setError("");
     const requestedScope = currentScope;
     const current = boms.find(bom => bom.productId === productId.trim());
@@ -52,7 +56,7 @@ export function FormalBomPanel({ context }: { context: ApiContext }) {
       const result = await productionOperationsApi.publishBom(context, {
         productId: productId.trim(), productName: productName.trim(),
         lines, routingSnapshotId: routingId,
-        routingSnapshot: { id: routingId, productId: productId.trim(), operations },
+        routingSnapshot: { id: routingId, productId: productId.trim(), operations: operations.map((operation, index) => ({ ...operation, sequence: sequences[index]! })) },
       }, current?.version, `bom-publish:${context.tenantId}:${key.current}`);
       if (scope.current !== requestedScope) return;
       setBoms(previous => [...previous.filter(bom => bom.productId !== result.productId), result]);
@@ -106,12 +110,12 @@ export function FormalBomPanel({ context }: { context: ApiContext }) {
               <button type="button" title="删除物料" disabled={lines.length === 1} onClick={() => { setLines(lines.filter((_, row) => row !== index)); key.current = crypto.randomUUID(); }} className="py-2 text-rose-600"><Trash2 size={14}/></button>
             </div>)}
             <div className="flex items-center justify-between"><h4 className="text-xs font-bold">关联工艺工序</h4>
-              <button type="button" title="添加工序" onClick={() => { setOperations([...operations, { sequence: (operations[operations.length - 1]?.sequence || 0) + 10, code: "", name: "", workCenterResourceId: "", standardMinutes: "1" }]); key.current = crypto.randomUUID(); }}><Plus size={16}/></button></div>
+              <button type="button" title="添加工序" onClick={() => { setOperations([...operations, { sequence: String((parseNumericDraft(operations[operations.length - 1]?.sequence, { integer: true }) ?? 0) + 10), code: "", name: "", workCenterResourceId: "", standardMinutes: "1" }]); key.current = crypto.randomUUID(); }}><Plus size={16}/></button></div>
             {operations.map((operation, index) => <div key={index} className="grid grid-cols-[60px_1fr_1fr_1fr_90px_24px] items-end gap-2">
               {(["sequence", "code", "name", "workCenterResourceId", "standardMinutes"] as const).map((field, fieldIndex) => <label key={field} className="text-[11px] text-slate-500">
                 {["顺序", "工序编码", "工序名称", "工作中心", "分钟/件"][fieldIndex]}
                 <input aria-label={`${field}-${index}`} required type={field === "sequence" ? "number" : "text"} min={field === "sequence" ? 1 : undefined} className={fieldClass} value={operation[field]} onChange={event => {
-                  setOperations(operations.map((item, row) => row === index ? { ...item, [field]: field === "sequence" ? Number(event.target.value) : event.target.value } : item)); key.current = crypto.randomUUID();
+                  setOperations(operations.map((item, row) => row === index ? { ...item, [field]: event.target.value } : item)); key.current = crypto.randomUUID();
                 }}/></label>)}
               <button type="button" title="删除工序" disabled={operations.length === 1} onClick={() => { setOperations(operations.filter((_, row) => row !== index)); key.current = crypto.randomUUID(); }} className="py-2 text-rose-600"><Trash2 size={14}/></button>
             </div>)}

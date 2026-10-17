@@ -75,6 +75,8 @@ import { PurchaseReceiptModal } from './features/procurement/components/Purchase
 import { ProcurementExecutionPanel } from './features/procurement/components/ProcurementExecutionPanel';
 import { confirmSalesOrderContents, mergeFormalSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
 import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
+import { salesNumericDraft, salesLineDraftAmount } from './features/sales/model/salesNumericDraft';
+import { normalizeNumericDraft, parseNumericDraft } from './shared/numericDraft';
 import { createQuickSalesOrder } from './features/sales/model/quickSalesOrder';
 import { mapSalesCustomer, saveSalesCustomer } from './features/sales/model/formalCustomer';
 import {
@@ -97,7 +99,7 @@ import { mapFormalShipmentStatus } from './features/inventory/model/formalShipme
 import { postFormalOutbound, prepareFormalOutbound } from './features/inventory/model/formalOutboundWorkflow';
 import { formalShipmentStock } from './features/inventory/model/formalShipmentStock';
 import { canonicalInventoryUnit } from './shared/inventoryUnits';
-import { compareQuantity, subtractQuantity } from './shared/decimal';
+import { addQuantity, compareQuantity, subtractQuantity } from './shared/decimal';
 import {
   mapProductionDemandStatus,
   normalizeProductionDemandTrace,
@@ -1389,6 +1391,7 @@ const sales_defaultOutreachSettings = {
 };
 
 const sales_formatMoney = (value) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const sales_formatDraftMoney = (value) => value === null ? '—' : sales_formatMoney(value);
 
 const sales_parseMoney = (value) => Number(String(value ?? 0).replace(/[^\d.-]/g, '')) || 0;
 
@@ -1512,27 +1515,28 @@ const Sales_OrderEditModal = ({ mode = 'edit', record, customers = [], products 
   const [orderDate, setOrderDate] = useState(record?.date || new Date().toISOString().slice(0, 10));
   const [deliveryDate, setDeliveryDate] = useState(record?.deliveryDate && record.deliveryDate !== '待确认' ? record.deliveryDate : '');
   const [lines, setLines] = useState(() => {
-    if (record?.lines && Array.isArray(record.lines) && record.lines.length > 0) return record.lines.map(l => ({ ...l, key: Date.now() + Math.random() }));
-    if (record?.productName) return [{ key: Date.now(), productName: record.productName, productId: record.productId || '', spec: record.spec || '', unit: record.unit || '件', quantity: Number(record.qty || 1), unitPrice: Number(record.unitPrice || 0) }];
+    if (record?.lines && Array.isArray(record.lines) && record.lines.length > 0) return record.lines.map(l => ({ ...l, quantity: String(l.quantity ?? l.qty ?? ''), unitPrice: String(l.unitPrice ?? ''), key: Date.now() + Math.random() }));
+    if (record?.productName) return [{ key: Date.now(), productName: record.productName, productId: record.productId || '', spec: record.spec || '', unit: record.unit || '件', quantity: String(record.qty ?? 1), unitPrice: String(record.unitPrice ?? 0) }];
     return [];
   });
-  const [discountRate, setDiscountRate] = useState(record?.discountRate ?? 100);
-  const [discountAmount, setDiscountAmount] = useState(record?.discountAmount || 0);
+  const [discountRate, setDiscountRate] = useState(String(record?.discountRate ?? 100));
+  const [discountAmount, setDiscountAmount] = useState(String(record?.discountAmount ?? 0));
   const [remark, setRemark] = useState(record?.remark || '');
   const [error, setError] = useState('');
   const outStatus = record?.outStatus || '未发货';
   const orderStatus = record?.status || '待发货';
-  const subtotal = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
-  const total = Math.max(0, subtotal * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
+  const pricing = salesNumericDraft(lines, discountRate, discountAmount);
+  const { subtotal, total } = pricing;
   const updateLine = (key, field, value) => setLines(prev => prev.map(line => line.key === key ? { ...line, [field]: value } : line));
-  const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), productName: '', productId: '', spec: '', unit: '件', quantity: 1, unitPrice: 0 }]);
+  const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), productName: '', productId: '', spec: '', unit: '件', quantity: '1', unitPrice: '0' }]);
   const removeLine = (key) => setLines(prev => prev.filter(line => line.key !== key));
 
   const handleSave = () => {
     if (!client.trim() || !orderDate || !deliveryDate) { setError('请完整填写客户、订单日期和交期'); return; }
     if (lines.length === 0) { setError('请至少添加一个产品'); return; }
-    const invalid = lines.find(l => !l.productName.trim() || Number(l.quantity) <= 0 || Number(l.unitPrice) <= 0);
+    const invalid = lines.find(l => !l.productName.trim());
     if (invalid) { setError('每个产品需填写名称、数量和单价'); return; }
+    if (pricing.error) { setError(pricing.error); return; }
     const productSummary = lines.length === 1
       ? `${lines[0].productName.trim()} / ${lines[0].spec.trim()} × ${lines[0].quantity} ${lines[0].unit}`
       : `${lines[0].productName.trim()} 等 ${lines.length} 项产品`;
@@ -1547,11 +1551,11 @@ const Sales_OrderEditModal = ({ mode = 'edit', record, customers = [], products 
       productName: lines[0].productName.trim(),
       spec: lines[0].spec,
       unit: lines[0].unit,
-      qty: lines.reduce((sum, l) => sum + Number(l.quantity || 0), 0),
-      unitPrice: lines[0].unitPrice,
-      lines: lines.map(({ key, ...rest }) => rest),
-      discountRate: Number(discountRate),
-      discountAmount: Number(discountAmount),
+      qty: pricing.lines.reduce((sum, l) => sum + Number(l.quantity), 0),
+      unitPrice: pricing.lines[0].unitPrice,
+      lines: pricing.lines.map(({ key, ...rest }) => rest),
+      discountRate: pricing.discountRate,
+      discountAmount: pricing.discountAmount,
       remark,
       amount: sales_formatMoney(total),
     });
@@ -1596,26 +1600,26 @@ const Sales_OrderEditModal = ({ mode = 'edit', record, customers = [], products 
                 <tbody>
                   {lines.length > 0 ? lines.map((line) => (
                     <tr key={line.key} className="border-b border-slate-50">
-                      <td className="px-3 py-3"><input type="text" list="order-products" value={line.productName} onChange={(e) => { const value = e.target.value; updateLine(line.key, 'productName', value); const matched = products.find((p) => p.name === value || p.id === value); if (matched) { updateLine(line.key, 'productId', matched.id); updateLine(line.key, 'spec', matched.id); updateLine(line.key, 'unit', matched.unit === 'PCS' ? '件' : matched.unit === '台' ? '台' : '套'); updateLine(line.key, 'unitPrice', Number(matched.unitPrice || 0)); } }} placeholder="搜索选择产品" className="w-48 border border-slate-200 rounded-md px-2 py-1.5 text-[12px] font-bold outline-none focus:border-blue-500" /><datalist id="order-products">{products.map((p) => <option key={p.id} value={p.name} />)}</datalist></td>
+                      <td className="px-3 py-3"><input type="text" list="order-products" value={line.productName} onChange={(e) => { const value = e.target.value; updateLine(line.key, 'productName', value); const matched = products.find((p) => p.name === value || p.id === value); if (matched) { updateLine(line.key, 'productId', matched.id); updateLine(line.key, 'spec', matched.id); updateLine(line.key, 'unit', matched.unit === 'PCS' ? '件' : matched.unit === '台' ? '台' : '套'); updateLine(line.key, 'unitPrice', String(matched.unitPrice ?? 0)); } }} placeholder="搜索选择产品" className="w-48 border border-slate-200 rounded-md px-2 py-1.5 text-[12px] font-bold outline-none focus:border-blue-500" /><datalist id="order-products">{products.map((p) => <option key={p.id} value={p.name} />)}</datalist></td>
                       <td className="px-3 py-3 text-center"><input value={line.spec} onChange={(e) => updateLine(line.key, 'spec', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
                       <td className="px-3 py-3 text-center"><select value={line.unit} onChange={(e) => updateLine(line.key, 'unit', e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
-                      <td className="px-3 py-3 text-center"><input type="number" min="1" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', Number(e.target.value))} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
-                      <td className="px-3 py-3 text-center"><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', Number(e.target.value))} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
-                      <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0))}</td>
+                      <td className="px-3 py-3 text-center"><input inputMode="decimal" aria-label="数量" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', e.target.value)} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
+                      <td className="px-3 py-3 text-center"><input inputMode="decimal" aria-label="单价" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
+                      <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatDraftMoney(salesLineDraftAmount(line))}</td>
                       <td className="px-5 py-4 text-center"><button onClick={() => removeLine(line.key)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50"><Trash2 size={14}/></button></td>
                     </tr>
                   )) : (<tr><td colSpan="7" className="px-5 py-12 text-center text-slate-400">请点击'添加产品'按钮添加产品明细</td></tr>)}
                 </tbody>
-                {lines.length > 0 && (<tfoot className="border-t border-slate-200 bg-slate-50"><tr><td colSpan="5" className="px-5 py-3 text-right text-[12px] font-bold text-slate-500">小计</td><td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(subtotal)}</td><td></td></tr></tfoot>)}
+                {lines.length > 0 && (<tfoot className="border-t border-slate-200 bg-slate-50"><tr><td colSpan="5" className="px-5 py-3 text-right text-[12px] font-bold text-slate-500">小计</td><td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatDraftMoney(subtotal)}</td><td></td></tr></tfoot>)}
               </table>
             </div>
           </section>
           <section>
             <div className="flex items-center mb-4"><div className="w-1.5 h-4 bg-blue-600 rounded-full mr-2"></div><span className="text-[15px] font-bold text-slate-800">优惠设置</span></div>
             <div className="grid grid-cols-3 gap-4">
-              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">折扣率 (%)</label><input type="number" min="0" max="100" value={discountRate} onChange={(e) => setDiscountRate(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
-              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">减免金额</label><input type="number" min="0" step="0.01" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
-              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">订单总额</label><div className="w-full border border-slate-100 rounded-lg px-3 py-2.5 text-[13px] font-mono font-bold text-blue-700 bg-blue-50/50">{sales_formatMoney(total)}</div></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">折扣率 (%)</label><input inputMode="decimal" aria-label="折扣率" value={discountRate} onChange={(e) => setDiscountRate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">减免金额</label><input inputMode="decimal" aria-label="减免金额" value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-blue-500" /></div>
+              <div><label className="block text-[13px] text-slate-600 mb-1.5 font-medium">订单总额</label><div className="w-full border border-slate-100 rounded-lg px-3 py-2.5 text-[13px] font-mono font-bold text-blue-700 bg-blue-50/50">{sales_formatDraftMoney(total)}</div></div>
             </div>
           </section>
           <section>
@@ -1680,8 +1684,9 @@ const Sales_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
                 <label className="block text-[13px] text-slate-600 mb-2 font-medium">{field.label}</label>
                 <input
                   type={field.type || 'text'}
+                  aria-label={field.label}
                   placeholder={field.placeholder || ''}
-                  value={draft[field.key] || ''}
+                  value={draft[field.key] ?? ''}
                   readOnly={fieldReadOnly}
                   onChange={(e) => handleChange(field.key, e.target.value)}
                   className={`w-full border rounded-lg px-3 py-2.5 text-[13px] outline-none transition-colors ${fieldReadOnly ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-800'}`}
@@ -1719,16 +1724,19 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
       const matched = products.find((p) => p.id === line.productId || p.name === line.productName);
       return {
         ...line,
+        key: line.key ?? crypto.randomUUID(),
+        quantity: String(line.quantity ?? line.qty ?? ''),
+        unitPrice: String(line.unitPrice ?? ''),
         warehouseId: line.warehouseId || matched?.warehouseId || '',
         available: line.available != null ? line.available : (matched?.availQty != null ? Number(matched.availQty) : null),
       };
     };
     if (record?.lines && Array.isArray(record.lines) && record.lines.length > 0) return record.lines.map(enrichLine);
-    if (record?.productName) return [enrichLine({ key: Date.now(), productName: record.productName, productId: record.productId || '', spec: record.spec || '', unit: record.unit || '件', quantity: Number(record.qty || 1), unitPrice: Number(record.unitPrice || 0) })];
+    if (record?.productName) return [enrichLine({ key: Date.now(), productName: record.productName, productId: record.productId || '', spec: record.spec || '', unit: record.unit || '件', quantity: String(record.qty ?? 1), unitPrice: String(record.unitPrice ?? 0) })];
     return [];
   });
-  const [discountRate, setDiscountRate] = useState(record?.discountRate ?? 100);
-  const [discountAmount, setDiscountAmount] = useState(record?.discountAmount || 0);
+  const [discountRate, setDiscountRate] = useState(String(record?.discountRate ?? 100));
+  const [discountAmount, setDiscountAmount] = useState(String(record?.discountAmount ?? 0));
   const [orderAvailability, setOrderAvailability] = useState({});
   const availabilitySelection = JSON.stringify(lines.filter(line => line.warehouseId && line.productId)
     .map(line => [line.warehouseId, line.productId]).sort());
@@ -1756,11 +1764,11 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
   }, [creatingOrder, apiContext?.tenantId, apiContext?.accessToken, availabilitySelection]);
   const [remark, setRemark] = useState(record?.remark || '');
   const [error, setError] = useState('');
-  const subtotal = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
+  const pricing = salesNumericDraft(lines, discountRate, discountAmount);
+  const { subtotal, total } = pricing;
   useEffect(() => setError(''), [client, quoteDate, validUntil, lines, discountRate, discountAmount, remark]);
-  const total = Math.max(0, subtotal * Math.min(100, Math.max(0, Number(discountRate))) / 100 - Math.max(0, Number(discountAmount)));
   const updateLine = (key, field, value) => setLines(prev => prev.map(line => line.key === key ? { ...line, [field]: value } : line));
-  const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), warehouseId: '', productName: '', productId: '', spec: '', unit: '件', available: null, quantity: 1, unitPrice: 0 }]);
+  const addLine = () => setLines(prev => [...prev, { key: Date.now() + Math.random(), warehouseId: '', productName: '', productId: '', spec: '', unit: '件', available: null, quantity: '1', unitPrice: '0' }]);
   const removeLine = (key) => setLines(prev => prev.filter(line => line.key !== key));
   const warehouseOptions = warehouses;
 
@@ -1778,11 +1786,12 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           setError('请至少添加一个产品');
           return;
       }
-      const invalidLine = lines.find(line => !line.warehouseId || !line.productName.trim() || Number(line.quantity) <= 0 || Number(line.unitPrice) <= 0);
+      const invalidLine = lines.find(line => !line.warehouseId || !line.productName.trim());
       if (invalidLine) {
           setError('每个产品需选择仓库并填写名称、数量和单价');
           return;
       }
+      if (pricing.error) { setError(pricing.error); return; }
       const productSummary = lines.length === 1
           ? `${lines[0].productName.trim()} / ${lines[0].spec.trim()} × ${lines[0].quantity} ${lines[0].unit}`
           : `${lines[0].productName.trim()} 等 ${lines.length} 项产品`;
@@ -1800,11 +1809,11 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
           productName: lines[0].productName.trim(),
           spec: lines[0].spec,
           unit: lines[0].unit,
-          qty: lines.reduce((sum, l) => sum + Number(l.quantity || 0), 0),
-          unitPrice: lines[0].unitPrice,
-          lines: lines.map(({ key, ...rest }) => rest),
-          discountRate: Number(discountRate),
-          discountAmount: Number(discountAmount),
+          qty: pricing.lines.reduce((sum, l) => sum + Number(l.quantity), 0),
+          unitPrice: pricing.lines[0].unitPrice,
+          lines: pricing.lines.map(({ key, ...rest }) => rest),
+          discountRate: pricing.discountRate,
+          discountAmount: pricing.discountAmount,
           remark,
           amount: sales_formatMoney(total),
           createdAt: record?.createdAt || savedAt,
@@ -1896,20 +1905,20 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                               <tbody>
                                   {lines.length > 0 ? lines.map((line) => {
                                       const warehouseProducts = line.warehouseId ? products.filter((p) => p.warehouseId === line.warehouseId) : [];
-                                      const qtyNum = Number(line.quantity || 0);
+                                      const qtyNum = parseNumericDraft(line.quantity, { positive: true, fractionDigits: 6 });
                                       const available = creatingOrder ? orderAvailability[`${line.warehouseId}:${line.productId}`] : line.available;
                                       const availNum = Number(available ?? -1);
-                                      const isShort = availNum >= 0 && qtyNum > availNum;
+                                      const isShort = qtyNum !== null && availNum >= 0 && qtyNum > availNum;
                                       return (
                                       <tr key={line.key} className="border-b border-slate-50">
                                           <td className="px-3 py-3">
-                                              <select value={line.warehouseId} onChange={(e) => { const wid = e.target.value; setLines(prev => prev.map(l => l.key === line.key ? { ...l, warehouseId: wid, productId: '', productName: '', spec: '', unit: '件', available: null, quantity: 1, unitPrice: 0 } : l)); }} className="w-32 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] outline-none focus:border-blue-500">
+                                              <select value={line.warehouseId} onChange={(e) => { const wid = e.target.value; setLines(prev => prev.map(l => l.key === line.key ? { ...l, warehouseId: wid, productId: '', productName: '', spec: '', unit: '件', available: null, quantity: '1', unitPrice: '0' } : l)); }} className="w-32 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] outline-none focus:border-blue-500">
                                                   <option value="">选择仓库</option>
                                                   {warehouseOptions.map((w) => <option key={w.warehouseId} value={w.warehouseId}>{w.warehouse}</option>)}
                                               </select>
                                           </td>
                                           <td className="px-3 py-3">
-                                              <select value={line.productId} disabled={!line.warehouseId} onChange={(e) => { const pid = e.target.value; const matched = products.find((p) => p.id === pid); if (matched) { setLines(prev => prev.map(l => l.key === line.key ? { ...l, productId: matched.id, productName: matched.name, spec: matched.spec || '', unit: matched.unit === 'PCS' ? '件' : matched.unit, available: Number(matched.availQty ?? 0), quantity: 1, unitPrice: Number(matched.unitPrice || 0) } : l)); } }} className="w-44 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400">
+                                              <select value={line.productId} disabled={!line.warehouseId} onChange={(e) => { const pid = e.target.value; const matched = products.find((p) => p.id === pid); if (matched) { setLines(prev => prev.map(l => l.key === line.key ? { ...l, productId: matched.id, productName: matched.name, spec: matched.spec || '', unit: matched.unit === 'PCS' ? '件' : matched.unit, available: Number(matched.availQty ?? 0), quantity: '1', unitPrice: String(matched.unitPrice ?? 0) } : l)); } }} className="w-44 border border-slate-200 rounded-md px-2 py-1.5 bg-white text-[12px] font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400">
                                                   <option value="">{line.warehouseId ? '选择产品' : '先选仓库'}</option>
                                                   {warehouseProducts.map((p) => <option key={p.id} value={p.id}>{p.id} {p.name}</option>)}
                                               </select>
@@ -1917,9 +1926,9 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                                           <td className="px-3 py-3 text-center"><input value={line.spec} onChange={(e) => updateLine(line.key, 'spec', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
                                           <td className="px-3 py-3 text-center"><select value={line.unit} onChange={(e) => updateLine(line.key, 'unit', e.target.value)} className="border border-slate-200 rounded-md px-2 py-1.5 bg-white"><option>件</option><option>台</option><option>套</option></select></td>
                                           <td className={`px-3 py-3 text-center font-mono font-bold ${isShort ? 'text-rose-600' : 'text-emerald-600'}`}>{available != null ? available : creatingOrder && line.productId ? available === null ? '查询失败' : '读取中' : '-'}</td>
-                                          <td className="px-3 py-3 text-center"><input type="number" min="1" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', Number(e.target.value))} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-center"><input type="number" min="0.01" step="0.01" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', Number(e.target.value))} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
-                                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0))}</td>
+                                          <td className="px-3 py-3 text-center"><input inputMode="decimal" aria-label="数量" value={line.quantity} onChange={(e) => updateLine(line.key, 'quantity', e.target.value)} className="w-20 border border-slate-200 rounded-md px-2 py-1.5 text-center outline-none focus:border-blue-500" /></td>
+                                          <td className="px-3 py-3 text-center"><input inputMode="decimal" aria-label="单价" value={line.unitPrice} onChange={(e) => updateLine(line.key, 'unitPrice', e.target.value)} className="w-24 border border-slate-200 rounded-md px-2 py-1.5 text-right font-mono font-bold outline-none focus:border-blue-500" /></td>
+                                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatDraftMoney(salesLineDraftAmount(line))}</td>
                                           <td className="px-5 py-4 text-center"><button onClick={() => removeLine(line.key)} className="p-1 border border-rose-200 text-rose-500 rounded hover:bg-rose-50"><Trash2 size={14}/></button></td>
                                       </tr>
                                       );
@@ -1933,7 +1942,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                                   <tfoot className="border-t border-slate-200 bg-slate-50">
                                       <tr>
                                           <td colSpan="7" className="px-5 py-3 text-right text-[12px] font-bold text-slate-500">小计</td>
-                                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatMoney(subtotal)}</td>
+                                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{sales_formatDraftMoney(subtotal)}</td>
                                           <td></td>
                                       </tr>
                                   </tfoot>
@@ -1951,16 +1960,16 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
                       <div className="bg-[#fafafa] border border-slate-200 rounded-lg p-5 flex flex-wrap items-center gap-x-10 gap-y-4 text-[13px] text-slate-600">
                           <div className="flex items-center space-x-3">
                               <span>折扣率：</span>
-                              <input type="number" min="0" max="100" value={discountRate} onChange={(e) => setDiscountRate(Number(e.target.value))} className="w-24 border border-slate-200 bg-white rounded-md p-2 text-center outline-none focus:border-blue-500 transition-colors" />
+                              <input inputMode="decimal" aria-label="折扣率" value={discountRate} onChange={(e) => setDiscountRate(e.target.value)} className="w-24 border border-slate-200 bg-white rounded-md p-2 text-center outline-none focus:border-blue-500 transition-colors" />
                               <span>%</span>
                           </div>
                           <div className="flex items-center space-x-3">
                               <span>优惠金额：</span>
                               <span>¥</span>
-                              <input type="number" min="0" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} className="w-28 border border-slate-200 bg-white rounded-md p-2 text-center outline-none focus:border-blue-500 transition-colors" />
+                              <input inputMode="decimal" aria-label="优惠金额" value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value)} className="w-28 border border-slate-200 bg-white rounded-md p-2 text-center outline-none focus:border-blue-500 transition-colors" />
                               <span>元</span>
                           </div>
-                          <div className="ml-auto text-right"><span className="text-slate-400 mr-2">报价总额</span><span className="font-mono font-bold text-blue-700 text-[16px]">{sales_formatMoney(total)}</span></div>
+                          <div className="ml-auto text-right"><span className="text-slate-400 mr-2">报价总额</span><span className="font-mono font-bold text-blue-700 text-[16px]">{sales_formatDraftMoney(total)}</span></div>
                       </div>
                   </div>
 
@@ -2777,7 +2786,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
                           <div className="sm:w-32 shrink-0"><label className="text-[13px] font-bold text-slate-700">触发阈值 <span className="text-rose-500">*</span></label></div>
                           <div className="flex items-center space-x-3 text-[13px] text-slate-600">
                               <span>订单处于「待确认」状态持续超过</span>
-                              <input type="number" min="1" value={outreachSettings.thresholdDays} onChange={(event) => setOutreachSettings(prev => ({ ...prev, thresholdDays: Math.max(1, Number(event.target.value)) }))} className="w-16 px-2 py-1.5 text-center border border-slate-200 rounded text-[13px] font-bold text-slate-800 focus:outline-none focus:border-blue-500 transition-colors" />
+                              <input type="number" min="1" aria-label="触发阈值" value={outreachSettings.thresholdDays} onChange={(event) => setOutreachSettings(prev => ({ ...prev, thresholdDays: event.target.value }))} className="w-16 px-2 py-1.5 text-center border border-slate-200 rounded text-[13px] font-bold text-slate-800 focus:outline-none focus:border-blue-500 transition-colors" />
                               <span>天</span>
                           </div>
                       </div>
@@ -2801,7 +2810,12 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
                       </div>
                   </div>
                   <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-                      <button onClick={unavailable} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded shadow-sm transition-colors">保存配置</button>
+                      <button onClick={() => {
+                        if (parseNumericDraft(outreachSettings.thresholdDays, { integer: true, min: 1 }) === null) {
+                          onToast('未保存', '触发阈值须为大于 0 的安全整数', 'danger'); return;
+                        }
+                        unavailable();
+                      }} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded shadow-sm transition-colors">保存配置</button>
                   </div>
               </div>
           )}
@@ -3358,9 +3372,10 @@ const Prod_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
                             <label className="block text-[12px] font-bold text-slate-500 mb-1.5">{field.label}</label>
                             <input
                                 type={field.type || 'text'}
-                                value={draft[field.key] || ''}
+                                aria-label={field.label}
+                                value={draft[field.key] ?? ''}
                                 readOnly={readOnly || field.key === 'id'}
-                                onChange={(e) => setDraft(prev => ({ ...prev, [field.key]: field.type === 'number' ? Number(e.target.value) : e.target.value }))}
+                                onChange={(e) => setDraft(prev => ({ ...prev, [field.key]: e.target.value }))}
                                 className={`w-full border rounded-lg px-3 py-2 text-[13px] outline-none transition-colors ${readOnly || field.key === 'id' ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-800'}`}
                             />
                         </div>
@@ -3564,26 +3579,55 @@ const Prod_PeggingModal = ({ item, onClose }) => (
 );
 
 const Prod_QcModal = ({ qc, onClose, onSave }) => {
-    const [okQty, setOkQty] = useState(qc.sampleQty);
-    const [ngQty, setNgQty] = useState(0);
-    const [scrapQty, setScrapQty] = useState(0);
-    const [reworkQty, setReworkQty] = useState(0);
+    const [okQty, setOkQty] = useState(String(qc.formalInspection?.sampleQty ?? qc.sampleQty));
+    const [ngQty, setNgQty] = useState('0');
+    const [scrapQty, setScrapQty] = useState('0');
+    const [reworkQty, setReworkQty] = useState('0');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
 
-    const total = qc.sampleQty;
-    const isMatched = (okQty + ngQty) === total;
-    const showMrb = ngQty > 0;
+    const total = normalizeNumericDraft(qc.formalInspection?.sampleQty ?? qc.sampleQty, { fractionDigits: 6 });
+    const quantity = (raw) => {
+        const normalized = normalizeNumericDraft(raw, { fractionDigits: 6 });
+        return normalized !== null && total !== null && compareQuantity(normalized, total) <= 0 ? normalized : null;
+    };
+    const ok = quantity(okQty);
+    const ng = quantity(ngQty);
+    const scrap = quantity(scrapQty);
+    const rework = quantity(reworkQty);
+    const isMatched = total !== null && ok !== null && ng !== null && compareQuantity(addQuantity(ok, ng), total) === 0;
+    const allocationsMatched = scrap !== null && rework !== null && ng !== null && compareQuantity(addQuantity(scrap, rework), ng) === 0;
+    const showMrb = Number(ng ?? 0) > 0 || Number(scrap ?? 0) > 0 || Number(rework ?? 0) > 0;
 
     const handleNgChange = (e) => {
-        const val = parseInt(e.target.value) || 0;
-        setNgQty(val); setReworkQty(val); setScrapQty(0);
-        setOkQty(Math.max(0, total - val));
+        const raw = e.target.value;
+        setNgQty(raw);
+        const val = quantity(raw);
+        if (val === null || total === null) return;
+        setReworkQty(val); setScrapQty('0');
+        setOkQty(subtractQuantity(total, val));
     };
 
     const handleOkChange = (e) => {
-        const val = parseInt(e.target.value) || 0;
-        setOkQty(val);
-        const ng = Math.max(0, total - val);
-        setNgQty(ng); setReworkQty(ng); setScrapQty(0);
+        const raw = e.target.value;
+        setOkQty(raw);
+        const val = quantity(raw);
+        if (val === null || total === null) return;
+        const nextNg = subtractQuantity(total, val);
+        setNgQty(nextNg); setReworkQty(nextNg); setScrapQty('0');
+    };
+
+    const save = async () => {
+        if (saving || !isMatched || !allocationsMatched) return;
+        setSaving(true); setError('');
+        try {
+            if (await onSave(qc.id, ok, ng, scrap, rework) === false) {
+                setError('检验结果未保存，请检查错误后重试'); return;
+            }
+            onClose();
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : '检验结果保存失败，请重试');
+        } finally { setSaving(false); }
     };
 
     return (
@@ -3591,7 +3635,7 @@ const Prod_QcModal = ({ qc, onClose, onSave }) => {
             <div className="bg-white rounded-2xl shadow-2xl w-[550px] overflow-hidden flex flex-col transform border border-slate-100">
                 <div className="p-5 flex justify-between items-center border-b border-slate-100 bg-slate-50/50">
                     <h3 className="font-bold text-slate-900 text-[15px] flex items-center gap-2"><Microscope className="w-4.5 h-4.5 text-blue-600"/> 品质检验实绩录入</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg transition-colors"><X size={16}/></button>
+                    <button disabled={saving} onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg transition-colors"><X size={16}/></button>
                 </div>
                 <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh] custom-scrollbar">
                     <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex justify-between items-center">
@@ -3600,26 +3644,28 @@ const Prod_QcModal = ({ qc, onClose, onSave }) => {
                     </div>
                     <div>
                         <div className="flex gap-4">
-                            <div className="flex-1"><label className="block text-[11px] font-bold text-emerald-600 mb-1.5">合格良品数 *</label><input type="number" min="0" value={okQty} onChange={handleOkChange} className="w-full border border-emerald-200 bg-emerald-50/30 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-emerald-500 font-mono font-bold text-emerald-700" /></div>
-                            <div className="flex-1"><label className="block text-[11px] font-bold text-rose-600 mb-1.5">不良品数(NG) *</label><input type="number" min="0" value={ngQty} onChange={handleNgChange} className="w-full border border-rose-200 bg-rose-50/30 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-rose-500 font-mono font-bold text-rose-700" /></div>
+                            <div className="flex-1"><label className="block text-[11px] font-bold text-emerald-600 mb-1.5">合格良品数 *</label><input inputMode="decimal" aria-label="合格良品数" disabled={saving} value={okQty} onChange={handleOkChange} className="w-full border border-emerald-200 bg-emerald-50/30 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-emerald-500 font-mono font-bold text-emerald-700" /></div>
+                            <div className="flex-1"><label className="block text-[11px] font-bold text-rose-600 mb-1.5">不良品数(NG) *</label><input inputMode="decimal" aria-label="不良品数" disabled={saving} value={ngQty} onChange={handleNgChange} className="w-full border border-rose-200 bg-rose-50/30 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-rose-500 font-mono font-bold text-rose-700" /></div>
                         </div>
-                        {isMatched ? <p className="text-[11px] mt-2 font-bold text-emerald-600">✓ 数量核对一致</p> : <p className="text-[11px] mt-2 font-bold text-rose-500">数量不匹配！差额: {total - (okQty + ngQty)}</p>}
+                        {isMatched ? <p className="text-[11px] mt-2 font-bold text-emerald-600">✓ 数量核对一致</p> : <p role="status" className="text-[11px] mt-2 font-bold text-rose-500">{ok === null || ng === null || total === null ? '待校验：请填写有效非负数量，最多 6 位小数' : '良品与不良品合计须等于送检总数'}</p>}
                     </div>
                     {showMrb && (
                         <div className="border-t border-dashed border-slate-200 pt-5 mt-5">
                             <div className="bg-rose-50 border border-rose-100 rounded-xl p-4">
                                 <h4 className="text-[13px] font-bold text-rose-800 mb-2 flex items-center gap-1.5"><AlertTriangle size={16}/> MRB 不合格品评审分配</h4>
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="block text-[11px] font-bold text-slate-600 mb-1.5">直接报废扣账 (Scrap)</label><input type="number" min="0" value={scrapQty} onChange={e=>setScrapQty(parseInt(e.target.value)||0)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-slate-400 font-mono" /></div>
-                                    <div><label className="block text-[11px] font-bold text-orange-600 mb-1.5">退回车间返修 (Rework)</label><input type="number" min="0" value={reworkQty} onChange={e=>setReworkQty(parseInt(e.target.value)||0)} className="w-full border border-orange-200 bg-orange-50/30 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-orange-500 font-mono text-orange-700 font-bold" /></div>
+                                    <div><label className="block text-[11px] font-bold text-slate-600 mb-1.5">直接报废扣账 (Scrap)</label><input inputMode="decimal" aria-label="直接报废扣账" disabled={saving} value={scrapQty} onChange={e=>setScrapQty(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-slate-400 font-mono" /></div>
+                                    <div><label className="block text-[11px] font-bold text-orange-600 mb-1.5">退回车间返修 (Rework)</label><input inputMode="decimal" aria-label="退回车间返修" disabled={saving} value={reworkQty} onChange={e=>setReworkQty(e.target.value)} className="w-full border border-orange-200 bg-orange-50/30 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-orange-500 font-mono text-orange-700 font-bold" /></div>
                                 </div>
+                                {!allocationsMatched && <p role="status" className="mt-2 text-[11px] text-rose-600">请填写有效非负数量，报废与返修合计须等于不良品数</p>}
                             </div>
                         </div>
                     )}
                 </div>
+                {error && <p role="alert" className="px-6 pb-3 text-[12px] text-rose-600">{error}</p>}
                 <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
-                    <button onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl">取消</button>
-                    <button onClick={() => isMatched && (!showMrb || (scrapQty + reworkQty === ngQty)) && onSave(qc.id, okQty, ngQty, scrapQty, reworkQty)} disabled={!isMatched || (showMrb && (scrapQty + reworkQty !== ngQty))} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5 disabled:opacity-50"><CheckCircle2 size={16}/> 提交检验结果</button>
+                    <button disabled={saving} onClick={onClose} className="px-5 py-2 text-[13px] font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl">取消</button>
+                    <button onClick={() => void save()} disabled={saving || !isMatched || !allocationsMatched} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5 disabled:opacity-50"><CheckCircle2 size={16}/> {saving ? '提交中' : '提交检验结果'}</button>
                 </div>
             </div>
         </div>
@@ -4200,7 +4246,7 @@ const Prod_QcView = ({ qc, orders = [], onQcComplete, onConfirmInbound, onCloseO
                     ))}
                 </tbody></table></div>
             </div>
-            {activeQc && <Prod_QcModal qc={activeQc} onClose={() => setActiveQc(null)} onSave={(...args) => { onQcComplete(...args); setActiveQc(null); }} />}
+            {activeQc && <Prod_QcModal qc={activeQc} onClose={() => setActiveQc(null)} onSave={onQcComplete} />}
         </div>
     );
 };
@@ -5157,13 +5203,14 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               const result = await productionOperationsApi.inspectionResult(formalCtx, targetQcItem.formalInspection, String(okQty), String(ngQty));
               setQc(prev => prev.map(item => item.id === qcId ? mapFormalInspection(result) : item));
               showToast(ngQty > 0 ? '不合格结果已保存，等待质量处置，禁止入库' : 'FQC 检验合格，等待成品入库', ngQty > 0 ? 'warning' : 'success');
-              return;
+              return true;
           } catch (error) {
               showToast(error instanceof Error ? `FQC 登记失败：${error.message}` : 'FQC 登记失败', 'error');
-              return;
+              return false;
           }
       }
       showToast('未保存：正式质检单未加载，请刷新后重试', 'error');
+      return false;
   };
 
   const handleConfirmInbound = async (qcId) => {
@@ -5386,9 +5433,10 @@ const Inv_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
                 <label className="block text-[12px] font-bold text-slate-500 mb-1.5">{field.label}</label>
                 <input
                   type={field.type || 'text'}
-                  value={draft[field.key] || ''}
+                  aria-label={field.label}
+                  value={draft[field.key] ?? ''}
                   readOnly={readOnly || (field.key === 'id' && mode !== 'create')}
-                  onChange={(e) => setDraft(prev => ({ ...prev, [field.key]: field.type === 'number' ? Number(e.target.value) : e.target.value }))}
+                  onChange={(e) => setDraft(prev => ({ ...prev, [field.key]: e.target.value }))}
                   className={`w-full border rounded-lg px-3 py-2 text-[13px] outline-none transition-colors ${readOnly || (field.key === 'id' && mode !== 'create') ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500 text-slate-800'}`}
                 />
               </div>
@@ -5567,8 +5615,8 @@ const Inv_ActionReviewModal = ({
   const productionRequestValid = action.kind === 'productionRequest' && action.lineStockInfo
     ? action.lineStockInfo.filter(ls => ls.shortage > 0).every(ls => {
         const fieldId = `prodQty_${ls.productId}`;
-        const v = Number(values[fieldId] ?? ls.shortage);
-        return v >= ls.shortage && !isNaN(v);
+        const v = parseNumericDraft(values[fieldId] ?? ls.shortage, { min: ls.shortage, fractionDigits: 6 });
+        return v !== null;
       })
     : true;
 
@@ -5594,7 +5642,16 @@ const Inv_ActionReviewModal = ({
       onWarehouseRequired?.();
       return;
     }
-    onConfirm(values, selectedWarehouseId);
+    if (confirmDisabled) return;
+    const submittedValues = { ...values };
+    if (action.kind === 'productionRequest') {
+      for (const line of action.lineStockInfo || []) {
+        if (line.shortage <= 0) continue;
+        const fieldId = `prodQty_${line.productId}`;
+        submittedValues[fieldId] = normalizeNumericDraft(values[fieldId] ?? line.shortage, { min: line.shortage, fractionDigits: 6 });
+      }
+    }
+    onConfirm(submittedValues, selectedWarehouseId);
   };
 
   return (
@@ -5794,8 +5851,8 @@ const Inv_ActionReviewModal = ({
                   {action.lineStockInfo.filter(ls => ls.shortage > 0).map((ls, idx) => {
                     const fieldId = `prodQty_${ls.productId}`;
                     const defaultVal = ls.shortage;
-                    const currentVal = Number(values[fieldId] ?? defaultVal);
-                    const isValid = currentVal >= ls.shortage;
+                    const currentVal = parseNumericDraft(values[fieldId] ?? defaultVal, { min: ls.shortage, fractionDigits: 6 });
+                    const isValid = currentVal !== null;
                     return <tr key={idx} className="border-b border-slate-100 last:border-0">
                       <td className="px-3 py-2.5 font-mono font-bold text-blue-600">{ls.productId}</td>
                       <td className="px-3 py-2.5 text-slate-800">{ls.productName || '-'}</td>
@@ -5809,7 +5866,7 @@ const Inv_ActionReviewModal = ({
                           <span className="font-mono font-bold text-slate-800">{ls.shortage}</span>
                         ) : (
                           <>
-                            <input type="number" min={ls.shortage} step={1} value={values[fieldId] ?? defaultVal} onChange={(event) => { let v = Number(event.target.value); setValues((current) => ({ ...current, [fieldId]: String(v) })); }} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
+                            <input inputMode="decimal" aria-label={`${ls.productId} 需生产数量`} value={values[fieldId] ?? defaultVal} onChange={(event) => setValues((current) => ({ ...current, [fieldId]: event.target.value }))} className={`w-20 h-8 rounded-lg border px-2 text-right font-mono text-[13px] outline-none ${!isValid ? 'border-rose-300 bg-rose-50' : 'border-slate-200 focus:border-blue-500'}`} />
                             {!isValid && <div className="text-[10px] text-rose-500 mt-0.5">不可少于{ls.shortage}</div>}
                           </>
                         )}
