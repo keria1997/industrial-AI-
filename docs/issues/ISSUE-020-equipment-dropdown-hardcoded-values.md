@@ -45,40 +45,46 @@
 
 ## 修改方案
 
-将硬编码 `<select>` 下拉框替换为自由文本输入框 `<input type="text">`，由用户自行输入设备种类和健康状态。
+依赖字典 API，从平台字典动态加载下拉选项。**不预置字典条目**，由用户在平台管理 → 字典中自行维护。
 
-**不预置字典条目，不依赖字典 API。**
+### 实现方式
 
-### 修改示例
+1. 前端在设备注册弹窗打开时，调用 `GET /api/v1/platform/dictionaries` 按分类过滤：
+   - 硬件种类：分类 `equipment_type`
+   - 健康状态：分类 `equipment_health_status`
+2. 将返回的字典条目动态渲染为 `<option>`
+3. 字典无条目时下拉为空，提示"请先在平台管理 → 字典中配置"
 
-```tsx
-// 修改前：硬编码 <select> 下拉
-<select value={type} onChange={e=>setType(e.target.value)} ...>
-    <option value="SMT">贴片加工设备</option>
-    <option value="Assembly">装配装配站</option>
-</select>
+### 数据流
 
-// 修改后：自由文本输入
-<input
-    type="text"
-    value={type}
-    onChange={e=>setType(e.target.value)}
-    placeholder="请输入硬件种类"
-    className="w-full border rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 bg-white"
-/>
 ```
-
-健康状态同理，将 `<select>` 替换为 `<input type="text">`。
+用户操作: 平台管理 → 字典 → 新增条目（分类: equipment_type）
+                              新增条目（分类: equipment_health_status）
+    ↓
+设备注册弹窗打开
+    → GET /api/v1/platform/dictionaries?category=equipment_type
+    → GET /api/v1/platform/dictionaries?category=equipment_health_status
+    → 动态渲染 <option>
+```
 
 ## 修改范围
 
 | 文件 | 修改内容 |
 |---|---|
-| `frontend/src/App.tsx` 设备注册弹窗（line 3808~3816） | 硬件种类 `<select>` → `<input type="text">`，健康状态 `<select>` → `<input type="text">` |
+| `frontend/src/App.tsx` 设备注册弹窗 | 硬件种类和健康状态 `<select>` 的 `<option>` 替换为从字典 API 动态加载 |
+| `frontend/src/api/platform/client.ts` | 确认已有字典查询方法（`listDictionaries` 或等效） |
+
+## 前置条件
+
+- 用户在平台管理 → 字典中自行添加 `equipment_type` 和 `equipment_health_status` 分类的字典条目
+- 未添加条目时下拉为空，不影响保存（允许值为空）
 
 ## 验证步骤
 
-1. 生产管理 → 基础主数据 → 设备机台 → 注册物理设备
-2. 硬件种类和健康状态应为文本输入框，可自由输入任意值
-3. 输入后保存，列表中显示用户输入的值
+1. 平台管理 → 字典 → 新增分类 `equipment_type` 条目（如"贴片加工设备"）
+2. 平台管理 → 字典 → 新增分类 `equipment_health_status` 条目（如"运行正常"）
+3. 生产管理 → 设备机台 → 注册物理设备
+4. 硬件种类下拉应显示步骤 1 添加的条目
+5. 健康状态下拉应显示步骤 2 添加的条目
+6. 保存后列表中显示所选值
 
