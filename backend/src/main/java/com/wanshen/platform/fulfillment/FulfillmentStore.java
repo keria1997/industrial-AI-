@@ -36,7 +36,28 @@ public class FulfillmentStore {
     Map<String, JsonNode> outbox = new LinkedHashMap<>();
     Map<String, JsonNode> idempotency = new LinkedHashMap<>();
     Map<String, JsonNode> wmsResults = new LinkedHashMap<>();
+    Map<String, JsonNode> rmas = new LinkedHashMap<>();
+    Map<String, JsonNode> receipts = new LinkedHashMap<>();
+    Map<String, JsonNode> quotes = new LinkedHashMap<>();
+    Map<String, JsonNode> customers = new LinkedHashMap<>();
     List<JsonNode> audits = new ArrayList<>();
+
+    public Map<String, JsonNode> rmas(String tenantId) { return filterByTenant(rmas, tenantId); }
+    public Map<String, JsonNode> receipts(String tenantId) { return filterByTenant(receipts, tenantId); }
+    public Map<String, JsonNode> quotes(String tenantId) { return filterByTenant(quotes, tenantId); }
+    public Map<String, JsonNode> customers(String tenantId) { return filterByTenant(customers, tenantId); }
+
+    private Map<String, JsonNode> filterByTenant(Map<String, JsonNode> source, String tenantId) {
+        Map<String, JsonNode> result = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (value.hasNonNull("tenantId") && tenantId.equals(value.path("tenantId").asText())) {
+                result.put(key, value);
+            } else if (key.startsWith(tenantId + ":")) {
+                result.put(key, value);
+            }
+        });
+        return result;
+    }
 
     public synchronized <T> T transaction(Function<FulfillmentStore, T> work) {
         List<Map<String, JsonNode>> maps = List.of(orders, shipmentRequests, shipmentTasks, availability,

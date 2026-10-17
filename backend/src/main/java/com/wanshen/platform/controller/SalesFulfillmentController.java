@@ -1,10 +1,14 @@
 package com.wanshen.platform.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wanshen.platform.web.ApiException;
+import com.wanshen.platform.web.RequestContextService;
+import com.wanshen.platform.web.RequestContextService.RequestContext;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Autowired;
 
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,29 +17,61 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>覆盖前端 RmaManagementPanel / CustomerReceiptPanel / Sales_QuotesView / Sales_CustomersView
  * <p>路径: /api/v1/fulfillment/* 和 /api/v2/sales/quotes
+ * <p>当前使用内存存储（重启丢失），后续替换为 JPA 持久化。
  */
 @RestController
 public class SalesFulfillmentController {
 
+    private final ObjectMapper mapper;
     private final Map<String, Map<String, Object>> rmaStore = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> receiptStore = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> quoteStore = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> customerStore = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> outreachStore = new ConcurrentHashMap<>();
 
-    // ===== B-01: 查询 RMA 列表 =====
-    @GetMapping("/api/v1/fulfillment/rmas")
-    public Map<String, Object> listRmas(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int pageSize,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
-        List<Map<String, Object>> items = new ArrayList<>(rmaStore.values());
-        return result(items);
+    public SalesFulfillmentController(ObjectMapper mapper) {
+        this.mapper = mapper;
     }
 
-    // ===== B-02: 创建 RMA =====
+    @Autowired
+    public void setContexts(RequestContextService contexts) {
+        this.contexts = contexts;
+    }
+
+    private RequestContext auth(HttpServletRequest request) {
+        return contexts.from(request);
+    }
+
+    private RequestContextService contexts;
+
+    private void requireScope(RequestContext ctx, String permission) {
+        if (ctx.permissions() == null || (!ctx.permissions().contains("*") && !ctx.permissions().contains(permission))) {
+            throw new ApiException(403, "PRODUCTION_403_PERMISSION_DENIED",
+                    "无权访问此资源", "所需权限: " + permission);
+        }
+    }
+
+    private Map<String, Object> paged(List<Map<String, Object>> items, int page, int pageSize) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("items", items);
+        r.put("total", items.size());
+        r.put("page", page);
+        r.put("pageSize", pageSize);
+        return r;
+    }
+
+    // ===== B-01 =====
+    @GetMapping("/api/v1/fulfillment/rmas")
+    public Map<String, Object> listRmas(@RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize, HttpServletRequest request) {
+        auth(request);
+        return paged(new ArrayList<>(rmaStore.values()), page, pageSize);
+    }
+
+    // ===== B-02 =====
     @PostMapping("/api/v1/fulfillment/rmas")
-    public Map<String, Object> createRma(@RequestBody Map<String, Object> body,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
+    public Map<String, Object> createRma(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        auth(request);
         String id = UUID.randomUUID().toString();
         body.put("id", id);
         body.put("rmaNo", "RMA-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
@@ -44,53 +80,50 @@ public class SalesFulfillmentController {
         return body;
     }
 
-    // ===== B-03: 审批 RMA =====
+    // ===== B-03 =====
     @PatchMapping("/api/v1/fulfillment/rmas/{id}/approve")
-    public Map<String, Object> approveRma(@PathVariable String id,
-            @RequestBody(required = false) Map<String, Object> body) {
+    public Map<String, Object> approveRma(@PathVariable String id, @RequestBody(required = false) Map<String, Object> body, HttpServletRequest request) {
+        auth(request);
         Map<String, Object> rma = rmaStore.get(id);
-        if (rma != null) {
-            rma.put("status", "APPROVED");
-            if (body != null && body.containsKey("approvedQty"))
-                rma.put("approvedQty", body.get("approvedQty"));
-        }
+        if (rma == null) throw new ApiException(404, "SALES_404_NOT_FOUND", "RMA不存在: " + id, "检查ID");
+        rma.put("status", "APPROVED");
+        if (body != null && body.containsKey("approvedQty")) rma.put("approvedQty", body.get("approvedQty"));
         return rma;
     }
 
-    // ===== B-04: RMA 检验 =====
+    // ===== B-04 =====
     @PatchMapping("/api/v1/fulfillment/rmas/{id}/inspect")
-    public Map<String, Object> inspectRma(@PathVariable String id,
-            @RequestBody(required = false) Map<String, Object> body) {
+    public Map<String, Object> inspectRma(@PathVariable String id, @RequestBody(required = false) Map<String, Object> body, HttpServletRequest request) {
+        auth(request);
         Map<String, Object> rma = rmaStore.get(id);
-        if (rma != null) {
-            rma.put("status", "INSPECTION_COMPLETED");
-            if (body != null) rma.putAll(body);
-        }
+        if (rma == null) throw new ApiException(404, "SALES_404_NOT_FOUND", "RMA不存在: " + id, "检查ID");
+        rma.put("status", "INSPECTION_COMPLETED");
+        if (body != null) rma.putAll(body);
         return rma;
     }
 
-    // ===== B-05: 关闭 RMA =====
+    // ===== B-05 =====
     @PatchMapping("/api/v1/fulfillment/rmas/{id}/close")
-    public Map<String, Object> closeRma(@PathVariable String id) {
+    public Map<String, Object> closeRma(@PathVariable String id, HttpServletRequest request) {
+        auth(request);
         Map<String, Object> rma = rmaStore.get(id);
-        if (rma != null) rma.put("status", "CLOSED");
+        if (rma == null) throw new ApiException(404, "SALES_404_NOT_FOUND", "RMA不存在: " + id, "检查ID");
+        rma.put("status", "CLOSED");
         return rma;
     }
 
-    // ===== B-06: 查询客户签收列表 =====
+    // ===== B-06 =====
     @GetMapping("/api/v1/fulfillment/customer-receipts")
-    public Map<String, Object> listReceipts(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int pageSize,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
-        List<Map<String, Object>> items = new ArrayList<>(receiptStore.values());
-        return result(items);
+    public Map<String, Object> listReceipts(@RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize, HttpServletRequest request) {
+        auth(request);
+        return paged(new ArrayList<>(receiptStore.values()), page, pageSize);
     }
 
-    // ===== B-07: 登记客户签收 =====
+    // ===== B-07 =====
     @PostMapping("/api/v1/fulfillment/customer-receipts")
-    public Map<String, Object> createReceipt(@RequestBody Map<String, Object> body,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
+    public Map<String, Object> createReceipt(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        auth(request);
         String id = UUID.randomUUID().toString();
         body.put("id", id);
         body.put("receiptNo", "CR-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
@@ -99,20 +132,18 @@ public class SalesFulfillmentController {
         return body;
     }
 
-    // ===== B-08: 查询报价列表 (v2) =====
+    // ===== B-08 =====
     @GetMapping("/api/v2/sales/quotes")
-    public Map<String, Object> listQuotes(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int pageSize,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
-        List<Map<String, Object>> items = new ArrayList<>(quoteStore.values());
-        return result(items);
+    public Map<String, Object> listQuotes(@RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize, HttpServletRequest request) {
+        auth(request);
+        return paged(new ArrayList<>(quoteStore.values()), page, pageSize);
     }
 
-    // ===== B-09: 创建报价单 (v2) =====
+    // ===== B-09 =====
     @PostMapping("/api/v2/sales/quotes")
-    public Map<String, Object> createQuote(@RequestBody Map<String, Object> body,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
+    public Map<String, Object> createQuote(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        auth(request);
         String id = UUID.randomUUID().toString();
         body.put("id", id);
         body.put("quoteNo", "QT-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
@@ -121,22 +152,21 @@ public class SalesFulfillmentController {
         return body;
     }
 
-    // ===== B-10: 查询客户列表（销售域） =====
+    // ===== B-10 =====
     @GetMapping("/api/v1/fulfillment/customers")
-    public Map<String, Object> listCustomers(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int pageSize,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
-        return result(new ArrayList<>());
+    public Map<String, Object> listCustomers(@RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize, HttpServletRequest request) {
+        auth(request);
+        return paged(new ArrayList<>(customerStore.values()), page, pageSize);
     }
 
     // ===== 触达设置 =====
     @GetMapping("/api/v1/platform/outreach-settings")
-    public Map<String, Object> getOutreachSettings(
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
-        Map<String, Object> settings = outreachStore.get(tenantId);
+    public Map<String, Object> getOutreachSettings(HttpServletRequest request) {
+        auth(request);
+        Map<String, Object> settings = outreachStore.get("default");
         if (settings == null) {
-            settings = new java.util.LinkedHashMap<>();
+            settings = new LinkedHashMap<>();
             settings.put("thresholdDays", 3);
             settings.put("reminderEnabled", true);
         }
@@ -144,17 +174,17 @@ public class SalesFulfillmentController {
     }
 
     @PutMapping("/api/v1/platform/outreach-settings")
-    public Map<String, Object> updateOutreachSettings(@RequestBody Map<String, Object> body,
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
-        outreachStore.put(tenantId, body);
+    public Map<String, Object> updateOutreachSettings(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        auth(request);
+        outreachStore.put("default", body);
         return body;
     }
 
     // ===== AI 洞察 =====
     @GetMapping("/api/v1/sales/ai-insights")
-    public Map<String, Object> aiInsights(
-            @RequestHeader(value = "X-Tenant-Id", defaultValue = "TENANT-SHWS") String tenantId) {
-        Map<String, Object> result = new java.util.LinkedHashMap<>();
+    public Map<String, Object> aiInsights(HttpServletRequest request) {
+        auth(request);
+        Map<String, Object> result = new LinkedHashMap<>();
         result.put("stalledOrders", List.of());
         result.put("deliveryRiskOrders", List.of());
         result.put("totalSalesAmount", "0");
@@ -162,15 +192,8 @@ public class SalesFulfillmentController {
         result.put("stalledCount", 0);
         result.put("deliveryRiskCount", 0);
         result.put("riskyQuotes", List.of());
-        result.put("generatedAt", Instant.now().toString());
+        result.put("generatedAt", java.time.Instant.now().toString());
+        result.put("dataAsOf", java.time.Instant.now().toString());
         return result;
-    }
-
-    // ===== 工具方法 =====
-    private Map<String, Object> result(List<Map<String, Object>> items) {
-        Map<String, Object> r = new java.util.LinkedHashMap<>();
-        r.put("items", items);
-        r.put("total", items.size());
-        return r;
     }
 }
