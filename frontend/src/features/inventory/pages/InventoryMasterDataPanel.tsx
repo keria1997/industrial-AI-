@@ -97,6 +97,37 @@ const IconButton = ({ title, onClick, tone = 'slate', children }: {
   return <button type="button" title={title} aria-label={title} onClick={onClick} className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${classes}`}>{children}</button>;
 };
 
+type EditorControlProps = {
+  label: string;
+  name: string;
+  draft: EditorState['record'];
+  readOnly: boolean;
+  locked?: boolean;
+  onChange: (name: string, value: string | number) => void;
+};
+
+const editorFieldClass = (readOnly: boolean, locked = false) => `h-10 w-full rounded-md border px-3 text-[13px] outline-none ${readOnly || locked ? 'border-slate-100 bg-slate-50 text-slate-600' : 'border-slate-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'}`;
+
+// Stable component identities preserve the input node, focus and selection on draft updates.
+const MasterEditorField = ({ label, name, draft, readOnly, onChange, type = 'text', locked = false, step }: EditorControlProps & { type?: string; step?: string }) => (
+  <label className="block">
+    <span className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}</span>
+    <input type={type} step={step} value={draft[name] ?? ''} readOnly={readOnly || locked} onChange={(event) => onChange(name, type === 'number' ? Number(event.target.value) : event.target.value)} className={editorFieldClass(readOnly, locked)} />
+  </label>
+);
+
+const MasterEditorSelect = ({ label, name, draft, readOnly, onChange, options, locked = false }: EditorControlProps & { options: string[] | Array<{ value: string; label: string }> }) => (
+  <label className="block">
+    <span className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}</span>
+    <select disabled={readOnly || locked} value={String(draft[name] ?? '')} onChange={(event) => onChange(name, event.target.value)} className={editorFieldClass(readOnly, locked)}>
+      <option value="">{locked ? '未配置' : '请选择'}</option>
+      {options.map((option) => typeof option === 'string'
+        ? <option key={option} value={option}>{option}</option>
+        : <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+  </label>
+);
+
 const MasterEditor = ({ state, data, onClose, onSave }: {
   state: EditorState;
   data: InventoryMasterData;
@@ -110,6 +141,7 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
   const editLocked = state.mode !== 'create';
   const warehouses = data.warehouses.filter((item) => item.status === '启用' || item.id === draft.defaultWarehouseId);
   const update = (key: string, value: string | number) => setDraft((current) => ({ ...current, [key]: value }));
+  const controlProps = { draft, readOnly, onChange: update };
 
   const validate = () => {
     const code = normalizeInventoryCode(String(draft.id || ''));
@@ -144,25 +176,6 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
     } finally { setSaving(false); }
   };
 
-  const fieldClass = (locked = false) => `h-10 w-full rounded-md border px-3 text-[13px] outline-none ${readOnly || locked ? 'border-slate-100 bg-slate-50 text-slate-600' : 'border-slate-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'}`;
-  const Field = ({ label, name, type = 'text', locked = false, step }: { label: string; name: string; type?: string; locked?: boolean; step?: string }) => (
-    <label className="block">
-      <span className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}</span>
-      <input type={type} step={step} value={draft[name] ?? ''} readOnly={readOnly || locked} onChange={(event) => update(name, type === 'number' ? Number(event.target.value) : event.target.value)} className={fieldClass(locked)} />
-    </label>
-  );
-  const Select = ({ label, name, options, locked = false }: { label: string; name: string; options: string[] | Array<{ value: string; label: string }>; locked?: boolean }) => (
-    <label className="block">
-      <span className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}</span>
-      <select disabled={readOnly || locked} value={String(draft[name] ?? '')} onChange={(event) => update(name, event.target.value)} className={fieldClass(locked)}>
-        <option value="">{locked ? '未配置' : '请选择'}</option>
-        {options.map((option) => typeof option === 'string'
-          ? <option key={option} value={option}>{option}</option>
-          : <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
-  );
-
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-label={`${state.mode === 'create' ? '新建' : state.mode === 'edit' ? '编辑' : '查看'}${entityLabels[state.entity]}`}>
       <div className="flex max-h-[88vh] w-full max-w-[760px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl">
@@ -174,30 +187,30 @@ const MasterEditor = ({ state, data, onClose, onSave }: {
           <IconButton title="关闭" onClick={onClose}><X size={16} /></IconButton>
         </div>
         <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto px-6 py-5 sm:grid-cols-2">
-          <Field label={`${entityLabels[state.entity]}编码`} name={editLocked && state.record.code ? 'code' : 'id'} locked={editLocked} />
-          <Field label={`${entityLabels[state.entity]}名称`} name="name" />
+          <MasterEditorField {...controlProps} label={`${entityLabels[state.entity]}编码`} name={editLocked && state.record.code ? 'code' : 'id'} locked={editLocked} />
+          <MasterEditorField {...controlProps} label={`${entityLabels[state.entity]}名称`} name="name" />
           {state.entity === 'warehouse' ? <>
-            <Select label="仓库类型" name="type" options={['原材料仓', '半成品仓', '成品仓', '线边仓', '中转仓']} />
-            <Field label="所属组织" name="organization" />
-            <Field label="负责人" name="manager" />
-            <Field label="仓库地址" name="address" />
-            <Field label="仓库容量" name="capacity" type="number" />
-            <Field label="已用容量" name="usedCapacity" type="number" locked />
-            <Select label="状态" name="status" options={['启用', '停用']} />
-            <label className="block sm:col-span-2"><span className="mb-1.5 block text-[12px] font-bold text-slate-600">备注</span><textarea readOnly={readOnly} value={String(draft.remark || '')} onChange={(event) => update('remark', event.target.value)} className={`${fieldClass()} min-h-20 py-2`} /></label>
+            <MasterEditorSelect {...controlProps} label="仓库类型" name="type" options={['原材料仓', '半成品仓', '成品仓', '线边仓', '中转仓']} />
+            <MasterEditorField {...controlProps} label="所属组织" name="organization" />
+            <MasterEditorField {...controlProps} label="负责人" name="manager" />
+            <MasterEditorField {...controlProps} label="仓库地址" name="address" />
+            <MasterEditorField {...controlProps} label="仓库容量" name="capacity" type="number" />
+            <MasterEditorField {...controlProps} label="已用容量" name="usedCapacity" type="number" locked />
+            <MasterEditorSelect {...controlProps} label="状态" name="status" options={['启用', '停用']} />
+            <label className="block sm:col-span-2"><span className="mb-1.5 block text-[12px] font-bold text-slate-600">备注</span><textarea readOnly={readOnly} value={String(draft.remark || '')} onChange={(event) => update('remark', event.target.value)} className={`${editorFieldClass(readOnly)} min-h-20 py-2`} /></label>
           </> : <>
-            <Field label="规格型号" name="specification" />
+            <MasterEditorField {...controlProps} label="规格型号" name="specification" />
             {state.entity === 'product'
-              ? <Select label="产品分类" name="category" options={['成品', '半成品']} />
-              : <Select label="物料类型" name="materialType" options={['原材料', '辅料', '半成品', '包装材料']} />}
-            <Field label="基本单位" name="unit" />
-            <Field label="价格 (元)" name="unitPrice" type="number" step="0.01" />
-            <Select label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
-            <Field label="安全库存" name="safetyStock" type="number" />
+              ? <MasterEditorSelect {...controlProps} label="产品分类" name="category" options={['成品', '半成品']} />
+              : <MasterEditorSelect {...controlProps} label="物料类型" name="materialType" options={['原材料', '辅料', '半成品', '包装材料']} />}
+            <MasterEditorField {...controlProps} label="基本单位" name="unit" />
+            <MasterEditorField {...controlProps} label="价格 (元)" name="unitPrice" type="number" step="0.01" />
+            <MasterEditorSelect {...controlProps} label="库存归属仓库" name="defaultWarehouseId" locked options={warehouses.map((item) => ({ value: item.serverId || item.id, label: `${item.name} (${item.code || item.id})` }))} />
+            <MasterEditorField {...controlProps} label="安全库存" name="safetyStock" type="number" />
             {state.entity === 'product'
-              ? <Select label="追溯方式" name="traceMode" locked options={['不追溯', '批次', '序列号']} />
-              : <Select label="采购策略" name="procurementType" locked options={['外购', '自制', '委外']} />}
-            <Select label="状态" name="status" locked={state.mode === 'create'} options={['启用', '停用']} />
+              ? <MasterEditorSelect {...controlProps} label="追溯方式" name="traceMode" locked options={['不追溯', '批次', '序列号']} />
+              : <MasterEditorSelect {...controlProps} label="采购策略" name="procurementType" locked options={['外购', '自制', '委外']} />}
+            <MasterEditorSelect {...controlProps} label="状态" name="status" locked={state.mode === 'create'} options={['启用', '停用']} />
           </>}
           {error && <div className="sm:col-span-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-medium text-rose-700" role="alert">{error}</div>}
         </div>

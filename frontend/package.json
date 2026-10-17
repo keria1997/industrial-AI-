@@ -17,6 +17,7 @@
     "test:prototype-storage": "node tests/prototypeStorage.e2e.mjs",
     "test:business-facts": "node tests/businessFacts.e2e.mjs",
     "test:remediation": "node tests/remediation.e2e.mjs",
+    "test:inventory-focus": "node tests/inventoryEditorFocus.e2e.mjs",
     "test:live-backend": "node tests/liveBackend.e2e.mjs",
     "test:java": "mvn -f server-java/pom.xml -o test",
     "test": "npm run test:routes:java && npm run test:frontend && npm run test:java"

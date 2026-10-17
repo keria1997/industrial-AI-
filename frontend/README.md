@@ -36,6 +36,8 @@ npm run test:live-backend
 
 `test:remediation` 等既有浏览器回归使用受控 API 响应，不能替代真实联调。
 
+库存主数据表单焦点回归：`npm run test:inventory-focus` 使用受控接口验证仓库/产品/物料连续输入、节点与焦点稳定、下拉选择及保存失败保留草稿。`FOCUS_LIVE=1 npm run test:inventory-focus` 使用下述本地认证配置真实登录，逐项输入后取消草稿，并确认没有业务写请求；它不验证保存持久化。
+
 `test:live-backend` 使用真实登录、Vite 代理、运行中的 Java 服务和 PostgreSQL，要求本机安装 `psql`、Playwright Chromium。读取根目录 `DATABASE_URL`；登录优先使用环境变量 `E2E_ACCOUNT/E2E_PASSWORD`，本地开启演示认证时可使用已有 `DEMO_AUTH_ACCOUNT/DEMO_AUTH_PASSWORD`。仅适用于当前本地 SVG 图形验证码；其他验证码方式需先补测试环境支持，不绕过认证。使用具备本租户全量读取权限的专用账号，避免将合法的数据范围过滤误判为丢数。测试不打印口令或 Token。
 
 ```bash
