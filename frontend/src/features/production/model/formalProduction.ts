@@ -16,15 +16,15 @@ export function formalProductionOrder(order: WorkOrderDto) {
 }
 
 export function formalProductionJob(order: WorkOrderDto) {
-  const finished = Number(order.reportedGoodQty) + Number(order.reportedDefectQty) + Number(order.reportedScrapQty);
   const status = order.status === "RELEASED" ? "未开工" : order.status === "PAUSED" ? "已暂停"
-    : finished >= Number(order.plannedQty) || ["COMPLETED", "CLOSING", "CLOSED"].includes(order.status) ? "已完工" : "进行中";
+    : ["COMPLETED", "CLOSING", "CLOSED"].includes(order.status) ? "已完工"
+    : order.status === "IN_PROGRESS" ? "进行中" : "状态待核实";
   return {
     id: `JOB-${order.code}`, orderId: order.code, apiId: order.id, formalOrder: order,
-    opId: "10", opName: `${order.productName || order.productId} · 生产作业`,
+    opName: `${order.productName || order.productId} · 工单汇总`,
     targetQty: Number(order.plannedQty), okQty: Number(order.reportedGoodQty), ngQty: Number(order.reportedDefectQty),
     scrapQty: Number(order.reportedScrapQty), status, machineId: order.workCenterResourceId,
-    operator: order.createdBy, isRework: false, ngHandled: true, opType: "内部",
+    uom: order.uom,
   };
 }
 

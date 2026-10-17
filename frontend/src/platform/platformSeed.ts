@@ -87,7 +87,7 @@ export type PermissionAdapter = {
   module: string;
   legacyRoleCode: string;
   legacyScope: string;
-  status: 'draft' | 'pending_sync' | 'synced' | 'conflict' | 'failed' | 'disabled';
+  status: 'draft' | 'pending_sync' | 'synced' | 'conflict' | 'failed' | 'disabled' | 'NOT_CONFIGURED';
   lastSyncAt: string | null;
   errorMessage: string;
 };

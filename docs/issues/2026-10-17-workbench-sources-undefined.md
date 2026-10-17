@@ -3,7 +3,9 @@
 > 发现日期：2026-10-17
 > 环境：http://124.222.114.67/
 > 级别：P1 体验
-> 状态：未修复
+> 状态：前端来源字段适配及缺失保护已修复；真实部署待验证
+
+> 2026-10-17 复核修订：后端 `8937fac` 使用 `sources[].availability/unavailableReason`；复核期间的 `1ec0350` 又补齐了 canonical `status/errorCode/factVersion/lastSuccessAt/retriable`，并保留兼容别名。前端优先读取 `status/errorCode`，兼容 `availability/unavailableReason`，两者均缺失时显示“来源状态未提供”。下文保留发现时的远端响应和初步建议；其中“有出库/发货即可认定确认收入或发货确权可用”的建议不作为实施依据，必须有对应权威财务事实。详见 [交付复核报告](../plan/2026-10-17-backend-delivery-review-and-frontend-residual-fixes.md)。
 
 ## 问题描述
 

@@ -124,7 +124,7 @@ describe('formal data persistence replaces prototype bridges', () => {
 
   it('resolves replenishment factory from API resource relations, never example factories', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async path => {
-      if (String(path).endsWith('/resources')) return response([{ code: 'WAREHOUSE-API', type: 'warehouse', status: 'enabled', factoryOrgId: 'org-api' }]);
+      if (String(path).endsWith('/permission-resources')) return response([{ code: 'WAREHOUSE-API', type: 'warehouse', status: 'enabled', factoryOrgId: 'org-api' }]);
       if (String(path).endsWith('/org-units')) return response([{ id: 'org-api', code: 'FACTORY-API', type: 'factory', status: 'enabled' }]);
       return response({ id: 'server-demand' });
     });

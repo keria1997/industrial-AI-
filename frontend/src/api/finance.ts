@@ -1,4 +1,5 @@
 import { apiRequest, type ApiContext } from "./client";
+import type { AllocationFact } from './finance-closure';
 
 // ===== 枚举类型（与后端 types.ts 保持一致）=====
 
@@ -320,7 +321,7 @@ export const registerPayment = (context: ApiContext, input: RegisterPaymentInput
   });
 
 export const confirmPayment = (context: ApiContext, id: string, version: number, idempotencyKey = key()) =>
-  apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable }>(
+  apiRequest<{ payment: Payment; receivable?: Receivable; payable?: Payable; allocation?: AllocationFact | null }>(
     `/api/v1/finance/payments/${encodeURIComponent(id)}/confirm`,
     context,
     {

@@ -14,7 +14,7 @@ export function PlatformAuditPanel({ context, onSelect }: { context: ApiContext 
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
   const load = useCallback((scope: ApiContext) => platformApi.listAudits(scope, { ...filter, page, pageSize: 20 }), [filter, page]);
-  const data = useApiResource<ApiPage<AuditRecordDto>>(context, load);
+  const data = useApiResource<ApiPage<AuditRecordDto> & { hasMore: boolean }>(context, load);
   const columns: Column<AuditRecordDto>[] = [
     { key: 'time', label: '时间' }, { key: 'operator', label: '操作人' },
     { key: 'module', label: '模块' }, { key: 'action', label: '动作' },
@@ -47,10 +47,10 @@ export function PlatformAuditPanel({ context, onSelect }: { context: ApiContext 
     {data.loading || data.error ? <ApiDataState loading={data.loading} error={data.error} onRetry={data.reload} /> :
       <DataTable columns={columns} data={data.data?.items ?? []} emptyText="没有匹配的审计日志" />}
     <footer className="flex items-center justify-between gap-3 text-sm">
-      <span>第 {page} 页 · 当前 {data.data?.items.length ?? 0} 条 · 总数待服务端确认</span>
+      <span>第 {page} 页 · 当前 {data.data?.items.length ?? 0} 条 · 共 {data.data?.total ?? '-'} 条</span>
       <div className="flex gap-2">
         <button aria-label="上一页审计日志" title="上一页" disabled={page <= 1 || data.loading} onClick={() => setPage(value => value - 1)} className="rounded-md border p-2 disabled:opacity-40"><ChevronLeft size={16} /></button>
-        <button aria-label="下一页审计日志" title="下一页" disabled={data.loading || Boolean(data.error) || (data.data?.items.length ?? 0) < 20} onClick={() => setPage(value => value + 1)} className="rounded-md border p-2 disabled:opacity-40"><ChevronRight size={16} /></button>
+        <button aria-label="下一页审计日志" title="下一页" disabled={data.loading || Boolean(data.error) || !data.data?.hasMore} onClick={() => setPage(value => value + 1)} className="rounded-md border p-2 disabled:opacity-40"><ChevronRight size={16} /></button>
       </div>
     </footer>
   </section>;

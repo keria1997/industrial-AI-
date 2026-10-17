@@ -1,7 +1,9 @@
 import { Check, ShoppingCart, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type ApiContext } from '../../../api/client';
 import { inventoryApi } from '../../../api/fulfillment';
+import { financeAmount } from '../../finance/financePresentation';
+import { formatQuantity } from '../../../shared/format';
 
 import { validateShipmentDeliveryDate } from '../model/salesRules';
 
@@ -19,7 +21,9 @@ export type SalesShipmentOrderDraft = {
   unitPrice?: number | string;
   amount: string;
   originalAmount?: number | string;
-  lines?: { productName?: string; spec?: string; unit?: string; quantity?: number; qty?: number; unitPrice?: number; warehouseId?: string; productId?: string }[];
+  currency?: string;
+  totalAmount?: number | string;
+  lines?: { productName?: string; spec?: string; unit?: string; quantity?: number | string; qty?: number | string; unitPrice?: number | string; amount?: number | string; warehouseId?: string; productId?: string }[];
   availableStock?: number | string;
   discountRate?: number | string;
   discountAmount?: number | string;
@@ -30,20 +34,12 @@ type Props = {
   order: SalesShipmentOrderDraft;
   mode?: 'confirm' | 'shipment';
   pending?: boolean;
-  products?: Array<{ id: string; name?: string; warehouseId?: string; availQty?: number }>;
+  products?: Array<{ id: string; name?: string; warehouseId?: string; availQty?: number | null }>;
   warehouses?: Array<{ id: string; code?: string; name: string }>;
   apiContext?: ApiContext | null;
   onClose: () => void;
   onSubmit: (order: SalesShipmentOrderDraft) => void | Promise<void>;
 };
-
-const formatMoney = (value: number | string | undefined) =>
-  `¥${Number(value || 0).toLocaleString('zh-CN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-
-const parseMoney = (value: string) => Number(value.replace(/[^\d.-]/g, '')) || 0;
 
 const normalizedDate = (value?: string) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : '';
 
@@ -51,8 +47,6 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
   const [deliveryDate, setDeliveryDate] = useState(() => normalizedDate(order.deliveryDate));
   const [error, setError] = useState('');
   const deliveryDateRef = useRef<HTMLInputElement>(null);
-  const quantity = Number(order.qty || 0);
-  const unitPrice = Number(order.unitPrice || parseMoney(order.amount) / Math.max(1, quantity));
   const productLines = order.lines && order.lines.length > 0
     ? order.lines
     : order.productName ? [{ productName: order.productName, spec: order.spec, unit: order.unit, qty: order.qty, unitPrice: order.unitPrice }] : [];
@@ -77,10 +71,8 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
     })).then(entries => { if (!cancelled) setFormalStock({ identity: stockIdentity, values: Object.fromEntries(entries) }); });
     return () => { cancelled = true; };
   }, [stockIdentity]);
-  const originalAmount = useMemo(
-    () => formatMoney(order.originalAmount ?? (productLines.length > 0 ? productLines.reduce((sum, l) => sum + Number(l.qty || (l as any).quantity || 0) * Number(l.unitPrice || 0), 0) : quantity * unitPrice)),
-    [order.originalAmount, quantity, unitPrice, productLines],
-  );
+  // Historical pricing comes from the order snapshot; missing facts are never reconstructed.
+  const originalAmount = financeAmount(order.originalAmount, order.currency);
 
   const submit = () => {
     const submittedDeliveryDate = deliveryDateRef.current?.value || deliveryDate;
@@ -181,9 +173,6 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
                 </thead>
                 <tbody>
                   {productLines.map((line, idx) => {
-                    const lineQty = Number(line.qty || line.quantity || 0);
-                    const linePrice = Number(line.unitPrice || 0);
-                    const lineAmount = lineQty * linePrice;
                     const lineWarehouseId = (line as any).warehouseId || (order as any).warehouse || (order as any).fulfillmentWarehouseId || '';
                     const warehouse = warehouses.find(item => item.id === lineWarehouseId || item.code === lineWarehouseId);
                     const lineWarehouseName = warehouse ? `${warehouse.name} (${warehouse.code || warehouse.id})`
@@ -195,9 +184,9 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
                         <td className="px-4 py-4 text-slate-600">{line.spec || '-'}</td>
                         <td className="px-4 py-4 text-center text-slate-600">{line.unit || '单位未提供'}</td>
                         <td className="px-4 py-4 text-center font-mono font-bold text-slate-700">{apiContext ? (formalStock.identity === stockIdentity ? formalStock.values[idx] : undefined) ?? '读取中' : '尚未获取'}</td>
-                        <td className="px-4 py-4 text-center font-mono font-bold text-slate-700">{lineQty}</td>
-                        <td className="px-4 py-4 text-right font-mono text-slate-700">{formatMoney(linePrice)}</td>
-                        <td className="px-4 py-4 text-right font-mono font-bold text-slate-800">{formatMoney(lineAmount)}</td>
+                        <td className="px-4 py-4 text-center font-mono font-bold text-slate-700">{formatQuantity(line.qty ?? line.quantity)}</td>
+                        <td className="px-4 py-4 text-right font-mono text-slate-700">{financeAmount(line.unitPrice, order.currency)}</td>
+                        <td className="px-4 py-4 text-right font-mono font-bold text-slate-800">{financeAmount('amount' in line ? line.amount : undefined, order.currency)}</td>
                       </tr>
                     );
                   })}
@@ -214,9 +203,9 @@ export const SalesShipmentOrderEditModal = ({ order, mode = 'confirm', pending =
             <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 sm:grid-cols-4">
               {[
                 ['原价', originalAmount],
-                ['折扣率', `${order.discountRate ?? 100}%`],
-                ['优惠金额', formatMoney(order.discountAmount || 0)],
-                ['订单金额', order.amount],
+                ['折扣率', order.discountRate === null || order.discountRate === undefined || String(order.discountRate).trim() === '' ? '-' : `${formatQuantity(order.discountRate)}%`],
+                ['优惠金额', financeAmount(order.discountAmount, order.currency)],
+                ['订单金额', financeAmount(order.totalAmount, order.currency)],
               ].map(([label, value]) => (
                 <div key={label} className="bg-white px-4 py-3.5">
                   <div className="text-[11px] text-slate-400">{label}</div>

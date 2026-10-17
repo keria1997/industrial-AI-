@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
 import { SidebarItem } from './app/SidebarItem';
 import { useAppRuntime } from './app/AppRuntimeProvider';
+import { ApiError } from './api/client';
 import { isRoleName } from './app/moduleRegistry';
 import { getAuthorizedModules, hasPermission } from './app/permissions';
 import PlatformManagementV2 from './platform/PlatformManagement';
@@ -12,6 +13,7 @@ import {
 } from './api/production/salesProduction';
 import { productionOperationsApi } from './api/production/operations';
 import { formalProductionOrder, formalProductionJob, formalProductionInspection } from './features/production/model/formalProduction';
+import { mrpShortageRow, mrpPurchaseState } from './features/production/model/mrpPresentation';
 import { useFormalProduction } from './features/production/model/useFormalProduction';
 import { ProductionReportModal } from './features/production/components/ProductionReportModal';
 import { FormalBomPanel } from './features/production/components/FormalBomPanel';
@@ -281,7 +283,8 @@ const LoginPage = ({ onLogin, onForgotPassword, onRegister, notice = '' }) => {
       }
     } catch (loginError) {
       if (!loginActive.current) return;
-      setError(loginError instanceof Error ? loginError.message : '登录失败，请稍后重试');
+      setError(loginError instanceof ApiError ? [loginError.message, loginError.suggestion].filter(Boolean).join('；')
+        : loginError instanceof Error ? loginError.message : '登录失败，请稍后重试');
       setPassword('');
       if (mode === 'account') await refreshCaptcha(false);
     } finally {
@@ -1808,7 +1811,7 @@ const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = []
         if (cancelled) return;
         setOrderAvailability(previous => ({ ...previous, ...Object.fromEntries(productIds.map(productId => {
           const fact = facts.find(item => item.productId === productId);
-          return [`${warehouseId}:${productId}`, fact ? Number(fact.fulfillableQty) : null];
+          return [`${warehouseId}:${productId}`, parseNumericDraft(fact?.fulfillableQty, { fractionDigits: 6 })];
         })) }));
       }).catch(() => {
         if (!cancelled) setOrderAvailability(previous => ({ ...previous,
@@ -3102,24 +3105,25 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       product: orderLines.map((line) => `${line.productId} × ${line.orderedQty} ${line.uom}`).join('；'),
       productName: orderLines[0]?.productName || orderLines[0]?.productId || '-',
       productId: orderLines[0]?.productId,
-      unit: orderLines[0]?.uom || 'PCS',
-      qty: orderLines.reduce((sum, line) => sum + Number(line.orderedQty || 0), 0),
-      unitPrice: Number(orderLines[0]?.unitPrice || 0),
-      discountRate: order.discountRate ?? '100',
-      discountAmount: order.discountAmount ?? '0',
+      unit: orderLines[0]?.uom,
+      qty: orderLines.length === 1 ? orderLines[0].orderedQty : undefined,
+      unitPrice: orderLines[0]?.unitPrice,
+      currency: order.currency, totalAmount: order.totalAmount,
+      discountRate: order.discountRate,
+      discountAmount: order.discountAmount,
       originalAmount: order.originalAmount,
       lines: orderLines.map((line, index) => ({
           productId: line.productId, productName: line.productName || line.productId,
           spec: line.specification || '',
           warehouseId: order.fulfillmentWarehouseId, unit: line.uom,
-          quantity: Number(line.orderedQty), unitPrice: Number(line.unitPrice),
+          quantity: line.orderedQty, unitPrice: line.unitPrice,
           shippedQty: Number(line.shippedQty), remainingQty: Number(line.remainingQty),
           ...(quickOrderSnapshot?.lines?.[index]?.productId === line.productId ? {
               productName: line.productName ?? quickOrderSnapshot.lines[index].productName,
               spec: line.specification ?? quickOrderSnapshot.lines[index].spec,
           } : {}),
       })),
-      amount: sales_formatMoney(Number(order.totalAmount || 0)),
+      amount: financeAmount(order.totalAmount, order.currency),
       receivable: '-',
       date: order.orderDate ?? order.createdAt?.slice(0, 10),
       validUntil: order.validUntil,
@@ -4137,7 +4141,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
     );
 };
 
-const Prod_MrpView = ({ mrp, onIssueMrp, onRunGlobalMrp, onCreatePurchase, showToast }) => {
+const Prod_MrpView = ({ mrp, onIssueMrp, onRunGlobalMrp, onCreatePurchase, showToast, onRefreshPurchases, purchaseError, purchasePending }) => {
     const [peggingItem, setPeggingItem] = useState(null);
     return (
         <div className="flex flex-col gap-5 relative animate-in fade-in duration-300">
@@ -4145,6 +4149,7 @@ const Prod_MrpView = ({ mrp, onIssueMrp, onRunGlobalMrp, onCreatePurchase, showT
                 <div><h3 className="font-bold text-slate-800 text-[16px] flex items-center gap-2"><div className="bg-blue-50 p-1.5 rounded-lg text-blue-600"><Calculator size={20}/></div> MRP 智能运算控制台</h3><p className="text-[13px] text-slate-500 mt-2 ml-10">根据 MPS 计划和 BOM，自动计算物料需求与产能负荷，自动生成采购与生产建议。</p></div>
                 <button onClick={onRunGlobalMrp} className="bg-[#8b5cf6] hover:bg-[#7c3aed] text-white text-[14px] font-bold px-6 py-3 rounded-xl shadow-sm transition-colors flex items-center gap-2"><Cpu size={20}/> 执行全局 MRP 展算</button>
             </div>
+            {purchaseError && <p role="alert" className="text-sm text-amber-700">采购关联读取失败：{purchaseError} <button onClick={onRefreshPurchases} className="underline">重新查询</button></p>}
             <div className="grid grid-cols-3 gap-5 shrink-0">
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 relative overflow-hidden flex flex-col justify-center"><div className="absolute top-0 right-0 w-16 h-16 bg-blue-50/50 rounded-bl-full -z-0"></div><h4 className="text-[12px] font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-1.5 relative z-10"><Database size={16}/> 依赖数据 (输入)</h4><div className="grid grid-cols-2 gap-3 relative z-10"><div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg flex items-center gap-2"><CalendarCheck size={16} className="text-blue-500"/><span className="text-[12px] font-medium text-slate-700">MPS 计划</span></div><div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg flex items-center gap-2"><GitCommit size={16} className="text-purple-500"/><span className="text-[12px] font-medium text-slate-700">BOM 清单</span></div><div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg flex items-center gap-2"><Package size={16} className="text-emerald-500"/><span className="text-[12px] font-medium text-slate-700">现有库存</span></div><div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg flex items-center gap-2"><Truck size={16} className="text-amber-500"/><span className="text-[12px] font-medium text-slate-700">在途物料</span></div></div></div>
                 <div className="bg-gradient-to-br from-[#faf5ff] to-white rounded-2xl border border-purple-100 shadow-sm p-5 flex flex-col justify-center items-center relative h-[150px]"><div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 bg-white rounded-full p-1 shadow-sm"><ArrowRight size={20} className="text-slate-300"/></div><div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 bg-white rounded-full p-1 shadow-sm"><ArrowRight size={20} className="text-slate-300"/></div><div className="w-12 h-12 bg-[#8b5cf6] rounded-xl flex items-center justify-center text-white mb-3 shadow-lg shadow-purple-200"><Settings size={24} className="animate-[spin_3s_linear_infinite]"/></div><h4 className="font-bold text-[14px] text-slate-900">智能计算引擎</h4><p className="text-[11px] text-[#8b5cf6] mt-1.5 bg-purple-50 border border-purple-100 px-3 py-1 rounded-full font-bold shadow-sm">公式: 毛需求 - (库存 + 在途) = 净需求</p></div>
@@ -4158,23 +4163,22 @@ const Prod_MrpView = ({ mrp, onIssueMrp, onRunGlobalMrp, onCreatePurchase, showT
                             <td className="px-6 py-4 flex flex-col gap-1.5 items-start">
                                 <span className={`font-mono text-[10px] px-2 py-0.5 rounded font-bold border ${r.source.includes('MPS') ? 'text-blue-600 bg-blue-50 border-blue-100' : 'text-purple-600 bg-purple-50 border-purple-100'}`}>{r.source}</span>
                                 <span className="font-bold text-slate-800 mt-1">{r.itemCode} - {r.itemName}</span>
-                                <span className="text-[11px] text-slate-500">原始毛需求: {r.grossReq} 件</span>
+                                <span className="text-[11px] text-slate-500">原始毛需求: {r.grossReq ?? '未提供'} {r.uom || '单位未提供'}</span>
+                                <span className="text-[11px] text-slate-500">{r.status}{r.purchaseRequestId ? ` · ${r.purchaseRequestId}` : ''}</span>
                             </td>
                             <td className="px-6 py-4">
                                 <div className="text-[12px] text-slate-600 bg-[#f8fafc] p-2.5 rounded-lg border border-slate-200 font-mono">
                                     需求 {r.grossReq} · 可用 {r.stock} · 在途 {r.onWay ?? '未提供'} · <span className={`${r.netReq > 0 ? 'text-rose-500' : 'text-slate-500'} font-bold`}>服务端净缺口 {r.netReq}</span><br/>
                                     <div className="mt-1.5 pt-1.5 border-t border-slate-200/60 flex items-center gap-1.5 text-slate-700">
-                                        <Layers size={14} className="text-slate-400"/> {r.lotRule} ➔ 建议单据量: 
-                                        <span className={`font-bold ml-1 ${r.plannedQty > r.netReq ? 'text-amber-600 flex items-center gap-1' : 'text-indigo-600'}`}>{r.plannedQty > r.netReq && <ArrowUpCircle size={14}/>} {r.plannedQty}</span>
+                                        <Layers size={14} className="text-slate-400"/> {r.lotRule} · 净缺口参考量:
+                                        <span className="font-bold ml-1 text-indigo-600">{r.netReq ?? '未提供'} {r.uom || '单位未提供'}</span>
                                     </div>
                                 </div>
                             </td>
                             <td className="px-6 py-4 text-right">
                                 <div className="flex justify-end gap-2">
                                     <button onClick={() => setPeggingItem(r)} className="flex items-center gap-1.5 bg-white text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-[12px] font-bold border border-slate-200 shadow-sm transition-colors" title="查看供需溯源明细"><GitMerge size={14} className="text-purple-600"/> 溯源</button>
-                                    {r.plannedQty === 0 ? <button disabled className="flex items-center gap-1.5 bg-slate-100 text-slate-400 px-3 py-1.5 rounded-lg text-[12px] font-bold border border-slate-200"><Check size={14}/> 满足</button> : 
-                                    r.type === '自制件' ? <button onClick={() => onIssueMrp(r.source, r.plannedQty)} className="flex items-center gap-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-[12px] font-bold border border-blue-200 shadow-sm transition-colors"><Hammer size={14}/> 下达工单</button> : 
-                                    <button onClick={() => onCreatePurchase(r)} disabled={!r.mrpTaskId || r.purchaseRequestId} className="flex items-center gap-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1.5 rounded-lg text-[12px] font-bold border border-amber-200 shadow-sm transition-colors disabled:opacity-40"><ShoppingCart size={14}/> {r.purchaseRequestId ? '已转采购' : '采购申请'}</button>}
+                                    <button onClick={() => onCreatePurchase(r)} disabled={!r.mrpTaskId || !r.purchaseStateKnown || Boolean(r.purchaseRequestId) || purchasePending || !(Number(r.netReq) > 0)} className="flex items-center gap-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1.5 rounded-lg text-[12px] font-bold border border-amber-200 shadow-sm transition-colors disabled:opacity-40"><ShoppingCart size={14}/> {r.purchaseRequestId ? '已有关联采购申请' : !r.purchaseStateKnown ? '采购关联待查询' : '采购申请'}</button>
                                 </div>
                             </td>
                         </tr>
@@ -4246,7 +4250,7 @@ const Prod_ExecutionView = ({ jobs, onStartJob, onReportJob, onSendFqc, onSendOu
             <button onClick={() => showToast('唤起扫码枪/终端摄像头模块...')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-[13px] font-bold flex items-center shadow-sm transition-colors"><ScanLine size={14} className="mr-1.5"/> 一键扫码报工</button>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5 flex-1 overflow-hidden flex flex-col shadow-sm">
-            <h4 className="font-bold text-[14px] text-slate-800 mb-4 flex items-center gap-2"><LayoutDashboard size={16} className="text-blue-600"/> 现场工序作业卡看板</h4>
+            <h4 className="font-bold text-[14px] text-slate-800 mb-4 flex items-center gap-2"><LayoutDashboard size={16} className="text-blue-600"/> 现场作业与工单汇总</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 overflow-y-auto custom-scrollbar p-1 content-start">
                 {jobs.map(j=>{
                     let isOutsourced = j.opType === '委外';
@@ -4270,11 +4274,11 @@ const Prod_ExecutionView = ({ jobs, onStartJob, onReportJob, onSendFqc, onSendOu
                                 {badge}
                             </div>
                             <div className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-lg flex justify-between border border-slate-100 mt-1">
-                                <span className="font-bold text-slate-700 flex items-center gap-1.5">{isOutsourced?<Truck size={12} className="text-amber-500"/>:<MonitorCog size={12} className="text-blue-500"/>} {j.machineId}</span>
+                                <span className="font-bold text-slate-700 flex items-center gap-1.5">{isOutsourced?<Truck size={12} className="text-amber-500"/>:<MonitorCog size={12} className="text-blue-500"/>} {j.machineId || '工作中心未提供'}</span>
                                 <span className="font-mono">工单: {j.orderId}</span>
                             </div>
                             <div className="mt-1">
-                                <div className="flex justify-between text-[11px] mb-1.5 font-bold text-slate-500"><span>良品 {j.okQty} / 目标 {j.targetQty}</span><span className={j.ngQty > 0 ? 'text-rose-500' : ''}>NG: {j.ngQty}件</span></div>
+                                <div className="flex justify-between text-[11px] mb-1.5 font-bold text-slate-500"><span>良品 {j.okQty} / 目标 {j.targetQty}</span><span className={j.ngQty > 0 ? 'text-rose-500' : ''}>NG: {j.ngQty} {j.uom || '单位未提供'}</span></div>
                                 <ProgressBar progress={Math.round((j.okQty/j.targetQty)*100)} color="bg-blue-600"/>
                             </div>
                             <div className="mt-3 flex gap-2 w-full">
@@ -4286,13 +4290,14 @@ const Prod_ExecutionView = ({ jobs, onStartJob, onReportJob, onSendFqc, onSendOu
                                     j.status==='待领料' ? <button onClick={() => onMaterialReq(j.id)} className="w-full bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[12px] font-bold py-2 rounded-xl transition-colors shadow-sm flex justify-center items-center gap-1.5"><FileText size={14}/> 开具领料单</button> :
                                     j.status==='领料处理中' ? <button disabled className="w-full bg-blue-50 text-blue-700 border border-blue-200 text-[12px] font-bold py-2 rounded-xl"><Clock size={14} className="mr-1.5 inline"/>等待仓库出库</button> :
                                     <div className="flex gap-2 w-full">
-                                        <button onClick={() => onStartJob(j.id)} disabled={j.status==='进行中'||j.status==='已完工'} className="flex-1 bg-blue-600 text-white hover:bg-blue-700 text-[12px] py-2 rounded-xl font-bold disabled:opacity-40 transition-colors shadow-sm">开工作业</button>
+                                        <button onClick={() => onStartJob(j.id)} disabled={j.formalOrder ? j.formalOrder.status !== 'RELEASED' : j.status==='进行中'||j.status==='已完工'} className="flex-1 bg-blue-600 text-white hover:bg-blue-700 text-[12px] py-2 rounded-xl font-bold disabled:opacity-40 transition-colors shadow-sm">开工作业</button>
                                         <button onClick={() => onReportJob(j.id)} disabled={j.status!=='进行中'} className="flex-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-[12px] py-2 rounded-xl font-bold disabled:opacity-40 transition-colors shadow-sm">登记报工</button>
                                         {j.formalOrder ? <button onClick={() => onSendFqc(j.id)} disabled={j.okQty + j.ngQty <= 0} className="flex-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[12px] py-2 rounded-xl font-bold disabled:opacity-40">送完工检</button> : <button onClick={() => onReturnMaterial(j.id)} disabled={j.status==='已完工'} className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[12px] py-2 rounded-xl font-bold disabled:opacity-40 transition-colors shadow-sm">退回废料</button>}
                                     </div>
                                 )}
                             </div>
-                            {j.ngQty > 0 && !j.ngHandled && (
+                            {j.formalOrder && <p className="text-[11px] text-slate-500">工单汇总；工序、加工方式及返工状态未提供。质量处置以 FQC 检验单为准。</p>}
+                            {!j.formalOrder && j.ngQty > 0 && j.ngHandled === false && (
                                 <div className="mt-1 pt-3 border-t border-rose-100">
                                     <button onClick={() => onReworkOrder(j.id, j.ngQty)} className="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-bold py-1.5 rounded-lg transition-colors flex justify-center items-center gap-1.5"><RefreshCw size={14}/> {j.ngQty}件不良品 ➔ 派发返工单</button>
                                 </div>
@@ -4708,6 +4713,15 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   const formalCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || '', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const productionInventory = useFormalInventory(formalCtx);
+  const canReadPurchaseRequests = currentUser?.permissions?.some(code => ['*', 'procurement.pr.read', 'procurement.request.read'].includes(code));
+  const loadMrpPurchases = useCallback(scope => procurementApi.listAllRequests(scope), []);
+  const mrpPurchases = useApiResource<Awaited<ReturnType<typeof procurementApi.listAllRequests>>>(canReadPurchaseRequests ? formalCtx : null, loadMrpPurchases);
+  const [purchasePending, setPurchasePending] = useState(false);
+  const purchaseInFlight = useRef(false);
+  const purchaseAttempts = useRef(new Map<string, string>());
+  const productionIdentity = useRef(formalCtx);
+  productionIdentity.current = formalCtx;
+  const presentedMrp = mrp.map(row => ({ ...row, ...mrpPurchaseState(row, mrpPurchases.data?.items ?? null) }));
   useEffect(() => {
       let active = true;
       setProductionLines([]);
@@ -4785,23 +4799,8 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           const recoveredRows = recovered.map(item => item.row);
           if (recoveredRows.length) {
               setMps(recoveredRows);
-              const shortageRows = recovered.flatMap(({ row, task, demand }) => (planningMaterialShortages(task.result).filter(shortage => shortage.demandId === demand.id).map((shortage) => ({
-                  id: `MRP-${task.id.slice(0, 8)}-${demand.id}-${shortage.materialId}`,
-                  mrpTaskId: task.id,
-                  demandId: shortage.demandId,
-                  source: row.id,
-                  itemCode: shortage.materialId,
-                  itemName: shortage.materialName || shortage.materialId,
-                  type: '采购件',
-                  grossReq: Number(shortage.grossRequiredQty),
-                  stock: Number(shortage.availableQty),
-                  onWay: null,
-                  netReq: Number(shortage.shortageQty),
-                  plannedQty: Number(shortage.shortageQty),
-                  lotRule: '批量规则未提供',
-                  status: '待转采购',
-                  pegging: [],
-              }))));
+              const shortageRows = recovered.flatMap(({ row, task, demand }) => planningMaterialShortages(task.result)
+                  .filter(shortage => shortage.demandId === demand.id).map(shortage => mrpShortageRow(shortage, task.id, row.id)));
               if (shortageRows.length) {
                   setMrp(shortageRows);
               }
@@ -4934,23 +4933,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           setMps(prev => [nextMps, ...prev.filter(item => item.demandId !== targetDemand.apiId)]);
           const shortages = result.result?.materialShortages || [];
           if (shortages.length) {
-              const rows = shortages.map((shortage) => ({
-                  id: `MRP-${result.taskId.slice(0, 8)}-${shortage.materialId}`,
-                  mrpTaskId: result.taskId,
-                  demandId: shortage.demandId,
-                  source: nextMps.id,
-                  itemCode: shortage.materialId,
-                  itemName: shortage.materialName || shortage.materialId,
-                  type: '采购件',
-                  grossReq: Number(shortage.grossRequiredQty),
-                  stock: Number(shortage.availableQty),
-                  onWay: null,
-                  netReq: Number(shortage.shortageQty),
-                  plannedQty: Number(shortage.shortageQty),
-                  lotRule: '批量规则未提供',
-                  status: '待转采购',
-                  pegging: [],
-              }));
+              const rows = shortages.map(shortage => mrpShortageRow(shortage, result.taskId, nextMps.id));
               setMrp(prev => [...rows, ...prev.filter(item => item.mrpTaskId !== result.taskId)]);
               setActiveTab('mrp');
           }
@@ -5072,6 +5055,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           try {
               const request = await procurementApi.createRequest({ tenantId: currentTenant?.id || '', accessToken: currentUser?.accessToken || '' }, { mrpTaskId: businessFlow.mrpTaskId, demandId: businessFlow.mrpDemandId, materialId: shortage.materialId });
               setMrp(prev => prev.map(item => item.mrpTaskId === businessFlow.mrpTaskId && item.itemCode === shortage.materialId ? { ...item, status: '已转采购', purchaseRequestId: request.id } : item));
+              mrpPurchases.reload();
               onBusinessFlowAction?.('formalPrCreated', { purchaseRequest: request });
           } catch (error) {
               showToast(error instanceof Error ? `采购申请创建失败：${error.message}` : '采购申请创建失败', 'error');
@@ -5171,25 +5155,40 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               return row ? [row] : [];
           });
           setMps(prev => [...rows, ...prev.filter(item => !rows.some(row => row.demandId === item.demandId))]);
-          const shortages = (result.result?.materialShortages || []).map(line => ({
-              id: `MRP-${result.taskId.slice(0, 8)}-${line.demandId}-${line.materialId}`,
-              mrpTaskId: result.taskId, demandId: line.demandId, source: `MPS-${line.demandId.slice(0, 8)}`,
-              itemCode: line.materialId, itemName: line.materialName || line.materialId, type: '采购件',
-              grossReq: Number(line.grossRequiredQty), stock: Number(line.availableQty), onWay: null,
-              netReq: Number(line.shortageQty), plannedQty: Number(line.shortageQty), lotRule: '批量规则未提供',
-              status: '待转采购', pegging: [],
-          }));
+          const shortages = (result.result?.materialShortages || []).map(line =>
+              mrpShortageRow(line, result.taskId, `MPS-${line.demandId.slice(0, 8)}`));
           setMrp(prev => [...shortages, ...prev.filter(item => !eligible.some(demand => demand.apiId === item.demandId))]);
           showToast(`全局 MRP 已完成，覆盖 ${rows.length} 项需求，缺料 ${shortages.length} 项`, shortages.length ? 'warning' : 'success');
       } catch (error) { showToast(error instanceof Error ? `全局展算失败：${error.message}` : '全局展算失败', 'error'); }
   };
   const handleCreatePurchase = async (row) => {
-      if (!formalCtx || !row.mrpTaskId || !row.demandId) return;
+      if (!formalCtx || !row.mrpTaskId || !row.demandId || purchaseInFlight.current) return;
+      if (!currentUser?.permissions?.some(code => ['*', 'procurement.pr.create', 'procurement.request.create'].includes(code))) {
+          showToast('无新增采购申请权限', 'warning'); return;
+      }
+      purchaseInFlight.current = true; setPurchasePending(true);
       try {
-          const request = await procurementApi.createRequest(formalCtx, { mrpTaskId: row.mrpTaskId, demandId: row.demandId, materialId: row.itemCode });
-          setMrp(prev => prev.map(item => item.id === row.id ? { ...item, status: '已转采购', purchaseRequestId: request.id } : item));
-          showToast(`采购申请 ${request.requestNo} 已保存，等待审批`, 'success');
-      } catch (error) { showToast(error instanceof Error ? `采购申请失败：${error.message}` : '采购申请失败', 'error'); }
+          const latest = await procurementApi.listAllRequests(formalCtx);
+          if (productionIdentity.current !== formalCtx) return;
+          const state = mrpPurchaseState(row, latest.items);
+          if (!state.purchaseStateKnown || state.purchaseRequestId) {
+              mrpPurchases.reload();
+              showToast(state.purchaseRequestId ? `已关联采购申请 ${state.purchaseRequestId}` : '采购关联待核实，请刷新后重试', 'warning');
+              return;
+          }
+          const attempt = businessCommandScope(formalCtx, row.id, 'mrp-purchase');
+          const key = purchaseAttempts.current.get(attempt) || `mrp-purchase:${crypto.randomUUID()}`;
+          purchaseAttempts.current.set(attempt, key);
+          const request = await procurementApi.createRequest(formalCtx, { mrpTaskId: row.mrpTaskId, demandId: row.demandId, materialId: row.itemCode }, key);
+          purchaseAttempts.current.delete(attempt);
+          if (productionIdentity.current !== formalCtx) return;
+          mrpPurchases.reload();
+          showToast(`采购申请 ${request.requestNo} 已保存，状态 ${request.status}`, 'success');
+      } catch (error) {
+          if (productionIdentity.current !== formalCtx) return;
+          mrpPurchases.reload();
+          showToast(error instanceof Error ? `采购申请结果待核对：${error.message}` : '采购申请结果待核对', 'error');
+      } finally { purchaseInFlight.current = false; setPurchasePending(false); }
   };
 
   // --- Orders 交互 ---
@@ -5442,7 +5441,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	              <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar relative pr-2 pb-6">
 	                  <BusinessFlowDock moduleName="生产管理" flow={businessFlow} onAction={handleProductionFlowAction} onNavigate={onNavigateModule} />
 	                  {activeTab === 'dashboard' && <Prod_DashboardView workOrders={orders} demands={productionDemands} error={formalError} loading={!formalSnapshot && !formalError} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')} canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')} canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')} canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
-                  {activeTab === 'mrp' && <Prod_MrpView mrp={mrp} onIssueMrp={handleIssueMrp} onRunGlobalMrp={handleGlobalMrp} onCreatePurchase={handleCreatePurchase} showToast={showToast} />}
+	                  {activeTab === 'mrp' && <Prod_MrpView mrp={presentedMrp} onIssueMrp={handleIssueMrp} onRunGlobalMrp={handleGlobalMrp} onCreatePurchase={handleCreatePurchase} showToast={showToast} onRefreshPurchases={mrpPurchases.reload} purchaseError={canReadPurchaseRequests ? mrpPurchases.error : '无采购申请查询权限'} purchasePending={purchasePending} />}
                   {activeTab === 'aps' && <ProductionScheduleView orders={orders} equipments={equipments} />}
                   {activeTab === 'orders' && <Prod_OrdersView orders={orders} onCheckKit={handleCheckKit} onDispatch={handleDispatch} onUpdateOrder={handleUpdateOrder} onDeleteOrder={handleDeleteOrder} showToast={showToast} />}
                   {activeTab === 'execution' && <Prod_ExecutionView jobs={jobs} onStartJob={handleStartJob} onReportJob={handleReportJob} onSendFqc={handleSendFqc} onMaterialReq={handleMaterialReq} onReturnMaterial={handleReturnMaterial} onSendOutsource={handleSendOutsource} onReceiveOutsource={handleReceiveOutsource} onReworkOrder={handleReworkOrder} showToast={showToast} />}

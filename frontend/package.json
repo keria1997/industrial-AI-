@@ -19,6 +19,7 @@
     "test:remediation": "node tests/remediation.e2e.mjs",
     "test:inventory-focus": "node tests/inventoryEditorFocus.e2e.mjs",
     "test:integration-plan": "node tests/integrationPlan.e2e.mjs",
+    "test:backend-delivery": "node tests/backendDeliveryReadOnly.e2e.mjs",
     "test:live-backend": "node tests/liveBackend.e2e.mjs",
     "test:java": "mvn -f server-java/pom.xml -o test",
     "test": "npm run test:routes:java && npm run test:frontend && npm run test:java"

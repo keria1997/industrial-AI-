@@ -29,7 +29,7 @@ describe('mapInventoryMasterToQuoteOptions', () => {
     expect(options.products.find((product) => product.id === 'FG004')).toMatchObject({
       warehouseId: 'WH-FG-01',
       unit: '套',
-      availQty: 0,
+      availQty: null,
     });
   });
 
@@ -42,5 +42,18 @@ describe('mapInventoryMasterToQuoteOptions', () => {
     }]);
     expect(options.products.find(item => item.id === 'FG001'))
       .toMatchObject({ warehouseId: 'WH-FG-01', availQty: 8 });
+  });
+  it('preserves missing units, raw PCS and the difference between zero and unknown stock', () => {
+    const data = createInventoryMasterDataSeed();
+    data.products[0].unit = '';
+    data.products[1].unit = 'PCS';
+    let options = mapInventoryMasterToQuoteOptions(data, []);
+    expect(options.products.find(item => item.id === data.products[0].id)?.unit).toBe('');
+    expect(options.products.find(item => item.id === data.products[1].id)?.unit).toBe('PCS');
+    const fact = { id: data.products[0].id, warehouseId: data.products[0].defaultWarehouseId, availQty: 0 } as any;
+    options = mapInventoryMasterToQuoteOptions(data, [fact]);
+    expect(options.products.find(item => item.id === fact.id)?.availQty).toBe(0);
+    expect(mapInventoryMasterToQuoteOptions(data, [{ ...fact, hasStockFact: false }]).products.find(item => item.id === fact.id)?.availQty).toBeNull();
+    expect(mapInventoryMasterToQuoteOptions(data, [{ ...fact, availQty: '' }]).products.find(item => item.id === fact.id)?.availQty).toBeNull();
   });
 });

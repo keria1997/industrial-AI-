@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiContextScope, type ApiContext } from '../api/client';
+import { ApiError, apiContextScope, type ApiContext } from '../api/client';
 import { workbenchApi, type WorkbenchDashboardDto, type WorkbenchRole } from '../api/workbench';
 import { appendActivityPage } from '../features/workbench/activityPages';
 
@@ -56,10 +56,19 @@ export function useWorkbenchDashboard(context: ApiContext | null, role: Workbenc
       pending = true;
       setBusiness(previous => ({ ...(previous.scope === businessScope ? previous : initial), scope: businessScope, loading: true }));
       try {
-        const data = await workbenchApi.getDashboard(context, role, {
+        const query = {
           sections: 'todos,alerts,activities', search: search || undefined, eventScope, todoLimit: 5, activityLimit: 10,
           date, cursor: historyCursor,
-        });
+        } as const;
+        let data: WorkbenchDashboardDto;
+        try {
+          data = await workbenchApi.getDashboard(context, role, query);
+        } catch (cause) {
+          if (!historyCursor || !(cause instanceof ApiError) || cause.status !== 400 || cause.code !== 'WORKBENCH_400_INVALID_CURSOR') throw cause;
+          // Invalid history is discarded; retry exactly once from the first page.
+          historyCursor = undefined;
+          data = await workbenchApi.getDashboard(context, role, { ...query, cursor: undefined });
+        }
         if (![data?.todos, data?.alerts, data?.activities].every(Array.isArray)
           || (data.todoTotal !== null && !Number.isInteger(data.todoTotal)) || (data.alertTotal !== null && !Number.isInteger(data.alertTotal))) throw new Error('工作台业务分区响应与契约不一致');
         const at = Date.parse(data.generatedAt);
@@ -96,7 +105,7 @@ export function useWorkbenchDashboard(context: ApiContext | null, role: Workbenc
   return {
     dashboard: b.data ? { ...b.data, metrics: age > 1800 ? (m.data?.metrics ?? []).map(item => ({ ...item, value: '-' })) : m.data?.metrics ?? [] } : m.data ? { ...m.data, todos: [], alerts: [], activities: [], todoTotal: null, alertTotal: null } : null,
     metricTime: m.data?.generatedAt,
-    error: [m.error, b.error].filter(Boolean).join('；'),
+    error: [...new Set([m.error, b.error].filter(Boolean))].join('；'),
     metricError: m.error,
     businessError: b.error,
     loading: m.loading || b.loading,

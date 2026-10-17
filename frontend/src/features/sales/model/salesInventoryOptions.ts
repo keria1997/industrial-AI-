@@ -16,12 +16,16 @@ export type SalesQuoteProductOption = {
   spec: string;
   unit: string;
   unitPrice: number;
-  availQty: number;
+  availQty: number | null;
 };
 
 const stockFactKey = (warehouseId: string, productId: string) => `${warehouseId}:${productId}`;
 
-const quoteUnit = (unit: string) => (unit === 'PCS' ? '件' : unit || '件');
+const stockQuantity = (value: unknown): number | null => {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+};
 
 export const mapInventoryMasterToQuoteOptions = (
   data: InventoryMasterData,
@@ -35,7 +39,7 @@ export const mapInventoryMasterToQuoteOptions = (
       const warehouseId = fact.warehouseId
         || data.warehouses.find((warehouse) => warehouse.name === fact.warehouse)?.id
         || fact.warehouse;
-      return [stockFactKey(warehouseById.get(warehouseId)?.id || warehouseId, fact.id), Number(fact.availQty || 0)];
+      return [stockFactKey(warehouseById.get(warehouseId)?.id || warehouseId, fact.id), fact.hasStockFact === false ? null : stockQuantity(fact.availQty)];
     }),
   );
 
@@ -52,9 +56,9 @@ export const mapInventoryMasterToQuoteOptions = (
         warehouseId: product.defaultWarehouseId,
         warehouse: warehouseById.get(product.defaultWarehouseId)?.name || product.defaultWarehouseId,
         spec: product.specification,
-        unit: quoteUnit(product.unit),
+        unit: product.unit?.trim() || '',
         unitPrice: Number(product.unitPrice || 0),
-        availQty: availability.get(stockFactKey(product.defaultWarehouseId, product.id)) || 0,
+        availQty: availability.get(stockFactKey(product.defaultWarehouseId, product.id)) ?? null,
       })),
   };
 };

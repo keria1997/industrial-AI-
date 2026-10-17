@@ -17,17 +17,24 @@ export function PaymentsPanel({ apiContext, permissions, actorId, onChanged }: P
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
   const [selected, setSelected] = useState<Payment | null>(null);
+  const [notice, setNotice] = useState('');
   const command = useBusinessCommand(businessCommandScope(apiContext, selected?.id || '', 'payment-confirm'));
   const load = useCallback((context: ApiContext) => listPayments(context, { page, pageSize: 20, search }), [page, search]);
   const records = useApiResource<{ items: Payment[]; total: number }>(apiContext, load);
   const confirm = async () => {
     if (!selected || !apiContext) return;
+    setNotice('');
     const result = await command.execute(async key => {
       const value = await confirmPayment(apiContext, selected.id, selected.version, key);
-      if (!value?.payment?.id || !['done', 'CONFIRMED'].includes(value.payment.status)) throw new Error('确认结果尚未取得，请按原请求重试或重新查询');
+      if (value?.payment?.id !== selected.id || !['done', 'CONFIRMED'].includes(value.payment.status)) throw new Error('确认结果尚未取得，请按原请求重试或重新查询');
       return value;
     });
-    if (result) { setSelected(null); records.reload(); onChanged(); }
+    if (result) {
+      setNotice(result.allocation?.id && result.allocation.paymentId === result.payment.id && result.allocation.status === 'CONFIRMED'
+        ? '已确认并生成系统核销事实'
+        : result.payment.receivableId || result.payment.payableId ? '已确认，系统核销事实未返回，请刷新核对' : '已确认');
+      setSelected(null); records.reload(); onChanged();
+    }
   };
   const columns: Column<Payment>[] = [
     { key: 'docNo', label: '收付款单号' },
@@ -50,6 +57,7 @@ export function PaymentsPanel({ apiContext, permissions, actorId, onChanged }: P
       <button type="button" title="刷新" aria-label="刷新收付款" onClick={records.reload} className="rounded-md border p-2"><RefreshCw size={16} /></button>
       <button type="button" disabled title="冲销字段与审批契约待补充" className="ml-auto text-sm text-slate-400">冲销/红字</button>
     </form>
+    {notice && <p role="status" className="text-sm text-slate-700">{notice}</p>}
     {records.loading || records.error ? <ApiDataState loading={records.loading} error={records.error} onRetry={records.reload} /> : <DataTable columns={columns} data={records.data?.items ?? []} emptyText="暂无收付款记录" />}
     <PageNavigation page={page} pageSize={20} total={records.data?.total ?? 0} onPage={setPage} />
     {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

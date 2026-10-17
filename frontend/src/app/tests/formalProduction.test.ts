@@ -18,6 +18,11 @@ describe("formal production facts", () => {
     expect(formalProductionOrder(order).status).toBe("已下达");
     expect(formalProductionJob(order)).toMatchObject({ status: "未开工", okQty: 6, ngQty: 1, scrapQty: 1 });
     expect(formalProductionJob({ ...order, status: "IN_PROGRESS" }).status).toBe("进行中");
+    const job = formalProductionJob({ ...order, status: 'IN_PROGRESS', reportedGoodQty: '10' });
+    expect(job.status).toBe('进行中');
+    for (const key of ['opId', 'opType', 'isRework', 'ngHandled', 'operator']) expect(job).not.toHaveProperty(key);
+    expect(job.opName).toContain('工单汇总');
+    expect(job.uom).toBe('PCS');
   });
   it("does not mark pending or failed receipts complete", () => {
     expect(formalProductionInspection(inspection, [order], [completion]).status).toBe("入库处理中");

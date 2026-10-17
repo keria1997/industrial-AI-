@@ -1,4 +1,5 @@
 import { apiRequest, type ApiContext } from './client';
+import { readAllPages } from './readAllPages';
 
 export type PurchaseRequestDto = {
   prNo?: string; qty?: string; unit?: string; sourceDemandId?: string;
@@ -46,11 +47,12 @@ export type PurchaseReturnDto = {
 const operationKey = (scope: string) => `${scope}:${crypto.randomUUID()}`;
 
 export const procurementApi = {
-  createRequest: (context: ApiContext, input: { mrpTaskId: string; demandId: string; materialId: string }) =>
+  createRequest: (context: ApiContext, input: { mrpTaskId: string; demandId: string; materialId: string }, idempotencyKey = operationKey(`purchase-request:${input.mrpTaskId}:${input.demandId}:${input.materialId}`)) =>
     apiRequest<PurchaseRequestDto>('/api/v1/procurement/purchase-requests', context, {
-      method: 'POST', body: JSON.stringify(input), idempotencyKey: operationKey(`purchase-request:${input.mrpTaskId}:${input.demandId}:${input.materialId}`),
+      method: 'POST', body: JSON.stringify(input), idempotencyKey,
     }),
   listRequests: (context: ApiContext) => apiRequest<{ items: PurchaseRequestDto[]; total: number }>('/api/v1/procurement/purchase-requests', context),
+  listAllRequests: (context: ApiContext) => readAllPages<PurchaseRequestDto>('/api/v1/procurement/purchase-requests', context),
   approveRequest: (context: ApiContext, request: PurchaseRequestDto, options: { supplierId: string; supplierName: string; unitPrice?: string; taxRate?: string; currency?: string }) => apiRequest<{ request: PurchaseRequestDto; order: PurchaseOrderDto }>(`/api/v1/procurement/purchase-requests/${request.id}/approve`, context, {
     method: 'POST', expectedVersion: request.version, idempotencyKey: operationKey(`purchase-approve:${request.id}`),
     body: JSON.stringify({ promisedDate: request.requiredDate, ...options }),

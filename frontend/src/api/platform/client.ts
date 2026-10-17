@@ -25,7 +25,7 @@ export type GrantEffect = "allow" | "deny";
 
 export type FieldMode = "visible" | "hidden" | "masked" | "readonly" | "export_denied";
 
-export type AdapterStatus = "draft" | "pending_sync" | "synced" | "conflict" | "failed" | "disabled";
+export type AdapterStatus = "draft" | "pending_sync" | "synced" | "conflict" | "failed" | "disabled" | "NOT_CONFIGURED";
 
 export type ApprovalResolver = "by_role" | "by_position" | "by_org_manager";
 
@@ -375,7 +375,7 @@ export const platformApi = {
 
   // ---- 企业资源 ----
   listResources: (context: ApiContext) =>
-    apiRequest<EnterpriseResourceDto[]>("/api/v1/platform/resources", context),
+    apiRequest<EnterpriseResourceDto[]>("/api/v1/platform/permission-resources", context),
 
   saveResource: (context: ApiContext, data: EnterpriseResourceDto) =>
     apiRequest<EnterpriseResourceDto>(`/api/v1/platform/resources${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
@@ -586,7 +586,11 @@ export const platformApi = {
     params.set("page", String(query?.page ?? 1));
     params.set("pageSize", String(query?.pageSize ?? 50));
     const search = params.toString();
-    return apiRequest<PageResult<AuditRecordDto>>(`/api/v1/platform/audits?${search}`, context);
+    return apiRequest<PageResult<AuditRecordDto> & { hasMore: boolean; page: number; pageSize: number }>(`/api/v1/platform/audits?${search}`, context).then(value => {
+      if (!Array.isArray(value?.items) || !Number.isSafeInteger(value.total) || value.total < value.items.length
+        || typeof value.hasMore !== 'boolean' || value.page !== (query?.page ?? 1)) throw new Error('审计分页响应与契约不一致');
+      return value;
+    });
   },
 
   // ---- 会话撤销 ----

@@ -5,6 +5,7 @@ import { inventoryApi } from '../../../api/fulfillment';
 import { aiApi } from '../../../api/ai';
 import { parseCsvText, readFileAsText, type ParsedCsv } from './csvParser';
 import { allImportConfigs, suggestMapping, validateRow, type ImportEntityType } from './importConfig';
+import { inventoryFactInput } from './inventoryFactInput';
 
 type Props = {
   file: File;
@@ -166,23 +167,7 @@ export const DataImportPanel = ({ file, apiContext, allowedEntities, onClose, on
         } else if (entityType === 'product') {
           await inventoryApi.createProduct(apiContext, payload as Parameters<typeof inventoryApi.createProduct>[1], attempt.key);
         } else if (entityType === 'inventoryFact') {
-          const quantity = (field: string) => payload[field]?.trim() || '0';
-          await inventoryApi.importAvailability(apiContext, {
-            eventId: attempt.eventId,
-            warehouseId: payload.warehouseId,
-            productId: payload.productId,
-            qualifiedOnHandQty: quantity('qualifiedOnHandQty'),
-            allocatedReservedQty: quantity('allocatedReservedQty'),
-            frozenQty: quantity('frozenQty'),
-            safetyStockQty: quantity('safetyStockQty'),
-            inTransitQty: quantity('inTransitQty'),
-            fulfillableQty: quantity('fulfillableQty'),
-            uom: payload.uom,
-            formulaVersion: 'FULFILLABLE-V1',
-            factVersion: Number(payload.factVersion),
-            asOf: payload.asOf,
-            sourceSystem: payload.sourceSystem || 'CUSTOMER_WMS',
-          }, attempt.key);
+          await inventoryApi.importAvailability(apiContext, inventoryFactInput(payload, attempt.eventId), attempt.key);
         } else {
           await inventoryApi.createMaterial(apiContext, payload as Parameters<typeof inventoryApi.createMaterial>[1], attempt.key);
         }

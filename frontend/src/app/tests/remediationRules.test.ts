@@ -57,15 +57,17 @@ describe('frontend remediation boundaries', () => {
     expect(() => workbenchProjection({ schemaVersion: '1.1', data: {} }, { sections: 'todos,alerts,activities' })).toThrow('分区');
   });
 
-  it('keeps attendance hidden in a real legacy workbench response', () => {
-    const response = { metrics: [
-      { key: 'monthlyReceivable', value: '100' },
+  it('keeps attendance and ungrouped money hidden in a delivered 1.1 response and rejects the old envelope', () => {
+    const response = { schemaVersion: '1.1', data: { metrics: { legacy: [
+      { key: 'monthlyReceivable', value: '100', unit: '元' },
       { key: 'attendanceRate', value: '0' },
-    ], todos: [] };
+    ] } } };
     const projected = workbenchProjection(response, {});
     expect(projected.metrics.map(metric => metric.key)).toEqual(['monthlyReceivable']);
-    expect(response.metrics).toHaveLength(2);
-    expect(() => workbenchProjection({}, {})).toThrow('指标列表');
+    expect(projected.metrics[0].value).toBe('-');
+    expect(response.data.metrics.legacy).toHaveLength(2);
+    expect(() => workbenchProjection({ metrics: [] }, {})).toThrow('版本');
+    expect(() => workbenchProjection({}, {})).toThrow('版本');
   });
 
   it('does not allow legacy display aliases to authorize procurement mutations', () => {

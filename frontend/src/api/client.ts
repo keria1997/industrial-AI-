@@ -37,10 +37,19 @@ export async function apiRequest<T>(path: string, context: ApiContext | null, op
     Accept: "application/json",
     ...(options.body ? { "Content-Type": "application/json" } : {}),
     ...(context ? { Authorization: `Bearer ${context.accessToken}`, "X-Tenant-Id": context.tenantId } : {}),
-    ...(options.idempotencyKey ? { "X-Idempotency-Key": options.idempotencyKey } : {}),
+    ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     ...(options.expectedVersion ? { "If-Match": `"${options.expectedVersion}"` } : {}),
     ...options.headers,
   };
+  // Browser -> business backend: canonical key, with an identical legacy header during migration.
+  const keys = Object.entries(headers)
+    .filter(([name]) => ['idempotency-key', 'x-idempotency-key'].includes(name.toLowerCase()))
+    .map(([, value]) => value).concat(options.idempotencyKey ? [options.idempotencyKey] : []);
+  if (new Set(keys).size > 1) throw new ApiError('幂等请求头不一致，未发送请求', 400, 'CLIENT_IDEMPOTENCY_CONFLICT');
+  if (keys[0]) {
+    headers['Idempotency-Key'] = keys[0];
+    headers['X-Idempotency-Key'] = keys[0];
+  }
   const response = await fetch(path, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
   const value = response.status !== 204 && contentType.includes("application/json") ? await response.json() : null;

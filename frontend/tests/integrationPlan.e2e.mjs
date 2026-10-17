@@ -12,6 +12,8 @@ let resetFails = false;
 let commandFails = true;
 let skillFails = true;
 let importFails = true;
+let cursorInvalid = false;
+let paymentConfirmed = false;
 let releaseDelayed;
 let delayCommand = false;
 const tenant = 'TENANT-SHWS';
@@ -37,14 +39,20 @@ await context.route('**/api/**', async route => {
   if (path.endsWith('/production/readiness')) return json({ permissions });
   if (path.endsWith('/platform/snapshot')) return json(platform);
   if (path.endsWith('/platform/org-units')) return json(platform.orgUnits);
-  if (path.endsWith('/platform/resources')) return json(platform.resources);
+  if (path.endsWith('/platform/permission-resources')) return json(platform.resources);
   if (path.endsWith('/platform/employees')) return json([]);
   if (path.endsWith('/platform/employee-accounts')) return json({ items: [] });
-  if (path.endsWith('/platform/audits')) return json({ items: [{ id: 'audit-api', time: '2026-10-17 08:00:00', operator: 'reviewer', module: '销售管理', action: '复核', target: 'server-order-id', result: 'success' }], total: 99 });
+  if (path.endsWith('/platform/audits')) return json({ items: [{ id: 'audit-api', time: '2026-10-17 08:00:00', operator: 'reviewer', module: '销售管理', action: '复核', target: 'server-order-id', result: 'success' }], total: 99, hasMore: true, page: Number(url.searchParams.get('page')), pageSize: 20 });
   if (path.endsWith('/personnel/employees')) return json({ items: [{ id: 'employee-db', employeeNo: 'EMP-ACTUAL', name: '接口员工', department: '真实部门', position: '真实岗位', status: '在职' }], total: 1 });
   if (path.endsWith('/personnel/skills')) return skillFails ? json({ error: { message: 'SKILL_NOT_AVAILABLE' } }, 503) : json({ items: [], total: 0 });
   if (path.endsWith('/finance/ar-aps')) return json([{ financeId: 'finance-id', documentType: 'RECEIVABLE', partyName: '接口往来方', currency: 'USD', totalAmount: '9007199254740993.01', allocatedAmount: '1.00', outstandingAmount: '9007199254740992.01', status: 'REVERSED' }]);
   if (path.endsWith('/finance/allocations')) return json({ items: [{ id: 'allocation-id', allocationNo: 'ALLOCATION-ACTUAL', paymentId: 'payment-id', currency: 'USD', status: 'CONFIRMED', lines: [{ documentType: 'RECEIVABLE', documentId: 'finance-id', amount: '1.00' }] }], total: 1 });
+  const payment = { id: 'payment-api', docNo: 'PAY-API', receivableId: 'finance-id', direction: 'INBOUND', amount: '1.00', currency: 'USD', paymentDate: '2026-10-17', status: paymentConfirmed ? 'done' : 'pending', version: paymentConfirmed ? 2 : 1, createdBy: 'other-registrar' };
+  if (path.endsWith('/finance/payments') && request.method() === 'GET') return json({ items: [payment], total: 1 });
+  if (path.endsWith('/finance/payments/payment-api/confirm')) {
+    paymentConfirmed = true;
+    return json({ payment: { ...payment, status: 'done', version: 2 }, allocation: { id: 'system-allocation', paymentId: 'payment-api', status: 'CONFIRMED' } });
+  }
   if (path.endsWith('/test-plan-command')) {
     if (delayCommand) await new Promise(resolve => { releaseDelayed = resolve; });
     return commandFails ? json({ error: { message: 'UNKNOWN_COMMAND_RESULT' } }, 503) : json({ saved: true });
@@ -57,6 +65,7 @@ await context.route('**/api/**', async route => {
   if (path.endsWith('/test-work-center')) return json({ id: 'created-order', workCenterResourceId: body.workCenterResourceId });
   if (path.endsWith('/workbench/dashboard')) {
     const history = url.searchParams.get('cursor');
+    if (history && cursorInvalid) return json({ error: { code: 'WORKBENCH_400_INVALID_CURSOR', message: '游标已失效' } }, 400);
     const metrics = url.searchParams.get('sections') === 'metrics';
     return json({ schemaVersion: '1.1', data: {
       role: '老板', dataAsOf: new Date().toISOString(), scope: { tenantId: tenant }, metrics: metrics ? {} : undefined,
@@ -129,6 +138,14 @@ try {
   await page.getByRole('button', { name: '核销事实', exact: true }).click();
   await page.getByText('ALLOCATION-ACTUAL', { exact: true }).waitFor();
   assert(!requests.some(request => request.method === 'POST' && request.path.endsWith('/finance/allocations')));
+  await go('/?module=finance&finance=payments');
+  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('button', { name: '确认收付款', exact: true }).click();
+  await page.getByText('已确认并生成系统核销事实', { exact: true }).waitFor();
+  assert(!requests.some(request => request.method === 'POST' && request.path.endsWith('/finance/allocations')));
+  const paymentCommand = requests.find(request => request.path.endsWith('/finance/payments/payment-api/confirm'));
+  assert(paymentCommand.headers['idempotency-key']);
+  assert.equal(paymentCommand.headers['idempotency-key'], paymentCommand.headers['x-idempotency-key']);
   await go('/?module=platform&platform=audit');
   await page.getByLabel('审计操作人', { exact: true }).fill('reviewer');
   await page.getByLabel('审计开始时间', { exact: true }).fill('2026-10-17T08:00');
@@ -136,9 +153,9 @@ try {
   await page.getByRole('cell', { name: 'server-order-id', exact: true }).waitFor();
   assert(requests.some(request => request.path.endsWith('/platform/audits') && request.query.operator === 'reviewer'
     && request.query.startTime === '2026-10-17 08:00:00'));
-  await page.getByText(/总数待服务端确认/).waitFor();
+  await page.getByText(/共 99 条/).waitFor();
   await page.screenshot({ path: '/tmp/industrial-ai-integration-audit-desktop.png' });
-  console.log('PASS finance/audit: exact large decimal/currency/reversed state, independent read-only allocation facts, server audit filters');
+  console.log('PASS finance/audit: exact decimal/currency, system allocation after confirmation without a second write, canonical keys and exact audit totals');
 
   // Mount the real shared hook to exercise closure snapshots across rerenders, retries and scope changes.
   await page.evaluate(async () => {
@@ -273,8 +290,16 @@ try {
   await page.clock.fastForward(60000);
   await page.waitForFunction(() => window.workbenchApi?.dashboard?.activities?.length === 1);
   assert.equal(requests.filter(request => request.path.endsWith('/workbench/dashboard') && request.query.cursor).length, historyRequests);
+  cursorInvalid = true;
+  const firstPages = requests.filter(request => request.path.endsWith('/workbench/dashboard') && request.query.sections !== 'metrics' && !request.query.cursor).length;
+  await page.evaluate(() => window.workbenchApi.loadMore());
+  await page.waitForFunction(() => !window.workbenchApi.loading && !window.workbenchApi.error);
+  await page.waitForTimeout(150);
+  assert.equal(requests.filter(request => request.path.endsWith('/workbench/dashboard') && request.query.cursor).length, historyRequests + 1);
+  assert.equal(requests.filter(request => request.path.endsWith('/workbench/dashboard') && request.query.sections !== 'metrics' && !request.query.cursor).length, firstPages + 1);
+  assert.deepEqual(await page.evaluate(() => window.workbenchApi.dashboard.activities.map(item => item.id)), ['event-new']);
   await page.evaluate(() => window.workbenchRoot.unmount());
-  console.log('PASS workbench: Shanghai business date, explicit history append, polling resets first page without cursor');
+  console.log('PASS workbench: Shanghai business date, explicit history append, polling and invalid cursor reset the first page');
   assert.deepEqual(errors, []);
 } catch (error) {
   console.error('Frontend runtime errors:', errors);

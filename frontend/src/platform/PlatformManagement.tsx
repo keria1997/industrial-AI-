@@ -142,7 +142,7 @@ const orgTypeLabel: Record<string, string> = { company: '公司', department: '�
 const resourceTypeLabel: Record<string, string> = { line: '产线', warehouse: '仓库', work_center: '工作中心' };
 const accountStatusLabel: Record<string, string> = { pending_activation: '待激活', enabled: '正常', locked: '已锁定', disabled: '已停用' };
 const employeeStatusLabel: Record<string, string> = { active: '在职', transferring: '调岗中', leave: '休假', resigned: '已离职' };
-const adapterStatusLabel: Record<string, string> = { draft: '待配置', pending_sync: '待同步', synced: '已同步', conflict: '需处理', failed: '同步失败', disabled: '已停用' };
+const adapterStatusLabel: Record<string, string> = { draft: '待配置', pending_sync: '待同步', synced: '已同步', conflict: '需处理', failed: '同步失败', disabled: '已停用', NOT_CONFIGURED: '未配置外部端点' };
 const authTypeLabel: Record<string, string> = { password: '密码登录', sso: '统一身份登录', legacy_erp: '旧 ERP 账号' };
 const legacyScopeLabel: Record<string, string> = { tenant_all: '当前企业全部数据', production_org: '生产组织', customer_org_tree: '客户所属组织树', supplier_org_tree: '供应商所属组织树', warehouse_set: '指定仓库集合' };
 const parameterValueTypeLabel: Record<string, string> = { integer: '整数', boolean: '是 / 否', text: '文本' };
@@ -611,11 +611,11 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     const submittedIdentity = identityRef.current;
     let submitted = false;
     try {
-      await persistPlatformChange({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, state, updater(state));
+      const notice = await persistPlatformChange({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, state, updater(state));
       submitted = true;
       if (identityRef.current !== submittedIdentity) return true;
       await reloadSnapshot();
-      toast(message, type);
+      toast(notice?.message || message, notice?.type || type);
       return true;
     } catch (reason) {
       if (identityRef.current !== submittedIdentity) return submitted;

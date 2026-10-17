@@ -75,6 +75,7 @@ export type InventoryStockFact = {
   unitPrice?: string | number;
   safetyStock?: number;
   factVersion?: number;
+  hasStockFact?: boolean;
 };
 
 export type WarehouseInventoryRow = {

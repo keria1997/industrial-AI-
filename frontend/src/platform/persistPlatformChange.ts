@@ -13,6 +13,7 @@ type Entity = { id: string; version?: number; status?: string; [key: string]: un
 // Existing form drafts select one business command. Only the API snapshot is rendered.
 export async function persistPlatformChange(context: ApiContext, previous: PlatformState, next: PlatformState) {
   const commands: Array<() => Promise<unknown>> = [];
+  let notice: { message: string; type: string } | undefined;
   if (JSON.stringify(previous.tenant) !== JSON.stringify(next.tenant)) {
     const editable = ['name', 'edition', 'status', 'expireAt'];
     const changed = Object.keys({ ...previous.tenant, ...next.tenant })
@@ -45,7 +46,15 @@ export async function persistPlatformChange(context: ApiContext, previous: Platf
           !syncFields.includes(field) && JSON.stringify(current[field]) !== JSON.stringify(item[field]))) {
           throw new Error('请先保存映射配置，再单独提交同步');
         }
-        commands.push(() => platformApi.syncAdapter(context, current.id, current.version!));
+        commands.push(async () => {
+          const result = await platformApi.syncAdapter(context, current.id, current.version!);
+          notice = {
+            message: result.status === 'NOT_CONFIGURED' ? '未配置外部同步端点，未完成同步'
+              : `同步接口返回状态：${result.status || '未提供'}，请核对外部同步结果`,
+            type: result.status === 'synced' ? 'success' : 'warning',
+          };
+          return result;
+        });
         continue;
       }
       if (current && !current.version) throw new Error('服务端版本未加载，请刷新后重试');
@@ -63,4 +72,5 @@ export async function persistPlatformChange(context: ApiContext, previous: Platf
   }
   if (commands.length !== 1) throw new Error('本次操作必须对应一条正式业务命令，请刷新后分别提交');
   await commands[0]();
+  return notice;
 }

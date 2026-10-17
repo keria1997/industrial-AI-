@@ -5,15 +5,13 @@ const moduleLabel = (value: string) => moduleLabels[value?.toUpperCase()] || val
 const unavailable = (value: unknown) => value === null || value === undefined ? '-' : String(value);
 
 // Adapt the frozen PRD 1.1 projection without inventing facts or combining currencies/units.
-// Legacy flat responses are retained for existing deployments; malformed requested sections fail visibly.
+// Only the delivered 1.1 envelope is accepted; missing sections fail visibly.
 export function workbenchProjection(response: any, query: WorkbenchQuery): WorkbenchDashboardDto {
-  if (!response?.schemaVersion) {
-    if (!Array.isArray(response?.metrics)) throw new Error('工作台响应缺少指标列表');
-    // Attendance stays hidden even when a legacy backend still returns its metric.
-    return { ...response, metrics: response.metrics.filter(metric => metric.key !== 'attendanceRate') };
-  }
-  if (response.schemaVersion !== '1.1' || !response.data) throw new Error('工作台响应版本不受支持');
+  if (response?.schemaVersion !== '1.1' || !response.data || response.error) throw new Error('工作台响应版本不受支持或返回错误');
   const data = response.data;
+  if (Array.isArray(data.activities?.items) && data.activities.items.some(item => !item?.activityId && !item?.id)) {
+    throw new Error('工作台动态缺少稳定事件标识，请重新查询');
+  }
   const metrics: WorkbenchMetricDto[] = [];
   const revenueTitles = { ORDER_AMOUNT: '本月订单金额', CONFIRMED_REVENUE_AMOUNT: '本月确认收入', SHIPPED_RECOGNIZED_AMOUNT: '本月发货确权金额' };
   const revenue = data.metrics?.revenue;
@@ -23,6 +21,28 @@ export function workbenchProjection(response: any, query: WorkbenchQuery): Workb
       metrics.push({ key: `${group.metric}:${group.currency}:${group.taxBasis}`, title: revenueTitles[group.metric], value: revenue.availability === 'UNAVAILABLE' ? '-' : unavailable(group.amount), unit: group.currency, definition: `${group.taxBasis}；来源事实金额，不跨币种合计` });
     }
     if (!metrics.length) Object.entries(revenueTitles).forEach(([key, title]) => metrics.push({ key, title, value: '-', unit: '', definition: '尚未取得权威金额事实' }));
+  }
+  const directMoney = {
+    orderAmount: '本月订单金额', confirmedRevenueAmount: '本月确认收入',
+    shippedRecognizedAmount: '本月发货确权金额',
+  };
+  if (!revenue) Object.entries(directMoney).forEach(([key, title]) => {
+    const fact = data.metrics?.[key];
+    if (!fact) return;
+    const available = fact.availability === 'AVAILABLE' && fact.currency && fact.taxBasis;
+    metrics.push({
+      key, title, value: available ? unavailable(fact.value) : '-', unit: available ? fact.currency : '',
+      definition: fact.availability === 'UNAVAILABLE'
+        ? `数据待接入（${fact.unavailableReason || '来源事实缺失'}）`
+        : available ? `${fact.taxBasis}；来源事实金额，不跨币种合计` : '金额币种或税口径未提供，待服务端补齐',
+    });
+  });
+  // Preserve delivered role counts, but never expose ungrouped money or removed attendance metrics.
+  for (const fact of data.metrics?.legacy || []) {
+    if (fact.key === 'attendanceRate' || metrics.some(item => item.key === fact.key)) continue;
+    const money = ['元', '¥', 'CNY', 'USD', 'EUR'].includes(fact.unit) || /amount|receivable|payable|revenue|expenditure/i.test(fact.key);
+    metrics.push({ ...fact, value: money ? '-' : unavailable(fact.value), unit: money ? '' : fact.unit,
+      definition: money ? '金额币种或税口径未提供，待服务端补齐' : fact.definition });
   }
   const due = data.metrics?.productionDue;
   if (due) for (const group of due.unitGroups || []) {
@@ -38,24 +58,24 @@ export function workbenchProjection(response: any, query: WorkbenchQuery): Workb
     dataScope: { tenantId: data.scope?.tenantId },
     metrics,
     todos: (data.todos?.items || []).map(item => ({
-      module: moduleLabel(item.sourceModule), sourceType: item.sourceType, sourceId: item.sourceId, sourceNo: item.sourceNo,
-      title: item.title, dueDate: item.dueAt, urgent: item.priority === 'P0',
+      module: moduleLabel(item.sourceModule || item.module), sourceType: item.sourceType, sourceId: item.sourceId, sourceNo: item.sourceNo,
+      title: item.title, dueDate: item.dueAt ?? item.dueDate, urgent: item.priority === 'P0' || item.urgent === true,
     })),
     alerts: (data.alerts?.items || []).map(item => ({
-      module: moduleLabel(item.sourceModule), sourceType: item.availability === 'SOURCE_READY' ? item.sourceType : undefined,
+      module: moduleLabel(item.sourceModule || item.module), sourceType: item.availability === 'UNAVAILABLE' ? undefined : item.sourceType,
       sourceId: item.sourceId, sourceNo: item.sourceNo, title: item.title, detail: item.detail,
-      severity: item.riskLevel === 'MEDIUM' ? 'medium' : 'high',
+      severity: ({ LOW: 'low', MEDIUM: 'medium', HIGH: 'high', low: 'low', medium: 'medium', high: 'high' } as const)[item.riskLevel || item.severity] || 'high',
     })),
     activities: (data.activities?.items || []).map(item => ({
-      id: item.activityId, module: moduleLabel(item.sourceModule), sourceType: item.sourceType, sourceId: item.sourceId,
-      sourceNo: item.sourceNo, title: item.title, detail: item.summary, occurredAt: item.occurredAt,
+      id: item.activityId || item.id, module: moduleLabel(item.sourceModule || item.module), sourceType: item.sourceType, sourceId: item.sourceId,
+      sourceNo: item.sourceNo, title: item.title, detail: item.summary ?? item.detail, occurredAt: item.occurredAt,
     })),
     // The frozen response has no aggregate total. A limited items.length is never used as a total.
     todoTotal: Number.isInteger(data.todos?.total) ? data.todos.total : null,
     alertTotal: Number.isInteger(data.alerts?.total) ? data.alerts.total : null,
     nextCursor: data.activities?.nextCursor,
     activitiesHasMore: data.activities?.hasMore,
-    sourceWarnings: (data.sources || []).filter(source => source.status !== 'AVAILABLE')
-      .map(source => `${moduleLabel(source.source)}：${source.status}${source.errorCode ? ` (${source.errorCode})` : ''}`),
+    sourceWarnings: (data.sources || []).filter(source => (source.status ?? source.availability) !== 'AVAILABLE')
+      .map(source => `${moduleLabel(source.source)}：${source.status ?? source.availability ?? '来源状态未提供'}${source.errorCode || source.unavailableReason ? ` (${source.errorCode || source.unavailableReason})` : ''}`),
   };
 }
