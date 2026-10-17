@@ -4,7 +4,7 @@
 > 环境：http://124.222.114.67/（部署环境）
 > 模块：生产管理 → 基础主数据 → 设备机台 → 注册物理设备
 > 级别：P2 可维护性
-> 状态：**新增**
+> 状态：后端已实现分类筛选和字典校验；前端待接入
 
 ## 问题描述
 
@@ -40,6 +40,8 @@
 - `GET /api/v1/platform/dictionaries` — 查询字典列表
 - `POST /api/v1/platform/dictionaries` — 新增字典
 - `PATCH /api/v1/platform/dictionaries/{id}` — 修改字典
+
+> 2026-10-17 后端实施：`GET /api/v1/platform/dictionaries` 已支持 `category` 和 `status` 查询参数，结果按 `sortOrder/code/name` 排序。新增/修改专用校验 `category/code/name/status/sortOrder`，并在租户内强制 `category + code` 唯一；重复返回 `PLATFORM_409_DICTIONARY_DUPLICATE`。后端不预置 `equipment_type` 或 `equipment_health_status` 数据。
 
 平台管理页面已有字典管理功能，可维护字典条目。
 

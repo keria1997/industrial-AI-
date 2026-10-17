@@ -89,4 +89,64 @@ class PlatformControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)));
     }
+
+    @Test
+    void filtersAndValidatesTenantDictionaries() throws Exception {
+        String token = token();
+        mockMvc.perform(get("/api/v1/platform/dictionaries")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .param("category", "组织类型"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].code").value("company"))
+                .andExpect(jsonPath("$[1].code").value("department"));
+
+        String equipmentType = """
+                {"category":"equipment_type","code":"smt","name":"贴片加工设备",
+                 "status":"enabled","sortOrder":10}
+                """;
+        String healthStatus = """
+                {"category":"equipment_health_status","code":"running","name":"运行正常",
+                 "status":"enabled","sortOrder":10}
+                """;
+        mockMvc.perform(post("/api/v1/platform/dictionaries")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .contentType("application/json").content(equipmentType))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sortOrder").value(10));
+        mockMvc.perform(post("/api/v1/platform/dictionaries")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .contentType("application/json").content(healthStatus))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.category").value("equipment_health_status"));
+
+        mockMvc.perform(get("/api/v1/platform/dictionaries")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .param("category", "equipment_type")
+                        .param("status", "enabled"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].name").value("贴片加工设备"));
+
+        mockMvc.perform(post("/api/v1/platform/dictionaries")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .contentType("application/json").content(equipmentType))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("PLATFORM_409_DICTIONARY_DUPLICATE"));
+
+        mockMvc.perform(post("/api/v1/platform/dictionaries")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Tenant-Id", "TENANT-SHWS")
+                        .contentType("application/json").content("""
+                                {"category":"equipment_type","code":"invalid code!","name":"非法编码",
+                                 "status":"enabled"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("PLATFORM_400_INVALID_DICTIONARY"));
+    }
 }

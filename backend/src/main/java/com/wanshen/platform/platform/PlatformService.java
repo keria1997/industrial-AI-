@@ -197,6 +197,31 @@ public class PlatformService {
         return store.list(context.tenantId(), kind);
     }
 
+    public List<Map<String, Object>> dictionaries(
+            RequestContext context, String category, String status
+    ) {
+        require(context, "platform.org.view");
+        return store.list(context.tenantId(), "dictionary").stream()
+                .filter(item -> !hasText(category) || category.equals(text(item, "category")))
+                .filter(item -> !hasText(status) || status.equals(text(item, "status")))
+                .sorted(Comparator
+                        .comparingInt((Map<String, Object> item) -> integer(item, "sortOrder"))
+                        .thenComparing(item -> text(item, "code"))
+                        .thenComparing(item -> text(item, "name")))
+                .toList();
+    }
+
+    public Map<String, Object> saveDictionary(RequestContext context, Map<String, Object> input) {
+        require(context, "platform.dictionary.manage");
+        validateDictionary(input);
+        return store.transaction(() -> {
+            ensureDictionaryCodeAvailable(context.tenantId(), text(input, "id"), text(input, "category"),
+                    text(input, "code"));
+            return save(context, "dictionary", "platform.dictionary.manage", "字典",
+                    text(input, "id").isBlank() ? "新增字典" : "修改字典", input);
+        });
+    }
+
     public List<Map<String, Object>> permissionCatalog(RequestContext context) {
         require(context, "platform.permission.read");
         List<Map<String, Object>> values = new ArrayList<>(store.list(context.tenantId(), "permission"));
@@ -436,6 +461,63 @@ public class PlatformService {
     }
 
     private List<Map<String, Object>> accounts(String tenantId) { return store.list(tenantId, "account"); }
+
+    private void validateDictionary(Map<String, Object> input) {
+        requireDictionaryText(input, "category", 100);
+        requireDictionaryText(input, "code", 50);
+        requireDictionaryText(input, "name", 100);
+        if (!Set.of("enabled", "disabled").contains(text(input, "status"))) {
+            throw invalidDictionary("字典状态只允许 enabled 或 disabled");
+        }
+        if (!text(input, "code").matches("[A-Za-z0-9_.-]+")) {
+            throw invalidDictionary("字典编码只允许字母、数字、下划线、点和横线");
+        }
+        input.putIfAbsent("sortOrder", 0);
+        try {
+            int sortOrder = Integer.parseInt(String.valueOf(input.get("sortOrder")));
+            if (sortOrder < 0 || sortOrder > 9999) throw new NumberFormatException();
+            input.put("sortOrder", sortOrder);
+        } catch (NumberFormatException exception) {
+            throw invalidDictionary("sortOrder必须是0到9999的整数");
+        }
+    }
+
+    private void ensureDictionaryCodeAvailable(
+            String tenantId, String dictionaryId, String category, String code
+    ) {
+        boolean duplicate = store.list(tenantId, "dictionary").stream()
+                .anyMatch(item -> !text(item, "id").equals(dictionaryId)
+                        && category.equals(text(item, "category"))
+                        && code.equals(text(item, "code")));
+        if (duplicate) {
+            throw new ApiException(409, "PLATFORM_409_DICTIONARY_DUPLICATE",
+                    "同一字典分类下的编码已存在", "更换字典编码后重试");
+        }
+    }
+
+    private void requireDictionaryText(Map<String, Object> input, String field, int maxLength) {
+        String value = text(input, field);
+        if (!hasText(value) || value.length() > maxLength) {
+            throw invalidDictionary(field + "必填且不能超过" + maxLength + "个字符");
+        }
+    }
+
+    private ApiException invalidDictionary(String message) {
+        return new ApiException(400, "PLATFORM_400_INVALID_DICTIONARY", message,
+                "检查字典字段后重试");
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private int integer(Map<String, Object> value, String field) {
+        try {
+            return Integer.parseInt(String.valueOf(value.getOrDefault(field, 0)));
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
+    }
 
     private void audit(RequestContext context, String action, String target, String timestamp) {
         Map<String, Object> log = new LinkedHashMap<>();

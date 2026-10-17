@@ -203,14 +203,20 @@ public class PlatformController {
     }
 
     @GetMapping("/dictionaries")
-    public List<Map<String, Object>> dictionaries(HttpServletRequest request) { return read(request, "dictionary", "platform.org.view"); }
+    public List<Map<String, Object>> dictionaries(
+            HttpServletRequest request,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String status
+    ) {
+        return service.dictionaries(context(request), category, status);
+    }
     @PostMapping("/dictionaries")
     public ResponseEntity<Object> createDictionary(@RequestBody JsonNode body, HttpServletRequest request) {
-        return write(request, "dictionary", "platform.dictionary.manage", "字典", "新增字典", body, 201);
+        return writeDictionary(request, map(body), 201);
     }
     @PutMapping("/dictionaries/{id}")
     public ResponseEntity<Object> updateDictionary(@PathVariable String id, @RequestBody JsonNode body, HttpServletRequest request) {
-        return write(request, "dictionary", "platform.dictionary.manage", "字典", "修改字典", withId(body, id), 200);
+        return writeDictionary(request, withId(body, id), 200);
     }
     @DeleteMapping("/dictionaries/{id}")
     public ResponseEntity<Void> deleteDictionary(@PathVariable String id, HttpServletRequest request) {
@@ -322,6 +328,18 @@ public class PlatformController {
             String action, JsonNode body, int status
     ) {
         return write(request, kind, permission, label, action, map(body), status);
+    }
+
+    private ResponseEntity<Object> writeDictionary(
+            HttpServletRequest request, Map<String, Object> input, int status
+    ) {
+        RequestContext context = context(request);
+        validate("dictionary", input);
+        Map<String, Object> value = service.saveDictionary(context, input);
+        return ResponseEntity.status(status)
+                .header("X-Trace-Id", context.traceId())
+                .eTag("\"" + value.get("version") + "\"")
+                .body(value);
     }
 
     private ResponseEntity<Void> delete(
