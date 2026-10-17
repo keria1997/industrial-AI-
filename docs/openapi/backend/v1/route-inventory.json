@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-10-17",
   "source": "Spring controller annotations",
-  "total": 301,
+  "total": 305,
   "routes": [
     {
       "method": "GET",
@@ -131,6 +131,24 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/finance/allocations",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/allocations",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/ar-aps",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/finance/cost-accounting",
       "controller": "FinanceController",
       "classification": "public"
@@ -144,6 +162,12 @@
     {
       "method": "GET",
       "path": "/api/v1/finance/dashboard",
+      "controller": "FinanceController",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/finance-documents/{id}/reverse",
       "controller": "FinanceController",
       "classification": "public"
     },

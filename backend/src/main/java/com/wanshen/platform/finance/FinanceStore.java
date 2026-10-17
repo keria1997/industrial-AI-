@@ -13,6 +13,7 @@ public class FinanceStore implements AbstractFinanceStore {
     private final Map<String, Receivable> receivables = new ConcurrentHashMap<>();
     private final Map<String, Payable> payables = new ConcurrentHashMap<>();
     private final Map<String, Payment> payments = new ConcurrentHashMap<>();
+    private final Map<String, Allocation> allocations = new ConcurrentHashMap<>();
     private final Map<String, Invoice> invoices = new ConcurrentHashMap<>();
     private final Map<String, Voucher> vouchers = new ConcurrentHashMap<>();
     private final Map<String, CostAccounting> costs = new ConcurrentHashMap<>();
@@ -74,6 +75,22 @@ public class FinanceStore implements AbstractFinanceStore {
     }
     @Override
     public void savePayment(Payment value) { payments.put(key(value.tenantId(), value.id()), value); }
+
+    @Override
+    public Page<Allocation> allocations(String tenantId, FinanceFilter filter) {
+        return page(allocations.values().stream().filter(item -> item.tenantId().equals(tenantId))
+                .filter(item -> matches(item.status(), item.paymentId(), null,
+                        filter, item.allocationNo()))
+                .sorted(Comparator.comparing(Allocation::createdAt).reversed()).collect(Collectors.toList()), filter);
+    }
+
+    @Override
+    public Optional<Allocation> allocation(String tenantId, String id) {
+        return Optional.ofNullable(allocations.get(key(tenantId, id)));
+    }
+
+    @Override
+    public void saveAllocation(Allocation value) { allocations.put(key(value.tenantId(), value.id()), value); }
 
     @Override
     public Page<Invoice> invoices(String tenantId, FinanceFilter filter) {

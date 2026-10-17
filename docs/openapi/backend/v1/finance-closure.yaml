@@ -1,0 +1,85 @@
+openapi: 3.0.3
+info:
+  title: Finance AR/AP allocation and reversal contract
+  version: '1.0.0'
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /finance/ar-aps:
+    get:
+      summary: Query AR and AP documents in one authoritative ledger view
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+        - { name: partyId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: currency, in: query, schema: { type: string } }
+        - { name: dueDate, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: AR/AP rows; empty means verified empty scope
+  /finance/allocations:
+    get:
+      summary: List allocation facts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Paged allocation facts }
+    post:
+      summary: Allocate a confirmed payment to AR/AP documents
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+        - { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+        - { name: X-Trace-Id, in: header, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentId, lines]
+              properties:
+                paymentId: { type: string }
+                remark: { type: string }
+                lines:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [documentType, documentId, amount]
+                    properties:
+                      documentType: { type: string, enum: [RECEIVABLE, PAYABLE] }
+                      documentId: { type: string }
+                      amount: { type: string, pattern: '^(0|[1-9]\d*)(\.\d{1,6})?$' }
+      responses:
+        '201': { description: Confirmed allocation; AR/AP balances are updated }
+        '409': { description: Payment is not confirmed or allocation conflicts }
+        '422': { description: Currency, amount or document validation failed }
+  /finance-documents/{id}/reverse:
+    post:
+      summary: Reverse a supported finance document
+      description: Supports Payment, Receivable, Payable and Voucher. The original remains auditable with status REVERSED.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+        - { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+        - { name: X-Trace-Id, in: header, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, approverToken]
+              properties:
+                reason: { type: string, maxLength: 500 }
+                approverToken: { type: string, maxLength: 200 }
+      responses:
+        '201': { description: Reverse finance ID created; original is REVERSED }
+        '404': { description: Finance document not found in tenant scope }
+        '409': { description: Document already reversed or state does not permit reversal }

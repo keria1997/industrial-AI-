@@ -67,6 +67,22 @@ public class JdbcFinanceStore extends JdbcModuleStoreSupport implements Abstract
     public void savePayment(Payment value) { putDocument(value.tenantId(), "payment", value.id(), value); }
 
     @Override
+    public Page<Allocation> allocations(String tenantId, FinanceFilter filter) {
+        return page(documents(tenantId, "allocation", Allocation.class).stream()
+                .filter(item -> financeMatch(item.status(), item.paymentId(), null, filter,
+                        item.allocationNo()))
+                .sorted(Comparator.comparing(Allocation::createdAt).reversed()).toList(), filter);
+    }
+
+    @Override
+    public Optional<Allocation> allocation(String tenantId, String id) {
+        return document(tenantId, "allocation", id, Allocation.class);
+    }
+
+    @Override
+    public void saveAllocation(Allocation value) { putDocument(value.tenantId(), "allocation", value.id(), value); }
+
+    @Override
     public Page<Invoice> invoices(String tenantId, FinanceFilter filter) {
         return page(documents(tenantId, "invoice", Invoice.class).stream()
                 .filter(item -> financeMatch(item.status(), null, null, filter,

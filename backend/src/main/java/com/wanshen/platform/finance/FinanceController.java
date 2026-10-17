@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wanshen.platform.finance.AbstractFinanceStore.CostAccounting;
+import com.wanshen.platform.finance.AbstractFinanceStore.Allocation;
+import com.wanshen.platform.finance.AbstractFinanceStore.AllocationLine;
 import com.wanshen.platform.finance.AbstractFinanceStore.FinanceFilter;
 import com.wanshen.platform.finance.AbstractFinanceStore.Invoice;
 import com.wanshen.platform.finance.AbstractFinanceStore.Page;
@@ -87,6 +89,54 @@ public class FinanceController {
                 .filter(item -> item.createdAt().substring(0, 7).equals(month))
                 .map(Payable::totalAmount).toList()));
         return result;
+    }
+
+    @GetMapping("/ar-aps")
+    public List<Map<String, Object>> arAps(
+            HttpServletRequest request,
+            @RequestParam(required = false) String partyId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String currency,
+            @RequestParam(required = false) String dueDate
+    ) {
+        RequestContext context = requireContext(request, "finance.receivable.read");
+        requireContext(request, "finance.payable.read");
+        List<Map<String, Object>> result = new ArrayList<>();
+        store.receivables(context.tenantId(), new FinanceFilter(status, null, null, 1, 1000)).items().stream()
+                .filter(item -> partyId == null || partyId.equals(item.customerId()))
+                .filter(item -> currency == null || currency.equals(item.currency()))
+                .filter(item -> dueDate == null || dueDate.equals(item.dueDate()))
+                .forEach(item -> result.add(arApItem("RECEIVABLE", item.id(), item.sourceType(),
+                        item.sourceId(), item.customerId(), item.customerName(), item.currency(),
+                        item.totalAmount(), item.receivedAmount(), item.outstandingAmount(), item.status())));
+        store.payables(context.tenantId(), new FinanceFilter(status, null, null, 1, 1000)).items().stream()
+                .filter(item -> partyId == null || partyId.equals(item.supplierId()))
+                .filter(item -> currency == null || currency.equals(item.currency()))
+                .filter(item -> dueDate == null || dueDate.equals(item.dueDate()))
+                .forEach(item -> result.add(arApItem("PAYABLE", item.id(), item.sourceType(),
+                        item.sourceId(), item.supplierId(), item.supplierName(), item.currency(),
+                        item.totalAmount(), item.paidAmount(), item.outstandingAmount(), item.status())));
+        return result;
+    }
+
+    private Map<String, Object> arApItem(
+            String documentType, String financeId, String sourceType, String sourceId,
+            String partyId, String partyName, String currency, String totalAmount,
+            String allocatedAmount, String outstandingAmount, String status
+    ) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("financeId", financeId);
+        item.put("documentType", documentType);
+        item.put("sourceType", sourceType);
+        item.put("sourceId", sourceId);
+        item.put("partyId", partyId);
+        item.put("partyName", partyName);
+        item.put("currency", currency);
+        item.put("totalAmount", totalAmount);
+        item.put("allocatedAmount", allocatedAmount);
+        item.put("outstandingAmount", outstandingAmount);
+        item.put("status", status);
+        return item;
     }
 
     @GetMapping("/receivables")
@@ -293,6 +343,79 @@ public class FinanceController {
         return store.payments(context.tenantId(), filter(status, search, sourceOrder, page, pageSize));
     }
 
+    @GetMapping("/allocations")
+    public Page<Allocation> allocations(
+            HttpServletRequest request, @RequestParam(required = false) String status,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String sourceOrder,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer pageSize
+    ) {
+        RequestContext context = requireContext(request, "finance.payment.read");
+        return store.allocations(context.tenantId(), filter(status, search, sourceOrder, page, pageSize));
+    }
+
+    @PostMapping("/allocations")
+    public ResponseEntity<?> createAllocation(@RequestBody JsonNode input, HttpServletRequest request) {
+        RequestContext context = requireContext(request, "finance.payment.confirm");
+        requireText(input, "paymentId", 100);
+        JsonNode lines = input.get("lines");
+        if (!lines.isArray() || lines.isEmpty()) throw bad("核销明细不能为空", "至少提供一行核销");
+        List<AllocationLine> allocationLines = new ArrayList<>();
+        BigDecimal[] allocatedTotal = {BigDecimal.ZERO};
+        for (JsonNode line : lines) {
+            String documentType = text(line, "documentType");
+            requireText(line, "documentId", 100);
+            decimal(line, "amount");
+            if (!Set.of("RECEIVABLE", "PAYABLE").contains(documentType)) {
+                throw bad("核销单据类型不合法", "使用 RECEIVABLE 或 PAYABLE");
+            }
+            allocationLines.add(new AllocationLine(documentType, text(line, "documentId"), text(line, "amount")));
+            allocatedTotal[0] = add(allocatedTotal[0].toPlainString(), text(line, "amount"));
+        }
+        return command(context, "finance.allocation.create", input, () -> {
+            Payment payment = store.payment(context.tenantId(), text(input, "paymentId"))
+                    .orElseThrow(() -> notFound("收付款单不存在", "刷新后重试"));
+            if (!"done".equals(payment.status())) {
+                throw conflict("只有已确认收付款单可以核销", "先确认收付款单");
+            }
+            if (compare(allocatedTotal[0].toPlainString(), payment.amount()) > 0) {
+                throw bad("核销金额超过收付款金额", "减少核销金额");
+            }
+            for (AllocationLine line : allocationLines) {
+                if ("RECEIVABLE".equals(line.documentType())) {
+                    Receivable document = getReceivable(context.tenantId(), line.documentId());
+                    if (!document.currency().equals(payment.currency())) throw bad("核销币种不一致", "检查币种");
+                    if (compare(line.amount(), document.outstandingAmount()) > 0) {
+                        throw bad("应收核销金额超过未收余额", "减少核销金额");
+                    }
+                    store.saveReceivable(copyReceivable(document,
+                            add(document.receivedAmount(), line.amount()),
+                            subtract(document.outstandingAmount(), line.amount()), now()));
+                } else {
+                    Payable document = getPayable(context.tenantId(), line.documentId());
+                    if (!document.currency().equals(payment.currency())) throw bad("核销币种不一致", "检查币种");
+                    if (compare(line.amount(), document.outstandingAmount()) > 0) {
+                        throw bad("应付核销金额超过未付余额", "减少核销金额");
+                    }
+                    store.savePayable(copyPayable(document,
+                            add(document.paidAmount(), line.amount()),
+                            subtract(document.outstandingAmount(), line.amount()), now()));
+                }
+            }
+            String timestamp = now();
+            Allocation allocation = new Allocation(UUID.randomUUID().toString(), context.tenantId(),
+                    docNo("ALLOC"), payment.id(), payment.currency(), allocationLines, "CONFIRMED",
+                    textOrEmpty(input, "remark"), 1, timestamp, timestamp, context.actorId());
+            store.saveAllocation(allocation);
+            audit(context, "Allocation", allocation.id(), 1, "CREATE", null, allocation);
+            outbox(context, "finance.allocation.created.v1", "Allocation", allocation.id(), 1,
+                    Map.of("allocationId", allocation.id(), "paymentId", payment.id(),
+                            "amount", allocatedTotal[0].toPlainString()));
+            return new Command(allocation, 201);
+        });
+    }
+
     @PostMapping("/payments")
     public ResponseEntity<?> registerPayment(@RequestBody JsonNode input, HttpServletRequest request) {
         RequestContext context = requireContext(request, "finance.payment.create");
@@ -402,6 +525,128 @@ public class FinanceController {
             body.put("payable", payable);
             return new Command(body, 200);
         });
+    }
+
+    @PostMapping("/finance-documents/{id}/reverse")
+    public ResponseEntity<?> reverseFinanceDocument(
+            @PathVariable String id, @RequestBody JsonNode input, HttpServletRequest request
+    ) {
+        RequestContext context = requireContext(request, "finance.reversal.create");
+        requireText(input, "reason", 500);
+        requireText(input, "approverToken", 200);
+        return command(context, "finance.document.reverse", input(id, input), () -> {
+            Optional<Payment> payment = store.payment(context.tenantId(), id);
+            if (payment.isPresent()) return new Command(reversePayment(context, payment.get(), text(input, "reason")), 201);
+            Optional<Receivable> receivable = store.receivable(context.tenantId(), id);
+            if (receivable.isPresent()) return new Command(reverseReceivable(context, receivable.get(), text(input, "reason")), 201);
+            Optional<Payable> payable = store.payable(context.tenantId(), id);
+            if (payable.isPresent()) return new Command(reversePayable(context, payable.get(), text(input, "reason")), 201);
+            Optional<Voucher> voucher = store.voucher(context.tenantId(), id);
+            if (voucher.isPresent()) return new Command(reverseVoucher(context, voucher.get(), text(input, "reason")), 201);
+            throw notFound("财务单据不存在", "刷新后重试");
+        });
+    }
+
+    private Map<String, Object> reversePayment(RequestContext context, Payment current, String reason) {
+        if ("reversed".equals(current.status())) throw conflict("收付款单已冲销", "刷新后重试");
+        String timestamp = now();
+        String direction = "INBOUND".equals(current.direction()) ? "OUTBOUND" : "INBOUND";
+        Payment reversal = new Payment(UUID.randomUUID().toString(), current.tenantId(), docNo("REV"), direction,
+                current.receivableId(), current.payableId(), current.counterpartyId(), current.counterpartyName(),
+                current.currency(), current.amount(), current.paymentMethod(),
+                LocalDate.now(ZoneOffset.UTC).toString(), "", docNo("REVREF"), "done",
+                "冲销：" + reason, 1, timestamp, timestamp, context.actorId());
+        Payment reversed = new Payment(current.id(), current.tenantId(), current.docNo(), current.direction(),
+                current.receivableId(), current.payableId(), current.counterpartyId(), current.counterpartyName(),
+                current.currency(), current.amount(), current.paymentMethod(), current.paymentDate(),
+                current.bankAccount(), current.referenceNo(), "reversed", current.remark(),
+                current.version() + 1, current.createdAt(), timestamp, current.createdBy());
+        store.savePayment(reversal);
+        store.savePayment(reversed);
+        if ("done".equals(reversed.status())) {
+            BigDecimal amount = new BigDecimal(current.amount());
+            if ("INBOUND".equals(current.direction()) && current.receivableId() != null) {
+                store.receivable(context.tenantId(), current.receivableId()).ifPresent(item -> store.saveReceivable(
+                        copyReceivable(item, subtract(item.receivedAmount(), current.amount()),
+                                add(item.outstandingAmount(), current.amount()), timestamp)));
+            }
+            if ("OUTBOUND".equals(current.direction()) && current.payableId() != null) {
+                store.payable(context.tenantId(), current.payableId()).ifPresent(item -> store.savePayable(
+                        copyPayable(item, subtract(item.paidAmount(), current.amount()),
+                                add(item.outstandingAmount(), current.amount()), timestamp)));
+            }
+        }
+        audit(context, "Payment", reversal.id(), 1, "REVERSE", current, reversal);
+        outbox(context, "finance.payment.reversed.v1", "Payment", reversal.id(), 1,
+                Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id(),
+                        "amount", current.amount()));
+        return Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id(), "status", "REVERSED");
+    }
+
+    private Map<String, Object> reverseReceivable(RequestContext context, Receivable current, String reason) {
+        if (Set.of("reversed", "void").contains(current.status())) throw conflict("应收单已冲销或作废", "刷新后重试");
+        String timestamp = now();
+        String amount = "-" + current.outstandingAmount();
+        Receivable reversal = new Receivable(UUID.randomUUID().toString(), current.tenantId(), docNo("ARREV"),
+                "冲销 " + current.title(), current.customerId(), current.customerName(), current.businessType(),
+                "Reversal", current.id(), current.docNo(), current.currency(), amount, "0", amount,
+                "reversed", null, null, null, "冲销：" + reason, 1, timestamp, timestamp, context.actorId());
+        Receivable reversed = new Receivable(current.id(), current.tenantId(), current.docNo(), current.title(),
+                current.customerId(), current.customerName(), current.businessType(), current.sourceType(),
+                current.sourceId(), current.sourceDocNo(), current.currency(), current.totalAmount(),
+                current.receivedAmount(), current.outstandingAmount(), "reversed", current.dueDate(),
+                current.issuedAt(), current.settledAt(), current.remark(), current.version() + 1,
+                current.createdAt(), timestamp, current.createdBy());
+        store.saveReceivable(reversal);
+        store.saveReceivable(reversed);
+        audit(context, "Receivable", reversal.id(), 1, "REVERSE", current, reversal);
+        outbox(context, "finance.receivable.reversed.v1", "Receivable", reversal.id(), 1,
+                Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id()));
+        return Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id(), "status", "REVERSED");
+    }
+
+    private Map<String, Object> reversePayable(RequestContext context, Payable current, String reason) {
+        if (Set.of("reversed", "void").contains(current.status())) throw conflict("应付单已冲销或作废", "刷新后重试");
+        String timestamp = now();
+        String amount = "-" + current.outstandingAmount();
+        Payable reversal = new Payable(UUID.randomUUID().toString(), current.tenantId(), docNo("APREV"),
+                "冲销 " + current.title(), current.supplierId(), current.supplierName(), current.businessType(),
+                "Reversal", current.id(), current.docNo(), current.currency(), amount, "0", amount,
+                "reversed", null, null, null, "冲销：" + reason, 1, timestamp, timestamp, context.actorId());
+        Payable reversed = new Payable(current.id(), current.tenantId(), current.docNo(), current.title(),
+                current.supplierId(), current.supplierName(), current.businessType(), current.sourceType(),
+                current.sourceId(), current.sourceDocNo(), current.currency(), current.totalAmount(),
+                current.paidAmount(), current.outstandingAmount(), "reversed", current.dueDate(),
+                current.issuedAt(), current.settledAt(), current.remark(), current.version() + 1,
+                current.createdAt(), timestamp, current.createdBy());
+        store.savePayable(reversal);
+        store.savePayable(reversed);
+        audit(context, "Payable", reversal.id(), 1, "REVERSE", current, reversal);
+        outbox(context, "finance.payable.reversed.v1", "Payable", reversal.id(), 1,
+                Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id()));
+        return Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id(), "status", "REVERSED");
+    }
+
+    private Map<String, Object> reverseVoucher(RequestContext context, Voucher current, String reason) {
+        if ("reversed".equals(current.status())) throw conflict("凭证已冲销", "刷新后重试");
+        String timestamp = now();
+        List<VoucherLine> reversalLines = current.lines().stream().map(line -> new VoucherLine(
+                line.accountCode(), line.accountName(), line.creditAmount(), line.debitAmount(),
+                "冲销：" + line.summary())).toList();
+        Voucher reversal = new Voucher(UUID.randomUUID().toString(), current.tenantId(), docNo("VOUREV"),
+                current.voucherType(), "冲销 " + current.summary(), current.totalCredit(), current.totalDebit(),
+                "posted", current.postingDate(), reversalLines, "Reversal", current.id(),
+                "冲销：" + reason, 1, timestamp, timestamp, context.actorId());
+        Voucher reversed = new Voucher(current.id(), current.tenantId(), current.docNo(), current.voucherType(),
+                current.summary(), current.totalDebit(), current.totalCredit(), "reversed", current.postingDate(),
+                current.lines(), current.sourceType(), current.sourceId(), current.remark(),
+                current.version() + 1, current.createdAt(), timestamp, current.createdBy());
+        store.saveVoucher(reversal);
+        store.saveVoucher(reversed);
+        audit(context, "Voucher", reversal.id(), 1, "REVERSE", current, reversal);
+        outbox(context, "finance.voucher.reversed.v1", "Voucher", reversal.id(), 1,
+                Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id()));
+        return Map.of("reverseFinanceId", reversal.id(), "originalFinanceId", current.id(), "status", "REVERSED");
     }
 
     @GetMapping("/invoices")
@@ -747,6 +992,25 @@ public class FinanceController {
         return store.payable(tenantId, id).orElseThrow(() ->
                 notFound("应付单不存在或不在当前数据范围内", "请刷新列表并确认租户与数据权限"));
     }
+
+    private Receivable copyReceivable(Receivable item, String received, String outstanding, String timestamp) {
+        boolean done = compare(outstanding, "0") <= 0;
+        return new Receivable(item.id(), item.tenantId(), item.docNo(), item.title(), item.customerId(),
+                item.customerName(), item.businessType(), item.sourceType(), item.sourceId(), item.sourceDocNo(),
+                item.currency(), item.totalAmount(), received, outstanding, done ? "done" : "processing",
+                item.dueDate(), item.issuedAt(), done ? timestamp : item.settledAt(), item.remark(),
+                item.version() + 1, item.createdAt(), timestamp, item.createdBy());
+    }
+
+    private Payable copyPayable(Payable item, String paid, String outstanding, String timestamp) {
+        boolean done = compare(outstanding, "0") <= 0;
+        return new Payable(item.id(), item.tenantId(), item.docNo(), item.title(), item.supplierId(),
+                item.supplierName(), item.businessType(), item.sourceType(), item.sourceId(), item.sourceDocNo(),
+                item.currency(), item.totalAmount(), paid, outstanding, done ? "done" : "processing",
+                item.dueDate(), item.issuedAt(), done ? timestamp : item.settledAt(), item.remark(),
+                item.version() + 1, item.createdAt(), timestamp, item.createdBy());
+    }
+
     private RequestContext context(HttpServletRequest request) { return contexts.from(request); }
     private ApiException bad(String message, String suggestion) {
         return new ApiException(400, "PRODUCTION_400_INVALID_ARGUMENT", message, suggestion);

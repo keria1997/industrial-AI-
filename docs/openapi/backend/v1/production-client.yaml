@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Production execution client contract
+  version: '1.0.0'
+  description: Canonical client paths for report posting, completion and work-order close.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /production/work-orders/{id}/reports:
+    post:
+      summary: Post a production report
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+        - { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Updated work order }
+  /production/work-orders/{id}/completions:
+    post:
+      summary: Submit completion and inventory posting request
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+        - { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+      responses:
+        '201': { description: Completion accepted or posting result }
+        '409': { description: Inspection or inventory state prevents completion }
+  /production/work-orders/{id}/close-submit:
+    post:
+      summary: Submit work-order close request
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+        - { name: X-Idempotency-Key, in: header, required: true, schema: { type: string } }
+        - { name: If-Match, in: header, required: true, schema: { type: integer } }
+      responses:
+        '201': { description: Close request created }
+        '409': { description: Work order is not closeable }

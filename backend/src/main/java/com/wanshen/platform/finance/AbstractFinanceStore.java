@@ -13,6 +13,17 @@ public interface AbstractFinanceStore {
     record FinanceFilter(String status, String search, String sourceOrder, Integer page, Integer pageSize) {}
     record Page<T>(List<T> items, int total) {}
 
+    record AllocationLine(
+            String documentType, String documentId, String amount
+    ) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record Allocation(
+            String id, String tenantId, String allocationNo, String paymentId,
+            String currency, List<AllocationLine> lines, String status,
+            String remark, int version, String createdAt, String updatedAt, String createdBy
+    ) {}
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Receivable(
             String id, String tenantId, String docNo, String title,
@@ -100,6 +111,10 @@ public interface AbstractFinanceStore {
     Page<Payment> payments(String tenantId, FinanceFilter filter);
     Optional<Payment> payment(String tenantId, String id);
     void savePayment(Payment value);
+
+    Page<Allocation> allocations(String tenantId, FinanceFilter filter);
+    Optional<Allocation> allocation(String tenantId, String id);
+    void saveAllocation(Allocation value);
 
     Page<Invoice> invoices(String tenantId, FinanceFilter filter);
     Optional<Invoice> invoice(String tenantId, String id);
