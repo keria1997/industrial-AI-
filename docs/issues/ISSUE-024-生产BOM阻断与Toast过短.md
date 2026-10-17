@@ -42,3 +42,18 @@
 
 详见[方案](../plan/2026-10-17-issue-019-root-cause-and-frontend-plan.md)、[实施与验收报告](../plan/2026-10-17-issue-019-implementation-report.md)及[字段契约](../openapi/backend/v1/production-bom-demand.yaml)。
 
+## 进展
+
+### 2026-10-17 部署环境黑盒验证（Playwright）
+
+| 检查项 | 结果 | 详情 |
+|---|---|---|
+| 暂缓按钮 disabled | ✅ **PASS** | `disabled: true`，title 为"暂缓暂未开放" |
+| 暂缓按钮不可点击 | ✅ **PASS** | `cursor-not-allowed`，点击无响应 |
+| BOM 校验按钮 | ⏭️ 未找到 | 部署环境页面无校验按钮（可能因数据为空或页面状态不同） |
+| Toast 5 秒时长 | ⏭️ 无法验证 | 无可触发 Toast 的按钮 |
+
+**结论：** 暂缓按钮修复在部署环境**确认生效**。BOM 校验和 Toast 时长因页面状态（无生产需求数据）无法在部署环境验证，需在本地已有数据的环境验证。
+
+**状态更新：** ⏭️ 前端已修复、暂缓确认生效、BOM 和 Toast 待有数据后复测。
+
