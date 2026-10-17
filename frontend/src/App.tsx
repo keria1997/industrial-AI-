@@ -2,9 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
 import { SidebarItem } from './app/SidebarItem';
 import { useAppRuntime } from './app/AppRuntimeProvider';
-import { resolveDisplayPosition } from './app/userIdentityPresentation';
+import { resolveAccountRole } from './app/userIdentityPresentation';
 import { ApiError, apiContextScope } from './api/client';
-import { isRoleName } from './app/moduleRegistry';
 import { getAuthorizedModules, hasPermission } from './app/permissions';
 import PlatformManagementV2 from './platform/PlatformManagement';
 import {
@@ -3345,20 +3344,14 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
 
   const tabs = [
       { id: 'dashboard', icon: <LayoutDashboard size={14} className="mr-1.5" />, label: '销售监控舱' },
-      { id: 'quotes', icon: <MessageSquare size={14} className="mr-1.5" />, label: '产品报价' },
       { id: 'orders', icon: <FileText size={14} className="mr-1.5" />, label: '销售订单' },
-      { id: 'rma', icon: <RotateCcw size={14} className="mr-1.5" />, label: '退货管理' },
-      { id: 'receipts', icon: <CheckCircle2 size={14} className="mr-1.5" />, label: '客户签收' },
       { id: 'customers', icon: <Users size={14} className="mr-1.5" />, label: '客户管理' },
       { id: 'basic-data', icon: <BookOpen size={14} className="mr-1.5" />, label: '基础数据' },
   ];
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const activeTabDescriptions = {
       dashboard: '实时监控 · 数据驱动 · 预警提示',
-      quotes: '报价有效期、审批确认与订单转化',
       orders: '订单复核、发货申请与履约状态跟踪',
-      rma: '退货申请、审批、检验与红字AR闭环管理',
-      receipts: '客户签收登记与差额处置跟踪',
       customers: '客户档案、联系人与合作状态维护',
       'basic-data': '销售等级、行业字典与触达规则维护',
   };
@@ -6925,7 +6918,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         { label: '库存事实版本', value: row.inventoryFactVersion ? `v${row.inventoryFactVersion}` : '-' },
         { label: '接入记录', value: row.intakeId || '-' },
       ],
-      note: '生产需求已通过正式生产接入 API 幂等创建；进入生产模块仍受应用开关、岗位权限和工厂数据范围控制。',
+      note: '生产需求已通过正式生产接入 API 幂等创建；进入生产模块仍受应用开关、账号权限和工厂数据范围控制。',
     });
   };
 
@@ -8776,7 +8769,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
   const [employeeDepartment, setEmployeeDepartment] = useState('');
 
   const mapBackendEmployee = (emp) => ({
-    id: emp.employeeNo, name: emp.name, dept: emp.department, role: emp.position,
+    id: emp.employeeNo, name: emp.name, dept: emp.department,
     phone: emp.phone || '-',
     status: ({ active: '在职', transferring: '调动中', leave: '休假', resigned: '离职' })[emp.status] || '-',
     _backend: emp,
@@ -8806,7 +8799,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
       employeeView: {
         kind,
         title: '查看员工档案',
-        desc: `查看 ${row.name} 的部门、岗位、联系方式和在职状态。`,
+        desc: `查看 ${row.name} 的部门、联系方式和在职状态。`,
         icon: User,
         tone: 'blue',
         confirmText: '已查看',
@@ -8814,7 +8807,6 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
           { label: '工号', value: row.id },
           { label: '姓名', value: row.name },
           { label: '部门', value: row.dept },
-          { label: '岗位', value: row.role },
           { label: '联系电话', value: row.phone },
           { label: '当前状态', value: row.status }
         ]
@@ -8865,7 +8857,7 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
             <div className="w-12 h-12 bg-blue-600 text-white flex items-center justify-center rounded-2xl mr-4 shadow-sm"><Users size={24} /></div>
             <div className="flex flex-col justify-center">
               <h1 className="text-[20px] font-bold text-slate-800 leading-tight tracking-wide">人员管理 (HR)</h1>
-              <div className="text-[13px] text-slate-500 mt-1 font-medium">员工档案、资质证书与岗位管理</div>
+              <div className="text-[13px] text-slate-500 mt-1 font-medium">员工档案、组织归属与资质证书</div>
             </div>
           </div>
         </div>
@@ -8895,13 +8887,13 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                       tone: 'rose',
                       subject: '人员稳定性风险分析',
                       badge: !canReadEmployees ? '无权限' : employeeFacts.error ? '数据加载失败' : employeeFacts.loading ? '加载中' : employees.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
-                      lines: ['关注人员稳定性变化与岗位风险。当前暂无可展示的分析结果。'],
+                      lines: ['关注人员稳定性变化与组织风险。当前暂无可展示的分析结果。'],
                     },
                     {
                       title: 'AI 资质临期预警',
                       icon: Award,
                       tone: 'amber',
-                      subject: '岗位证书有效期与资质风险',
+                      subject: '员工资质证书有效期与资质风险',
                       badge: !canReadSkills ? '无权限' : skillFacts.error ? '数据加载失败' : skillFacts.loading ? '加载中' : skills.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
                       lines: ['展示正式资质风险分析；证书明细可在资质技能中查看。'],
                     },
@@ -8943,8 +8935,8 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                         </div>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">工号</th><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">部门</th><th className="px-6 py-4 font-bold">岗位</th><th className="px-6 py-4 font-bold">入职日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">{filteredEmployees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept || '-'}</td><td className="px-6 py-4 font-medium text-slate-600">{r.role || '-'}</td><td className="px-6 py-4 text-slate-500 font-mono text-[12px]">{r._backend?.hireDate || '-'}</td><td className="px-6 py-4">{r.status}</td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
+                        <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">工号</th><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">部门</th><th className="px-6 py-4 font-bold">入职日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">{filteredEmployees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept || '-'}</td><td className="px-6 py-4 text-slate-500 font-mono text-[12px]">{r._backend?.hireDate || '-'}</td><td className="px-6 py-4">{r.status}</td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
                     </div>
                     {employeeFacts.data !== null && filteredEmployees.length === 0 && <ApiDataState empty="没有符合条件的员工" />}
                     <div className="px-6 py-3 text-[12px] text-slate-500">共 {filteredEmployees.length} 条</div>
@@ -9493,7 +9485,7 @@ const createEmptyRule = (index = 1) => ({
     id: `R-${String(index).padStart(3, '0')}`,
     name: '新建消息路由规则',
     trigger: '请选择业务事件与触发阈值',
-    target: '请选择接收人或岗位',
+    target: '请选择接收人或角色',
     channels: ['系统站内信'],
     aiRewrite: false,
     status: true,
@@ -9914,7 +9906,7 @@ const roleWorkbenchMeta = {
   仓管: { title: '仓储作业台', summary: '围绕收、发、存、盘与批次追溯，快速处理异常任务。' },
   车间: { title: '车间执行台', summary: '聚焦派工、报工、质检、设备与在制品流转。' },
   财务: { title: '业财协同台', summary: '销售与采购业务自动形成应收应付、发票、流水和凭证。' },
-  人事: { title: '组织与人才台', summary: '统一管理员工、岗位、技能与关键人才风险。' },
+  人事: { title: '组织与人才台', summary: '统一管理员工、组织、技能与关键人才风险。' },
   超级管理员: { title: '平台治理台', summary: '管理租户、组织、权限、审批、审计与系统运行状态。' },
 };
 
@@ -10042,7 +10034,6 @@ export default function App() {
     currentTenantId,
     currentUser,
     navigateModule: setActiveModule,
-    setActiveRole,
     setCurrentTenantId,
     setCurrentUser,
     permissionsReady,
@@ -10126,13 +10117,13 @@ export default function App() {
   const [flowToast, setFlowToast] = useState({ show: false, msg: '', type: 'success' });
   const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
   const [profileModal, setProfileModal] = useState(null);
-  const roleMeta = roleWorkbenchMeta[activeRole] || roleWorkbenchMeta.老板;
-  const displayPosition = resolveDisplayPosition(currentUser, currentTenant.id);
+  const roleMeta = activeRole ? roleWorkbenchMeta[activeRole] : { title: '未匹配工作台视图', summary: '当前账号角色尚未匹配工作台展示分组，请联系管理员。' };
+  const accountRole = resolveAccountRole(currentUser);
   const [workbenchSearchInput, setWorkbenchSearchInput] = useState('');
   const [workbenchSearch, setWorkbenchSearch] = useState('');
   const [workbenchEventScope, setWorkbenchEventScope] = useState<'KEY' | 'ALL'>('KEY');
   const workbench = useWorkbenchDashboard(
-    activeModule === '工作台' && permissionsReady && hasPermission(currentUser?.permissions, 'workbench.dashboard.read') ? formalContext : null,
+    activeModule === '工作台' && activeRole && permissionsReady && hasPermission(currentUser?.permissions, 'workbench.dashboard.read') ? formalContext : null,
     activeRole as WorkbenchRole,
     `${currentUser?.userId || currentUser?.account}:${currentUser?.permissionVersion || ''}:${currentUser?.scopeVersion || ''}:${currentUser?.permissions?.join(',')}`,
     workbenchSearch, workbenchEventScope,
@@ -10179,7 +10170,6 @@ export default function App() {
       }
 	    saveAuthenticatedSession(session);
     setCurrentUser(session);
-    if (isRoleName(session.role)) setActiveRole(session.role);
     setActiveModule('工作台');
     showFlowToast('登录成功，欢迎进入工业AI平台', 'success');
   };
@@ -10214,7 +10204,7 @@ export default function App() {
       confirmText: '知道了',
       details: [
         { label: '用户名称', value: currentUser.name },
-        { label: '主岗位', value: displayPosition },
+        { label: '账号角色', value: accountRole },
         { label: '工作台视图', value: roleMeta.title },
         { label: '当前租户', value: currentTenant.name },
         { label: '登录账号', value: currentUser.account || '-' },
@@ -10224,7 +10214,7 @@ export default function App() {
 	        { label: '登录时间', value: currentUser.loginAt ? new Date(currentUser.loginAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
         { label: '会话状态', value: '已登录' },
       ],
-      note: '岗位信息以账号关联的员工档案为准。'
+      note: '一个账号绑定一个角色，访问范围以当前有效授权为准。'
     });
   };
 
@@ -10240,13 +10230,6 @@ export default function App() {
     setActiveModule('工作台');
     setBusinessFlow(null);
     showFlowToast(`已切换到 ${nextTenant.name}，业务上下文与数据权限已刷新`, 'success');
-  };
-
-  const switchRole = (role) => {
-    if (!isRoleName(role)) return;
-    setActiveRole(role);
-    setActiveModule('工作台');
-    showFlowToast(`已进入${roleWorkbenchMeta[role]?.title || role + '工作台'}`, 'success');
   };
 
   const localDate = () => {
@@ -10587,7 +10570,7 @@ export default function App() {
           isOpen={isGlobalAssistantOpen}
           onClose={() => setIsGlobalAssistantOpen(false)}
           tenantCode={currentTenant.code}
-          roleName={activeRole}
+          roleName={accountRole}
           apiContext={formalContext}
           permissions={currentUser?.permissions ?? []}
           onActionSubmit={() => {
@@ -10639,8 +10622,7 @@ export default function App() {
               </div>
               <div className="ml-3 min-w-0 flex-1">
                 <div className="text-[13px] font-bold text-slate-800 group-hover:text-blue-700 truncate">{currentUser.name}</div>
-                <div aria-label="当前用户主岗位" title={displayPosition} className="text-[11px] font-medium text-slate-500 break-words">主岗位：{displayPosition}</div>
-                <div className="text-[11px] font-medium text-slate-500">工作台视图：{roleMeta.title}</div>
+                <div className="hidden" aria-hidden="true">账号角色：{accountRole}</div><div className="hidden" aria-hidden="true">工作台视图：{roleMeta.title}</div>
               </div>
               <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
             </button>
@@ -10737,17 +10719,16 @@ export default function App() {
                 <div className="relative">
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-black shadow-sm">{todayLabel}</span>
-                    <span aria-label="工作台用户主岗位" className="min-w-0 max-w-full break-words px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">主岗位：{displayPosition}</span>
-                    <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[12px] font-black">工作台视图：{roleMeta.title}</span>
+                    <span className="hidden" aria-hidden="true">账号角色：{accountRole}</span><span className="hidden" aria-hidden="true">工作台视图：{roleMeta.title}</span>
                   <span role="status" aria-label="工作台数据状态" className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : workbenchOutdated ? 'bg-amber-50 text-amber-700 border-amber-200' : workbenchLoading ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${workbenchError ? 'bg-rose-500' : workbenchOutdated ? 'bg-amber-500' : workbenchLoading ? 'bg-slate-400 animate-pulse' : 'bg-emerald-500'}`}></span>
-                    {workbenchError ? '数据读取异常' : workbench.expired ? '数据已失效' : workbench.stale || workbench.businessStale ? '数据已过期' : workbenchLoading ? '实时取数中' : '数据已更新'}
+                    {!activeRole ? '未匹配工作台视图' : workbenchError ? '数据读取异常' : workbench.expired ? '数据已失效' : workbench.stale || workbench.businessStale ? '数据已过期' : workbenchLoading ? '实时取数中' : '数据已更新'}
                   </span>
-                  <button type="button" aria-label="刷新工作台" title="刷新工作台" disabled={workbenchLoading} onClick={workbench.refresh} className="rounded-md border p-2 text-blue-600 disabled:opacity-50"><RefreshCw size={15} /></button>
+                  <button type="button" aria-label="刷新工作台" title="刷新工作台" disabled={!activeRole || workbenchLoading} onClick={workbench.refresh} className="rounded-md border p-2 text-blue-600 disabled:opacity-50"><RefreshCw size={15} /></button>
                   </div>
                   <h1 className="text-[32px] leading-tight font-black text-slate-950 tracking-tight">早上好，{currentUser.name}</h1>
                   <p className="text-[14px] font-bold text-slate-500 mt-3 max-w-[760px]">
-                    {roleMeta.summary} 今日共归集 <span className="text-blue-600 font-black">{workbenchDashboard?.todoTotal ?? '-'}</span> 项岗位待办与 <span className="text-rose-500 font-black">{workbenchDashboard?.alertTotal ?? '-'}</span> 项业务与 AI 风险提醒。
+                    今日共归集 <span className="text-blue-600 font-black">{workbenchDashboard?.todoTotal ?? '-'}</span> 项待办与 <span className="text-rose-500 font-black">{workbenchDashboard?.alertTotal ?? '-'}</span> 项业务与 AI 风险提醒。
                   </p>
                 </div>
               </section>
@@ -10756,6 +10737,7 @@ export default function App() {
                 <button disabled={!hasPermission(currentUser?.permissions, 'workbench.search.read')} className="rounded-md border bg-white px-3 py-2 text-sm disabled:opacity-50">查询</button>
                 {(workbench.stale || workbench.businessStale) && <span role="status" className="text-sm text-amber-700">{workbench.expired ? '数据已失效，请刷新' : '数据已过期，业务事项待核对'}</span>}
               </form>
+              {!activeRole && <p role="alert" className="text-sm text-amber-700">当前账号角色尚未匹配工作台展示分组，请联系管理员。</p>}
               {workbenchError && <p role="alert" className="text-sm text-rose-700">{workbenchError} <button onClick={workbench.refresh} className="underline">重试</button></p>}
               {workbench.sourceWarnings.length > 0 && <p role="status" className="text-sm text-amber-700">{workbench.sourceWarnings.join('；')}</p>}
 
@@ -10769,8 +10751,8 @@ export default function App() {
                 ) : workbenchMetrics.length === 0 ? (
                   <div className="md:col-span-2 xl:col-span-4 bg-white border border-slate-100 rounded-xl p-8 text-center">
                     <RefreshCcw size={22} className={`mx-auto text-blue-500 ${workbenchLoading ? 'animate-spin' : ''}`} />
-                    <div className="mt-3 text-[15px] font-black text-slate-900">{workbenchLoading ? '正在读取岗位指标' : '暂无岗位指标'}</div>
-                    <div className="mt-1 text-[12px] font-bold text-slate-500">{workbenchLoading ? '正在聚合业务单据与人员事实' : '当前岗位暂无可统计的业务事实'}</div>
+                    <div className="mt-3 text-[15px] font-black text-slate-900">{workbenchLoading ? '正在读取角色指标' : '暂无角色指标'}</div>
+                    <div className="mt-1 text-[12px] font-bold text-slate-500">{workbenchLoading ? '正在聚合业务单据与人员事实' : '当前角色暂无可统计的业务事实'}</div>
                   </div>
                 ) : workbenchMetrics.map(item => {
                   const Icon = item.icon;
@@ -10883,7 +10865,7 @@ export default function App() {
                       );
                     })}
                     {(workbenchDashboard?.todos ?? []).length === 0 && (
-                      <div className="py-10 text-center text-[13px] font-bold text-slate-400">{workbench.businessError ? '待办读取失败，请重试' : !workbench.businessReady ? '正在读取待办事项' : '当前岗位没有待处理业务'}</div>
+                      <div className="py-10 text-center text-[13px] font-bold text-slate-400">{workbench.businessError ? '待办读取失败，请重试' : !activeRole ? '尚未匹配工作台展示分组' : !workbench.businessReady ? '正在读取待办事项' : '当前角色没有待处理业务'}</div>
                     )}
                   </div>
                 </div>
