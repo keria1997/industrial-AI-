@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   resolvePreferredTenantId,
@@ -38,5 +38,15 @@ describe('runtime tenant preference', () => {
     storage.setItem('industrial-ai-runtime:tenant:v1:admin', 'TENANT-HDJG');
     expect(resolvePreferredTenantId(restrictedUser, storage)).toBe('TENANT-SHWS');
     expect(savePreferredTenantId(restrictedUser, 'TENANT-HDJG', storage)).toBe(false);
+  });
+
+  it('keeps login initialization working when the localStorage getter is blocked', () => {
+    vi.stubGlobal('window', { get localStorage() { throw new Error('SecurityError'); } });
+    try {
+      expect(resolvePreferredTenantId(user)).toBe('TENANT-SHWS');
+      expect(savePreferredTenantId(user, 'TENANT-HDJG')).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

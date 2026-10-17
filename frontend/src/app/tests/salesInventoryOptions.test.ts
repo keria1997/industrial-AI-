@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInventoryMasterDataSeed } from '../../features/inventory/model/inventoryMasterData';
+import { createInventoryMasterDataSeed } from './fixtures/inventoryMasterData';
 import { mapInventoryMasterToQuoteOptions } from '../../features/sales/model/salesInventoryOptions';
 
 describe('mapInventoryMasterToQuoteOptions', () => {

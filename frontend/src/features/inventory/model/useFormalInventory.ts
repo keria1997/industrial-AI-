@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { inventoryApi, type ApiContext, type WarehouseDto } from '../../../api/fulfillment';
 import { buildFormalInventory } from './formalInventory';
-import { loadInventoryMasterData, type InventoryMasterData, type InventoryStockFact } from './inventoryMasterData';
+import { createInventoryMasterDataSeed, type InventoryMasterData, type InventoryStockFact } from './inventoryMasterData';
 
 type Snapshot = {
   key: string;
@@ -18,8 +18,7 @@ export const useFormalInventory = (context: ApiContext | null) => {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const refresh = useCallback(async () => {
     const request = ++revision.current;
-    const local = loadInventoryMasterData(localStorage, context?.tenantId);
-    const empty = { key, warehouses: [], masterData: { ...local, warehouses: [] }, stockData: [], error: '' };
+    const empty = { key, warehouses: [], masterData: createInventoryMasterDataSeed(), stockData: [], error: '' };
     setSnapshot(previous => ({
       ...empty,
       ...(previous?.key === key ? { warehouses: previous.warehouses, masterData: previous.masterData } : {}),
@@ -35,7 +34,7 @@ export const useFormalInventory = (context: ApiContext | null) => {
       if (request !== revision.current) return;
       setSnapshot({
         key, status: 'ready', error: '', warehouses: warehouses.items,
-        ...buildFormalInventory(loadInventoryMasterData(localStorage, context.tenantId),
+        ...buildFormalInventory(createInventoryMasterDataSeed(),
           warehouses.items, facts, products.items, materials.items),
       });
     } catch (error) {

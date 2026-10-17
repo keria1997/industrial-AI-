@@ -58,11 +58,11 @@ const allowedTenantIds = (user: AppUser | null) => {
 
 export const resolvePreferredTenantId = (
   user: AppUser | null,
-  storage: Pick<Storage, 'getItem'> = window.localStorage,
+  storage?: Pick<Storage, 'getItem'>,
 ) => {
   const allowed = allowedTenantIds(user);
   try {
-    const stored = storage.getItem(tenantPreferenceKey(user?.account));
+    const stored = (storage || window.localStorage).getItem(tenantPreferenceKey(user?.account));
     if (stored && allowed.includes(stored)) return stored;
   } catch {
     // Fall back to the first tenant authorized by the current session.
@@ -73,11 +73,11 @@ export const resolvePreferredTenantId = (
 export const savePreferredTenantId = (
   user: AppUser | null,
   tenantId: string,
-  storage: Pick<Storage, 'setItem'> = window.localStorage,
+  storage?: Pick<Storage, 'setItem'>,
 ) => {
   if (!allowedTenantIds(user).includes(tenantId)) return false;
   try {
-    storage.setItem(tenantPreferenceKey(user?.account), tenantId);
+    (storage || window.localStorage).setItem(tenantPreferenceKey(user?.account), tenantId);
     return true;
   } catch {
     return false;

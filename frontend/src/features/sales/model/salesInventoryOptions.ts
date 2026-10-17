@@ -28,7 +28,8 @@ export const mapInventoryMasterToQuoteOptions = (
   stockFacts: InventoryStockFact[],
 ): { warehouses: SalesQuoteWarehouseOption[]; products: SalesQuoteProductOption[] } => {
   const warehouses = data.warehouses.filter((item) => item.status === '启用');
-  const warehouseById = new Map(warehouses.map((item) => [item.id, item]));
+  const warehouseById = new Map(warehouses.flatMap((item) =>
+    [item.id, item.code, item.serverId].filter(Boolean).map((id) => [id, item] as const)));
   const availability = new Map(
     stockFacts.map((fact) => {
       const warehouseId = fact.warehouseId

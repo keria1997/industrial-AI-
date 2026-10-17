@@ -47,7 +47,6 @@ import {
   loadTenantProductionState,
   makeId,
   parseSerials,
-  saveTenantProductionState,
   warehouseMappings,
   type Completion,
   type FactoryId,
@@ -515,7 +514,6 @@ export default function ProductionManagementV2({ currentUser, currentTenant, act
   const notify = useCallback<Notify>((message, type = 'success') => { if (toastTimer.current) window.clearTimeout(toastTimer.current); setToast({ message, type }); toastTimer.current = window.setTimeout(() => setToast(null), 3600); }, []);
   useEffect(() => () => { if (toastTimer.current) window.clearTimeout(toastTimer.current); }, []);
   useEffect(() => { if (factory) { skipNextPersistence.current = true; setState(loadTenantProductionState(tenantId, factory)); } }, [tenantId, factory]);
-  useEffect(() => { if (!factory) return; if (skipNextPersistence.current) { skipNextPersistence.current = false; return; } saveTenantProductionState(tenantId, state); }, [tenantId, factory, state]);
   useEffect(() => { const pop = () => setActivePage(initialPage()); window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop); }, []);
   useEffect(() => {
     if (canViewTasks) return;

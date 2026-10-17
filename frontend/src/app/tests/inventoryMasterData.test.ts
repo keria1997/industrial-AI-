@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createInventoryMasterDataSeed,
+  createInventoryMasterDataSeed as createEmptyInventoryMasterData,
   getInventoryStockQueryRows,
   getWarehouseInventoryRows,
   inventoryMasterDataStorageKey,
@@ -9,6 +9,7 @@ import {
   queryInventoryStock,
   saveInventoryMasterData,
 } from '../../features/inventory/model/inventoryMasterData';
+import { createInventoryMasterDataSeed } from './fixtures/inventoryMasterData';
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -30,7 +31,7 @@ describe('inventory master data workspace', () => {
     saveInventoryMasterData(storage, 'TENANT-A', first);
 
     expect(loadInventoryMasterData(storage, 'TENANT-A').warehouses[0].name).toBe('租户甲原料仓');
-    expect(loadInventoryMasterData(storage, 'TENANT-B').warehouses[0].name).toBe('一号原材料仓');
+    expect(loadInventoryMasterData(storage, 'TENANT-B')).toEqual(createEmptyInventoryMasterData());
     expect(storage.getItem(inventoryMasterDataStorageKey('TENANT-A'))).not.toBeNull();
   });
 
@@ -58,7 +59,7 @@ describe('inventory master data workspace', () => {
     ]));
   });
 
-  it('migrates legacy seed records to reference prices and custom records to zero', () => {
+  it('never fills missing prices with hardcoded reference prices', () => {
     const storage = new MemoryStorage();
     const legacy = createInventoryMasterDataSeed();
     delete (legacy.products[0] as { unitPrice?: number }).unitPrice;
@@ -66,12 +67,24 @@ describe('inventory master data workspace', () => {
     saveInventoryMasterData(storage, 'TENANT-A', legacy);
 
     const loaded = loadInventoryMasterData(storage, 'TENANT-A');
-    expect(loaded.products[0].unitPrice).toBe(500);
-    expect(loaded.materials[0].unitPrice).toBe(125);
+    expect(loaded.products[0].unitPrice).toBe(0);
+    expect(loaded.materials[0].unitPrice).toBe(0);
 
     legacy.products[0].unitPrice = 0;
     saveInventoryMasterData(storage, 'TENANT-A', legacy);
     expect(loadInventoryMasterData(storage, 'TENANT-A').products[0].unitPrice).toBe(0);
+  });
+
+  it('returns empty collections for absent, invalid and inaccessible storage', () => {
+    const storage = new MemoryStorage();
+    const empty = { schemaVersion: 1, warehouses: [], products: [], materials: [] };
+    expect(createEmptyInventoryMasterData()).toEqual(empty);
+    expect(loadInventoryMasterData(storage, 'TENANT-A')).toEqual(empty);
+    for (const raw of ['{broken', '{"schemaVersion":0}', 'null']) {
+      storage.setItem(inventoryMasterDataStorageKey('TENANT-A'), raw);
+      expect(loadInventoryMasterData(storage, 'TENANT-A')).toEqual(empty);
+    }
+    expect(loadInventoryMasterData({ getItem() { throw new Error('denied'); } })).toEqual(empty);
   });
 
   it('queries everything assigned to one warehouse, including zero-stock records', () => {

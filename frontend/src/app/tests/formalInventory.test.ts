@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AvailabilityFactDto, ProductDto, WarehouseDto } from '../../api/fulfillment';
 import { buildFormalInventory, resolveWarehouse } from '../../features/inventory/model/formalInventory';
-import { createInventoryMasterDataSeed, getInventoryStockQueryRows, getWarehouseInventoryRows } from '../../features/inventory/model/inventoryMasterData';
+import { getInventoryStockQueryRows, getWarehouseInventoryRows } from '../../features/inventory/model/inventoryMasterData';
+import { createInventoryMasterDataSeed } from './fixtures/inventoryMasterData';
 import { formalShipmentStock } from '../../features/inventory/model/formalShipmentStock';
 import type { FulfillmentShipmentTask } from '../../api/fulfillment';
 
@@ -39,8 +40,9 @@ describe('formal inventory authority', () => {
   it('does not replace a missing backend fact with the frontend seed quantity', () => {
     const { masterData, stockData } = snapshot([]);
     expect(stockData).toEqual([]);
-    expect(getWarehouseInventoryRows(masterData.warehouses[0], masterData, stockData)
-      .find(row => row.id === 'FG003')).toMatchObject({ hasStockFact: false, status: '未查询到库存记录', availQty: 0 });
+    expect(masterData.products).toEqual([]);
+    expect(masterData.materials).toEqual([]);
+    expect(getWarehouseInventoryRows(masterData.warehouses[0], masterData, stockData)).toEqual([]);
   });
 
   it('keeps backend zero stock distinct from a missing fact and handles legacy warehouse codes', () => {
@@ -56,6 +58,19 @@ describe('formal inventory authority', () => {
       [{ ...fact, productId: product.id }], [product], []);
     expect(getWarehouseInventoryRows(masterData.warehouses[0], masterData, stockData).find(row => row.id === product.id))
       .toMatchObject({ id: product.id, kind: '产品', name: '新品', specification: '规格', unitPrice: 5 });
+  });
+
+  it('keeps API master records with no stock and never fabricates a default warehouse', () => {
+    const product = { id: 'api-product', code: 'API-FG', name: '正式产品', status: 'active', uom: '台' } as ProductDto;
+    const emptyStock = buildFormalInventory(createInventoryMasterDataSeed(), [warehouse], [], [product], []);
+    expect(emptyStock.masterData.products).toEqual([
+      expect.objectContaining({ id: 'api-product', name: '正式产品', defaultWarehouseId: '' }),
+    ]);
+    expect(emptyStock.masterData.materials).toEqual([]);
+    expect(emptyStock.stockData).toEqual([]);
+    const multipleWarehouses = buildFormalInventory(createInventoryMasterDataSeed(), [warehouse, other],
+      [{ ...fact, productId: product.id }, { ...fact, productId: product.id, warehouseId: other.id }], [product], []);
+    expect(multipleWarehouses.masterData.products[0].defaultWarehouseId).toBe('');
   });
 
   it('adds frozen and reserved decimal quantities without floating point arithmetic', () => {

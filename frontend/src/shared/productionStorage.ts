@@ -11,7 +11,7 @@ export function installProductionStorageGuard(storage: Storage, enabled: boolean
       Object.defineProperty(storage, method, {
         configurable: true,
         value(...args: unknown[]) {
-          if (method === 'removeItem' && args[0] === 'industrial-ai-session') return original(...args);
+          if (method === 'removeItem') return original(...args);
           throw new Error('当前功能未开放生产写入，请使用已接入正式服务的功能');
         },
       });

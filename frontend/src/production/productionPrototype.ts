@@ -132,39 +132,15 @@ export const warehouseMappings = {
   },
 } as const;
 
-export const demandSeed: Demand[] = [
-  { id: 'PD-260723-018', factory: 'FAC-SH-01', source: '销售缺货 / SO-260918-02', product: 'FG001 工业控制器', qty: 320, due: '07-28', priority: '紧急', status: '待评审', owner: '周计划 / E0182', correlationId: 'corr-so-260918-02' },
-  { id: 'PD-260723-017', factory: 'FAC-SH-01', source: '安全库存补货', product: 'FG002 边缘网关', qty: 180, due: '08-02', priority: '普通', status: '已批准', owner: '陈敏 / E0096', correlationId: 'corr-stock-fg002-17' },
-  { id: 'PD-260722-064', factory: 'FAC-SH-01', source: '销售订单 / SO-260902-01', product: 'FG001 工业控制器', qty: 500, due: '07-31', priority: '高', status: '计划中', owner: '周计划 / E0182', correlationId: 'corr-so-260902-01' },
-  { id: 'PD-260722-061', factory: 'FAC-SZ-01', source: '预测补货', product: 'FG003 数据采集器', qty: 260, due: '08-08', priority: '普通', status: '阻断', owner: '李可 / E0215', correlationId: 'corr-forecast-fg003-61' },
-  { id: 'PD-260723-021', factory: 'FAC-SZ-01', source: '销售订单 / SO-260911-06', product: 'FG005 无线采集终端', qty: 120, due: '08-05', priority: '高', status: '已批准', owner: '李可 / E0215', correlationId: 'corr-so-260911-06' },
-];
+export const demandSeed: Demand[] = [];
 
-export const orderSeed: WorkOrder[] = [
-  { id: 'WO-260101', factory: 'FAC-SH-01', product: 'FG001 工业控制器', qty: 150, good: 120, posted: 80, due: '07-24 18:00', status: 'IN_PROGRESS', kitting: 'READY', progress: 80, source: 'PD-260722-064', center: 'ASSY-01' },
-  { id: 'WO-260104', factory: 'FAC-SH-01', product: 'FG002 边缘网关', qty: 200, good: 200, posted: 120, due: '07-25 12:00', status: 'COMPLETED', kitting: 'READY', progress: 100, source: 'PD-260723-017', center: 'TEST-01' },
-  { id: 'WO-260109', factory: 'FAC-SZ-01', product: 'FG003 数据采集器', qty: 260, good: 0, posted: 0, due: '07-29 18:00', status: 'KITTING', kitting: 'SHORTAGE', progress: 0, source: 'PD-260722-061', center: 'SMT-02' },
-  { id: 'WO-260112', factory: 'FAC-SH-01', product: 'FG001 工业控制器', qty: 320, good: 0, posted: 0, due: '07-28 12:00', status: 'SCHEDULED', kitting: 'PARTIAL', progress: 0, source: 'PD-260723-018', center: 'SMT-01' },
-  { id: 'WO-260118', factory: 'FAC-SZ-01', product: 'FG005 无线采集终端', qty: 120, good: 36, posted: 0, due: '08-05 18:00', status: 'IN_PROGRESS', kitting: 'READY', progress: 30, source: 'PD-260723-021', center: 'ASSY-02' },
-];
+export const orderSeed: WorkOrder[] = [];
 
-export const qualitySeed: QualityTask[] = [
-  { id: 'FQC-260801', factory: 'FAC-SH-01', order: 'WO-260101', product: 'FG001 工业控制器', pending: 40, sample: 20, passedSamples: 0, failedSamples: 0, defectCode: '', status: 'INSPECTING', result: '待录入检验结果' },
-  { id: 'FQC-260806', factory: 'FAC-SH-01', order: 'WO-260104', product: 'FG002 边缘网关', pending: 80, sample: 32, passedSamples: 32, failedSamples: 0, defectCode: '', status: 'PASSED', result: '合格 80' },
-  { id: 'FQC-260809', factory: 'FAC-SZ-01', order: 'WO-260097', product: 'FG003 数据采集器', pending: 16, sample: 16, passedSamples: 14, failedSamples: 2, defectCode: 'DEF-COS-02', status: 'DISPOSITION_PENDING', result: '不合格 2 · 待处置' },
-];
+export const qualitySeed: QualityTask[] = [];
 
-export const completionSeed: Completion[] = [
-  { id: 'CMP-260723-011', factory: 'FAC-SH-01', order: 'WO-260104', inspection: 'FQC-260805', qty: 120, warehouseResource: 'RES-WH-FG-01', inventoryWarehouse: 'WH-FG-01', bin: 'BIN-A-01-02', traceMode: 'BATCH', traceValue: 'FG002-260723-A', status: 'POSTED', stockTx: 'STK-IN-260723-8821', time: '10:42', allocation: [{ orderLine: 'SO-260902-01-L1', qty: 32 }] },
-  { id: 'CMP-260723-010', factory: 'FAC-SH-01', order: 'WO-260101', inspection: 'FQC-260798', qty: 80, warehouseResource: 'RES-WH-FG-01', inventoryWarehouse: 'WH-FG-01', bin: 'BIN-A-01-03', traceMode: 'BATCH', traceValue: 'FG001-260723-A', status: 'POSTED', stockTx: 'STK-IN-260723-8796', time: '09:18', allocation: [{ orderLine: 'SO-260902-01-L1', qty: 80 }] },
-  { id: 'CMP-260722-064', factory: 'FAC-SZ-01', order: 'WO-260088', inspection: 'FQC-260780', qty: 24, warehouseResource: 'RES-WH-FG-02', inventoryWarehouse: 'WH-FG-02', bin: 'BIN-C-03-01', traceMode: 'BATCH', traceValue: 'FG004-260722-C', status: 'FAILED', stockTx: '库存拒绝：库位冻结', time: '昨天 17:26', allocation: [] },
-];
+export const completionSeed: Completion[] = [];
 
-export const taskSeed: ProductionTask[] = [
-  { id: 'TASK-78541', factory: 'FAC-SZ-01', type: '完工入库', object: 'CMP-260722-064', step: '库存明确拒绝', status: 'FAILED', retry: 1, owner: '仓库接口责任组', trace: 'tr-4d90be', evidence: '库存返回 REJECTED，原因 BIN_FROZEN；未增加库存、完工量或销售可履约量。' },
-  { id: 'TASK-78538', factory: 'FAC-SH-01', type: 'MRP 运算', object: 'MRP-RUN-260723-08', step: '结果发布', status: 'SUCCEEDED', retry: 0, owner: '周计划 / E0182', trace: 'tr-7a130c', evidence: '输入快照 MPS-V12，算法版本 mrp-2.6.1，结果 4 行，失败 0 行。' },
-  { id: 'TASK-78532', factory: 'FAC-SZ-01', type: '齐套重检', object: 'WO-260109', step: '等待采购到货', status: 'RUNNING', retry: 0, owner: '物料计划组', trace: 'tr-1260aa', evidence: 'RM201 尚缺 60 PCS；预计 07-25 10:00 到货后自动重检。' },
-];
+export const taskSeed: ProductionTask[] = [];
 
 export const initialPrototypeState: PrototypeState = {
   demands: demandSeed,

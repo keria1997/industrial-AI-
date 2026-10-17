@@ -56,7 +56,7 @@ import { RmaManagementPanel } from './features/sales/components/RmaManagementPan
 import { CustomerReceiptPanel } from './features/sales/components/CustomerReceiptPanel';
 import { CostAccumulationPanel } from './features/production/components/CostAccumulationPanel';
 import { PaymentAllocationModal } from './features/finance/components/PaymentAllocationModal';
-import { confirmSalesOrderContents, mergeFormalSalesOrders, mergePersistedSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
+import { confirmSalesOrderContents, mergeFormalSalesOrders, requestSalesShipment, upsertSalesOrder } from './features/sales/model/formalOrderWorkflow';
 import { salesOrderPricingInput } from './features/sales/model/salesOrderPricing';
 import { createQuickSalesOrder } from './features/sales/model/quickSalesOrder';
 import {
@@ -84,7 +84,7 @@ import { mapFormalShipmentStatus } from './features/inventory/model/formalShipme
 import { postFormalOutbound, prepareFormalOutbound } from './features/inventory/model/formalOutboundWorkflow';
 import { formalShipmentStock } from './features/inventory/model/formalShipmentStock';
 import { canonicalInventoryUnit } from './shared/inventoryUnits';
-import { restoreShippedSalesOutbounds, syncShippedSalesOutbounds } from './features/inventory/model/shippedSalesOutboundSync';
+import { restoreShippedSalesOutbounds } from './features/inventory/model/shippedSalesOutboundSync';
 import { compareQuantity, subtractQuantity } from './shared/decimal';
 import {
   mapProductionDemandStatus,
@@ -107,7 +107,6 @@ import {
 } from './features/inventory/model/inventoryActionBridge';
 import {
   recordSalesOrderProductionRequested,
-  recordSalesOrderShipped,
   salesWorkspaceStorageKey,
 } from './features/sales/model/salesShipmentBridge';
 import {
@@ -1385,48 +1384,17 @@ const Pagination = ({ total, page, limit, onPageChange = null, onLimitChange = n
 // ==========================================
 // 1. 销售管理模块 (SalesManagement) 
 // ==========================================
-const sales_dashboardMetrics = [
-  { id: 1, title: '生效商机数', value: '5', suffix: '项商机', subtitle: '正在推进中的商机订单', tag: '跟进中', tagColor: 'emerald' },
-  { id: 2, title: '商机 ➔ 订单', value: '12', suffix: '单', subtitle: '当月累计达成', tag: '同步成功', tagColor: 'blue' },
-  { id: 3, title: '异常停滞商机', value: '3', suffix: '项', subtitle: '即将流失的商机订单', tag: '流失高危', tagColor: 'rose' },
-  { id: 4, title: '订单 ➔ 财务', value: '94.5', suffix: '万 回款金额', subtitle: '存在高风险大单', tag: '闭环达成', tagColor: 'emerald' },
-];
+const sales_dashboardMetrics = [];
 
-const sales_quotesData = [
-  { id: 'QT-20260615-001', client: '商洛墨翠宝石开发有限公司', date: '2026-06-15', validUntil: '2026-08-15', status: '正常', product: 'FG001 工业控制器顶配版 / 标准型 × 1 件', productName: 'FG001 工业控制器顶配版', spec: '标准型', unit: '件', qty: 1, unitPrice: 500, discountRate: 100, discountAmount: 0, amount: '¥500.00', creator: '销售主管' },
-  { id: 'QT-20260508-001', client: 'test01客户', date: '2026-05-08', validUntil: '2026-06-07', status: '已过期', product: 'FG001 工业控制器顶配版 / 标准型 × 17 件', productName: 'FG001 工业控制器顶配版', spec: '标准型', unit: '件', qty: 17, unitPrice: 500, discountRate: 95, discountAmount: 0, amount: '¥8,075.00', creator: '操作员 01' }
-];
+const sales_quotesData = [];
 
-const sales_ordersData = [
-  { id: 'SO-20260508-001', client: 'test01客户', salesman: '操作员 01', product: 'FG001 工业控制器顶配版 × 17 件', productName: 'FG001 工业控制器顶配版', qty: 17, availableStock: 2300, shortage: 0, amount: '¥8,075.00', receivable: '待生成', date: '2026-07-18', deliveryDate: '2026-07-25', outStatus: '未发货', status: '待发货', createdAt: '2026-07-18 09:10:00' },
-  { id: 'SO-20260615-001', client: '商洛墨翠宝石开发有限公司', salesman: '销售主管', product: 'FG001 工业控制器顶配版 × 1 件', productName: 'FG001 工业控制器顶配版', qty: 1, availableStock: 2300, shortage: 0, amount: '¥500.00', receivable: '待生成', date: '2026-07-20', deliveryDate: '2026-07-27', outStatus: '未发货', status: '已确认', createdAt: '2026-07-20 14:26:00' }
-];
+const sales_ordersData = [];
 
-const sales_customersListData = [
-  { id: 'KH-20260612-005', name: '商洛墨翠宝石开发有限公司', code: '91611000MA70X6T62Q', contact: '张新国', phone: '18184987811', contacts: [{ name: '张新国', phone: '18184987811', role: '决策人' }], address: '陕西省商洛市商州区产业园', owner: '销售主管', level: 'D', status: '合作中', industry: '-', lastInteractionAt: '2026-05-18' },
-  { id: 'KH-20260612-001', name: '上海万申产业股份有限公司', code: '91310115MA1K4X5Q8E', contact: '李经理', phone: '-', contacts: [{ name: '李经理', phone: '', role: '关键使用人' }], address: '上海市浦东新区金桥开发区', owner: '', level: 'D', status: '合作中', industry: '-', lastInteractionAt: '2026-05-02' },
-  { id: 'KH-20260508-001', name: 'test01客户', code: '-', contact: '客户1', phone: '17768122341', contacts: [{ name: '客户1', phone: '17768122341', role: '决策人' }], address: '浙江省杭州市滨江区', owner: '操作员 01', level: 'B', status: '合作中', industry: '茶产业', lastInteractionAt: '2026-07-22' }
-];
+const sales_customersListData = [];
 
-const sales_baseDataLevels = [
-  { level: 'D', name: 'D级客户', min: '0 万元', desc: '年采购额<5万元', sort: 1, status: '启用' },
-  { level: 'C', name: 'C级客户', min: '5 万元', desc: '年采购额≥5万元且<20万元', sort: 2, status: '启用' },
-  { level: 'B', name: 'B级客户', min: '20 万元', desc: '年采购额≥20万元且<50万元', sort: 3, status: '启用' },
-  { level: 'A', name: 'A级客户', min: '50 万元', desc: '年采购额≥50万元且<100万元', sort: 4, status: '启用' },
-  { level: 'VIP', name: 'VIP客户', min: '100 万元', desc: '年采购额≥100万元', sort: 5, status: '启用' }
-];
+const sales_baseDataLevels = [];
 
-const sales_industriesData = [
-  ...['电子信息', '机械装备', '食品加工', '石油化工', '茶产业', '纺织服装', '医药健康', '新能源', '其他'].map((name, index) => ({
-    id: `IND-${String(index + 1).padStart(3, '0')}`,
-    name,
-    parentId: '',
-    sort: index + 1,
-    status: '启用',
-    remark: index === 0 ? '电子设备及零部件制造相关行业' : name,
-    createdAt: '2026-03-16 08:48:19',
-  }))
-];
+const sales_industriesData = [];
 
 const sales_defaultOutreachSettings = {
   thresholdDays: 3,
@@ -1454,16 +1422,6 @@ const sales_makeDocumentId = (prefix) => {
   const now = new Date();
   const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   return `${prefix}-${date}-${String(Date.now()).slice(-4)}`;
-};
-
-const sales_loadWorkspace = (tenantId) => {
-  try {
-    const saved = localStorage.getItem(salesWorkspaceStorageKey(tenantId));
-    if (saved) return JSON.parse(saved);
-  } catch {
-    // Use seed data when local persistence is unavailable.
-  }
-  return null;
 };
 
 const sales_getTagStyle = (color) => {
@@ -3131,8 +3089,8 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
               {activeMenuActions.includes('cancel') && <button role="menuitem" onClick={() => { setConfirmAction({ action: 'cancel', row: activeMenuOrder }); closeOrderMenu(); }} className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-bold text-rose-600 hover:bg-rose-50"><X size={14} />取消订单</button>}
           </div>
       )}
-      {recordModal?.mode === 'edit' && <Sales_OrderEditModal mode="edit" record={recordModal.record} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} onClose={() => setRecordModal(null)} onSubmit={updateOrder} />}
-      {recordModal?.mode === 'shipment' && <SalesShipmentOrderEditModal mode="confirm" order={recordModal.record} pending={isSubmitting} apiContext={apiContext} products={inv_stockData.filter((p) => p.kind === "产品")} onClose={() => setRecordModal(null)} onSubmit={submitShipmentOrderEdit} />}
+      {recordModal?.mode === 'edit' && <Sales_OrderEditModal mode="edit" record={recordModal.record} customers={customers} products={products} onClose={() => setRecordModal(null)} onSubmit={updateOrder} />}
+      {recordModal?.mode === 'shipment' && <SalesShipmentOrderEditModal mode="confirm" order={recordModal.record} pending={isSubmitting} apiContext={apiContext} products={products} onClose={() => setRecordModal(null)} onSubmit={submitShipmentOrderEdit} />}
       {recordModal?.mode === 'detail' && <Sales_OrderDetailModal order={recordModal.record} businessFlow={businessFlow} audits={audits} onClose={() => setRecordModal(null)} onCancel={() => { setConfirmAction({ action: 'cancel', row: recordModal.record }); setRecordModal(null); }} onOutbound={() => { setRecordModal(null); navigateToOutbound(recordModal.record); }} />}
       {confirmAction && (
           <Sales_ConfirmModal
@@ -3617,24 +3575,23 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const canNavigateOutbound = canAccessInventory && Boolean(currentUser?.permissions?.some(
     (permission) => permission === '*' || permission === 'inventory.shipment-task.read',
   ));
-  const persistedWorkspace = useMemo(() => sales_loadWorkspace(currentTenant?.id), [currentTenant?.id, resetSignal]);
   const [activeTab, setActiveTab] = useState(() => resolveSalesTab(window.location.search));
   const [isQuickOrderModalOpen, setIsQuickOrderModalOpen] = useState(false);
   const [orderCreationRevision, setOrderCreationRevision] = useState(0);
   const [quotes, setQuotes] = useState([]);
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [levels, setLevels] = useState(() => persistedWorkspace?.levels || sales_baseDataLevels);
-  const [industries, setIndustries] = useState(() => persistedWorkspace?.industries || sales_industriesData);
-  const [outreachSettings, setOutreachSettings] = useState(() => persistedWorkspace?.outreachSettings || sales_defaultOutreachSettings);
-  const [audits, setAudits] = useState(() => persistedWorkspace?.audits || []);
-  const [reminderAt, setReminderAt] = useState(() => persistedWorkspace?.reminderAt || null);
+  const [levels, setLevels] = useState(sales_baseDataLevels);
+  const [industries, setIndustries] = useState(sales_industriesData);
+  const [outreachSettings, setOutreachSettings] = useState(sales_defaultOutreachSettings);
+  const [audits, setAudits] = useState([]);
+  const [reminderAt, setReminderAt] = useState(null);
   const [toast, setToast] = useState(null);
   const [outboundRequestModal, setOutboundRequestModal] = useState(null);
   const [salesWarehouseList, setSalesWarehouseList] = useState([]);
-  const [inventoryMasterData, setInventoryMasterData] = useState(() => ({ warehouses: [], products: [], materials: [] }));
-
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const salesInventory = useFormalInventory(formalContext);
+  const inventoryMasterData = salesInventory.masterData || { warehouses: [], products: [], materials: [] };
 
   useEffect(() => {
     if (!formalContext) return;
@@ -3669,49 +3626,6 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
     });
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
-  // 从后端 API 加载库存主数据（替代 localStorage 硬编码数据）
-  useEffect(() => {
-    if (!formalContext) return;
-    Promise.allSettled([
-      inventoryApi.listWarehouses(formalContext),
-      inventoryApi.listProducts(formalContext),
-      inventoryApi.listMaterials(formalContext),
-    ]).then(([whRes, prodRes, matRes]) => {
-      const warehouses = (whRes.status === 'fulfilled' ? whRes.value?.items : []) || [];
-      const products = (prodRes.status === 'fulfilled' ? prodRes.value?.items : []) || [];
-      const materials = (matRes.status === 'fulfilled' ? matRes.value?.items : []) || [];
-      setInventoryMasterData({
-        warehouses: warehouses.map((w: any) => ({
-          id: w.code || w.id, name: w.name, type: w.type || '仓库',
-          organization: w.organization || '', manager: w.manager || '-',
-          address: w.address || '-', capacity: Number(w.capacity) || 0,
-          usedCapacity: Number(w.usedCapacity) || 0,
-          status: w.status === 'active' ? '启用' : w.status,
-          remark: w.remark || '-', updatedAt: w.updatedAt || new Date().toISOString(),
-        })),
-        products: products.map((p: any) => ({
-          id: p.code || p.id, name: p.name,
-          specification: p.specification || '-', category: p.category || '成品',
-          unit: p.uom || '台', unitPrice: Number(p.unitPrice) || 0,
-          defaultWarehouseId: p.warehouseId || 'WH-FG-01',
-          safetyStock: Number(p.safetyStockQty) || 0,
-          traceMode: '序列号', status: p.status === 'active' ? '启用' : p.status,
-          updatedAt: p.updatedAt || new Date().toISOString(),
-        })),
-        materials: materials.map((m: any) => ({
-          id: m.code || m.id, name: m.name,
-          specification: m.specification || '-', materialType: m.materialType === 'raw' ? '原材料' : m.materialType === 'semi' ? '半成品' : m.materialType || '原材料',
-          unit: m.uom || 'PCS', defaultWarehouseId: m.warehouseId || 'WH-RM-01',
-          procurementType: m.materialType === 'purchased' ? '外购' : '自制',
-          safetyStock: Number(m.safetyStockQty) || 0,
-          unitPrice: Number(m.unitPrice) || 0,
-          status: m.status === 'active' ? '启用' : m.status,
-          updatedAt: m.updatedAt || new Date().toISOString(),
-        })),
-      });
-    });
-  }, [formalContext?.tenantId, formalContext?.accessToken]);
-
   // 从后端 API 加载销售订单（替代 localStorage 硬编码数据）
   useEffect(() => {
     if (!formalContext) return;
@@ -3743,7 +3657,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
             }));
           }
         })
-        .catch(() => {/* API 失败时保留 localStorage 数据 */});
+        .catch(() => {/* 不回退到浏览器原型数据。 */});
     });
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
@@ -3766,24 +3680,9 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
     });
   }, [formalContext?.tenantId, formalContext?.accessToken]);
 
-  useEffect(() => {
-    setInventoryMasterData(loadInventoryMasterData(window.localStorage, currentTenant?.id));
-  }, [currentTenant?.id, resetSignal]);
-
-  useEffect(() => {
-    const handleChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ tenantId?: string }>).detail;
-      if (!detail?.tenantId || detail.tenantId === currentTenant?.id) {
-        setInventoryMasterData(loadInventoryMasterData(window.localStorage, currentTenant?.id));
-      }
-    };
-    window.addEventListener('inventory-master-data-changed', handleChange);
-    return () => window.removeEventListener('inventory-master-data-changed', handleChange);
-  }, [currentTenant?.id]);
-
   const quoteOptions = useMemo(
-    () => mapInventoryMasterToQuoteOptions(inventoryMasterData, inv_stockData),
-    [inventoryMasterData],
+    () => mapInventoryMasterToQuoteOptions(inventoryMasterData, salesInventory.stockData),
+    [inventoryMasterData, salesInventory.stockData],
   );
 
   const mapFormalOrder = (order) => {
@@ -3877,12 +3776,6 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       setActiveTab(tab);
   }, [resetSignal]);
 
-  // 当从其他模块切回销售管理时，从 localStorage 重新加载订单数据（同步库存模块的部分发货回写）
-  useEffect(() => {
-      if (!persistedWorkspace?.orders) return;
-      setOrders(prev => mergePersistedSalesOrders(prev, persistedWorkspace.orders));
-  }, [persistedWorkspace]);
-
   useEffect(() => {
       const handlePopState = () => setActiveTab(resolveSalesTab(window.location.search));
       window.addEventListener('popstate', handlePopState);
@@ -3904,15 +3797,6 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
       window.history.pushState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
       setActiveTab('orders');
   };
-
-  useEffect(() => {
-      try {
-          localStorage.setItem(salesWorkspaceStorageKey(currentTenant?.id), JSON.stringify({ schemaVersion: 8, levels, industries, outreachSettings, audits, reminderAt }));
-          syncShippedSalesOutbounds(window.localStorage, currentTenant?.id, orders);
-      } catch {
-          // The page remains usable when browser storage is unavailable.
-      }
-  }, [currentTenant?.id, quotes, orders, customers, levels, industries, outreachSettings, audits, reminderAt]);
 
   const showToast = (title, desc, type = 'success') => {
       setToast({ title, desc, type });
@@ -4196,7 +4080,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
               <div className="w-full">
                   {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} onCreateQuote={(quote) => setQuotes(prev => [quote, ...prev])} onOpenOrders={() => navigateSalesTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
                   {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
-                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={inv_stockData.filter((p) => p.kind === '产品')} orderCreationRevision={orderCreationRevision} apiContext={formalContext} />}
+                  {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={quoteOptions.products} orderCreationRevision={orderCreationRevision} apiContext={formalContext} />}
                   {activeTab === 'customers' && <Sales_CustomersView customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
                   {activeTab === 'rma' && <RmaManagementPanel />}
                   {activeTab === 'receipts' && <CustomerReceiptPanel />}
@@ -4214,53 +4098,20 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
 // ==========================================
 // 2. 生产管理模块 (ProductionManagement) 
 // ==========================================
-const prod_dashboardMetrics = [
-  { id: 1, title: '销售 ➔ 生产', value: '12', suffix: '笔新单', subtitle: '订单同步成功待排产', tag: '运转顺畅', tagColor: 'blue' },
-  { id: 2, title: '生产 ➔ 采购', value: '3', suffix: '项缺料', subtitle: '已推送PR采购申请', tag: '预警处理中', tagColor: 'amber' },
-  { id: 3, title: '设备异常预警', value: '85%', suffix: '产能', subtitle: '2号机台主轴震动偏高', tag: '需巡检', tagColor: 'rose' },
-  { id: 4, title: '财务核算闭环', value: '5', suffix: '单完工', subtitle: '实际成本核算无偏差', tag: '成本达标', tagColor: 'emerald' }
-];
+const prod_dashboardMetrics = [];
 
-const initial_mpsData = [{ id: 'MPS-26001', demandSource: '销售缺货', source: '销售订单 (SO-2026-902)', product: 'FG001 - 工业控制器顶配版', quantity: 500, date: '2026-06-25', status: '待展算', priority: '普通' }, { id: 'MPS-26002', demandSource: '订单加急', source: 'VIP客户紧急补货', product: 'FG001 - 工业控制器顶配版', quantity: 80, date: '2026-06-10', status: '待展算', priority: '特急VIP' }];
+const initial_mpsData = [];
 
-const initial_productionDemandData = [
-  { id: 'PD-260620-01', type: '销售缺货', source: '销售订单 SO-2026-918', customer: '上海万申工业', product: 'FG001 - 工业控制器顶配版', shortage: 320, requiredDate: '2026-06-28', priority: '紧急', status: '待生成MPS', owner: '销售主管', reason: '订单已审批，成品可用量不足' },
-  { id: 'PD-260620-02', type: '客户加急', source: '客户加急补货单', customer: '华东能源设备', product: 'FG002 - 边缘网关', shortage: 120, requiredDate: '2026-06-24', priority: '特急VIP', status: '待生成MPS', owner: '生产计划员', reason: '战略客户插单，需优先评估产能' },
-  { id: 'PD-260620-03', type: '预测补货', source: 'AI 安全库存预测', customer: '库存策略', product: 'FG001 - 工业控制器顶配版', shortage: 260, requiredDate: '2026-07-05', priority: '普通', status: '待生成MPS', owner: '计划主管', reason: '未来两周预测库存低于安全水位' },
-  { id: 'PD-260620-04', type: '销售缺货', source: '销售订单 SO-2026-902', customer: 'test01客户', product: 'FG001 - 工业控制器顶配版', shortage: 500, requiredDate: '2026-06-25', priority: '普通', status: '已生成MPS', owner: '操作员 01', reason: '已转入 MPS-26001' },
-];
+const initial_productionDemandData = [];
 
-const initial_mrpResults = [
-  { id: 'MRP-1', source: 'MPS-26002', itemCode: 'FG001', itemName: '工业控制器', type: '自制件', grossReq: 80, stock: 150, onWay: 0, netReq: 0, plannedQty: 0, lotRule: '按需(L4L)', status: '已下达', pegging: [
-      { step: '毛需求推算', desc: '承接特急插单 MPS-26002', value: '+80', color: 'text-slate-800', bg: 'bg-slate-100', icon: Target },
-      { step: '强预留抢占', desc: '强制占用原分配给普通订单的成品现货', value: '-80', color: 'text-rose-600', bg: 'bg-rose-50', icon: Zap },
-      { step: '净需求缺口', desc: '库存满足，无需新开生产订单', value: '= 0', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle2 }
-  ]},
-  { id: 'MRP-2', source: 'MPS-26001', itemCode: 'FG001', itemName: '工业控制器', type: '自制件', grossReq: 500, stock: 70, onWay: 30, netReq: 400, plannedQty: 400, lotRule: '按需(L4L)', status: '待下达', pegging: [
-      { step: '毛需求推算', desc: '承接主计划 MPS-26001', value: '+500', color: 'text-slate-800', bg: 'bg-slate-100', icon: Target },
-      { step: '可用库存锁定', desc: '总库存150，被特急单抢占80，剩余可用70', value: '-70', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Package },
-      { step: '在制富余分配', desc: '占用其他工单富余产出', value: '-30', color: 'text-purple-600', bg: 'bg-purple-50', icon: RefreshCcw },
-      { step: '净需求缺口', desc: '基础缺口', value: '= 400', color: 'text-blue-600', bg: 'bg-blue-50', icon: AlertCircle },
-      { step: '批量策略调整', desc: '按需批量 (L4L)', value: '➔ 400', color: 'text-indigo-600', bg: 'bg-indigo-50', icon: Layers }
-  ]},
-  { id: 'MRP-3', source: 'BOM展算(层级1)', itemCode: 'RM201', itemName: 'AI算力芯片', type: '采购件', grossReq: 800, stock: 50, onWay: 0, netReq: 750, plannedQty: 1000, lotRule: '固定批量(FOQ/MOQ: 1000)', status: '待下达', pegging: [
-      { step: '毛需求推算', desc: 'BOM展算: FG001 -> RM201', value: '+800', color: 'text-slate-800', bg: 'bg-slate-100', icon: Target },
-      { step: '可用库存锁定', desc: '扣减: 原材料仓现货', value: '-50', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Package },
-      { step: '净需求缺口', desc: '基础缺口', value: '= 750', color: 'text-blue-600', bg: 'bg-blue-50', icon: AlertCircle },
-      { step: '批量策略调整', desc: '供应商最小起定量为 1000，向上取整', value: '➔ 1000', color: 'text-amber-600', bg: 'bg-amber-50', icon: Layers }
-  ]}
-];
+const initial_mrpResults = [];
 
-const initial_orderData = [{ id: 'WO-260101', source: 'APS排产', product: 'FG001 - 工业控制器', quantity: 150, startDate: '2026-06-05', endDate: '2026-06-08', status: '执行中', kitting: '100%' }, { id: 'WO-260102', source: 'MRP下达', product: 'FG002 - 边缘网关', quantity: 350, startDate: '2026-06-09', endDate: '2026-06-12', status: '待检查', kitting: '0%' }];
-const initial_operationJobs = [{ id: 'JOB-260101-10', orderId: 'WO-260101', opId: '10', opName: 'SMT 贴片加工', targetQty: 150, okQty: 120, ngQty: 2, status: '进行中', machineId: '贴片机-M01', operator: '张工', isRework: false, ngHandled: false, opType: '内部' }, { id: 'JOB-260101-15', orderId: 'WO-260101', opId: '15', opName: '表面防腐电镀', targetQty: 150, okQty: 0, ngQty: 0, status: '待发外', machineId: '顺络电子表面处理', operator: '委外调度', isRework: false, ngHandled: false, opType: '委外' }, { id: 'JOB-260101-20', orderId: 'WO-260101', opId: '20', opName: '总装组装工序', targetQty: 150, okQty: 0, ngQty: 0, status: '待领料', machineId: '组装台-W02', operator: '待定', isRework: false, ngHandled: false, opType: '内部' }];
-const initial_equipmentData = [
-  { id: 'SMT-M01', name: '贴片机-M01', status: '运行正常', oee: '88%', type: 'SMT', lineCode: 'LINE-SMT-01' },
-  { id: 'SMT-M02', name: '贴片机-M02', status: '运行正常', oee: '84%', type: 'SMT', lineCode: 'LINE-SMT-02' },
-  { id: 'ASSY-W02', name: '组装台-W02', status: '闲置待产', oee: '92%', type: 'Assembly', lineCode: 'LINE-ASSY-01' }
-];
-const initial_qualityQueue = [{ id: 'QC-260801', orderId: 'WO-260101', product: 'FG001 - 工业控制器', type: 'FQC(完工检)', sampleQty: 150, status: '待检验', okQty: 0, ngQty: 0, result: null }, { id: 'QC-260802', orderId: 'WO-260101', product: 'SA101 - 核心主板组件', type: 'IPQC(巡检)', sampleQty: 30, status: '待检验', okQty: 0, ngQty: 0, result: null }, { id: 'QC-260803', orderId: 'WO-260099', product: 'FG002 - 边缘网关', type: 'FQC(完工检)', sampleQty: 200, status: '已结案', okQty: 198, ngQty: 2, result: '返修2件' }];
-const prod_routingListData = [{ id: 'RT-001', name: '控制器标准装配工艺', targetItem: 'FG001', operations: [ { id: '10', name: 'SMT 贴片加工', center: '贴片机-M01', setupTime: '0.2', runTime: '0.5', timeUnit: '小时', type: '内部' }, { id: '15', name: '表面防腐电镀', center: '顺络电子表面处理', setupTime: '0', runTime: '24', timeUnit: '小时', type: '委外' }, { id: '20', name: '总装组装', center: '组装台-W02', setupTime: '0.1', runTime: '1.2', timeUnit: '小时', type: '内部' } ] }];
-const prod_bomListData = [{ id: 'FG001', name: 'FG001 - 工业控制器顶配版', type: '成品', quantity: 1, unit: 'PCS', status: '已生效', version: 'V1.2', scrapRate: 0, lotRule: 'L4L', moq: 1, children: [ { id: 'SA101', name: 'SA101 - 核心主板组件', type: '半成品', quantity: 1, unit: 'PCS', scrapRate: 0, lotRule: 'L4L', moq: 1, children: [ { id: 'RM201', name: 'RM201 - AI算力芯片', type: '原材料', quantity: 2, unit: 'PCS', scrapRate: 5, lotRule: 'FOQ', moq: 1000 }, { id: 'RM202', name: 'RM202 - 12层空PCB板', type: '外购件', quantity: 1, unit: 'PCS', scrapRate: 2, lotRule: 'FOQ', moq: 500 } ] }, { id: 'RM305', name: 'RM305 - 铝合金防护外壳', type: '外购件', quantity: 1, unit: 'PCS', scrapRate: 0, lotRule: 'L4L', moq: 1, children: [] } ] }];
+const initial_orderData = [];
+const initial_operationJobs = [];
+const initial_equipmentData = [];
+const initial_qualityQueue = [];
+const prod_routingListData = [];
+const prod_bomListData = [];
 
 const prodRecordFields = {
     mps: [
@@ -5991,15 +5842,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   const productionLines = loadPlatformProductionLines(currentTenant?.id);
   const legacyTabs = ['dashboard', 'mps', 'mrp', 'aps', 'orders', 'execution', 'qc_cost', 'bom', 'routing', 'equipment'];
   const focusedMpsId = new URLSearchParams(window.location.search).get('focusMps');
-  const legacyStorageKey = `industrial-ai-production-legacy:${currentTenant?.id || 'TENANT-SHWS'}`;
-  const savedProduction = useMemo(() => {
-      try {
-          const raw = window.sessionStorage.getItem(legacyStorageKey);
-          return raw ? JSON.parse(raw) : null;
-      } catch {
-          return null;
-      }
-  }, [legacyStorageKey]);
   const [activeTab, setActiveTab] = useState(() => {
       const requested = new URLSearchParams(window.location.search).get('production');
       if (requested === 'plan') return 'mps';
@@ -6007,15 +5849,15 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   });
   
   // 状态管理中心
-  const [mps, setMps] = useState(currentUser?.accessToken ? (savedProduction?.mps || []).filter(item => item.formalMps) : savedProduction?.mps || initial_mpsData);
-  const [productionDemands, setProductionDemands] = useState(currentUser?.accessToken ? [] : savedProduction?.productionDemands?.length ? savedProduction.productionDemands : initial_productionDemandData);
-  const [mrp, setMrp] = useState(() => (currentUser?.accessToken ? (savedProduction?.mrp || []).filter(row => row.mrpTaskId) : savedProduction?.mrp || initial_mrpResults).map(row => ({ ...row, pegging: (row.pegging || []).map((item, index) => ({ ...item, icon: item.icon || [Target, Warehouse, Truck, Calculator, AlertTriangle][index % 5] })) })));
-  const [orders, setOrders] = useState(currentUser?.accessToken ? [] : savedProduction?.orders || initial_orderData);
-  const [jobs, setJobs] = useState(currentUser?.accessToken ? [] : savedProduction?.jobs || initial_operationJobs);
-  const [qc, setQc] = useState(currentUser?.accessToken ? [] : savedProduction?.qc || initial_qualityQueue);
-  const [equipments, setEquipments] = useState(savedProduction?.equipments || initial_equipmentData);
-  const [bomData, setBomData] = useState(savedProduction?.bomData || prod_bomListData);
-  const [routingData, setRoutingData] = useState(savedProduction?.routingData || prod_routingListData);
+  const [mps, setMps] = useState(initial_mpsData);
+  const [productionDemands, setProductionDemands] = useState(initial_productionDemandData);
+  const [mrp, setMrp] = useState(initial_mrpResults);
+  const [orders, setOrders] = useState(initial_orderData);
+  const [jobs, setJobs] = useState(initial_operationJobs);
+  const [qc, setQc] = useState(initial_qualityQueue);
+  const [equipments, setEquipments] = useState(initial_equipmentData);
+  const [bomData, setBomData] = useState(prod_bomListData);
+  const [routingData, setRoutingData] = useState(prod_routingListData);
 
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [actionModal, setActionModal] = useState(null);
@@ -6154,11 +5996,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       url.searchParams.set('production', activeTab);
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, [activeTab]);
-
-  useEffect(() => {
-      const snapshot = { mps, productionDemands, mrp, orders, jobs, qc, equipments, bomData, routingData };
-      window.sessionStorage.setItem(legacyStorageKey, JSON.stringify(snapshot));
-  }, [legacyStorageKey, mps, productionDemands, mrp, orders, jobs, qc, equipments, bomData, routingData]);
 
   useEffect(() => {
       if (!businessFlow || currentUser?.accessToken) return;
@@ -7062,26 +6899,9 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 // ==========================================
 // 3. 库存管理模块 (InventoryManagement)
 // ==========================================
-const inv_dashboardMetrics = [
-  { id: 1, title: '总库存周转率', value: '4.2', suffix: '次/年', subtitle: '较上月提升 0.3', tag: '健康', tagColor: 'emerald' },
-  { id: 2, title: '低位预警物料', value: '12', suffix: '项', subtitle: '低于动态安全水位', tag: '需补货', tagColor: 'amber' },
-  { id: 3, title: '呆滞积压资金', value: '38.5', suffix: '万元', subtitle: '超90天未动存货', tag: '高风险', tagColor: 'red' },
-  { id: 4, title: '本月出入库单', value: '456', suffix: '单', subtitle: '任务执行进度 98%', tag: '运转正常', tagColor: 'blue' },
-];
+const inv_dashboardMetrics = [];
 
-const inv_stockData = [
-  { id: 'RM201', name: 'AI算力芯片', kind: '物料', category: '原材料', warehouseId: 'WH-RM-01', warehouse: '一号原材料仓', location: 'A-01-01', stockQty: 1500, lockQty: 500, availQty: 1000, unit: 'PCS', status: '正常' },
-  { id: 'RM202', name: '12层空PCB板', kind: '物料', category: '原材料', warehouseId: 'WH-RM-01', warehouse: '一号原材料仓', location: 'A-01-02', stockQty: 80, lockQty: 0, availQty: 80, unit: 'PCS', status: '低库存' },
-  { id: 'RM203', name: 'DDR5内存模组32GB', kind: '物料', category: '原材料', warehouseId: 'WH-RM-01', warehouse: '一号原材料仓', location: 'A-02-03', stockQty: 600, lockQty: 100, availQty: 500, unit: 'PCS', status: '正常' },
-  { id: 'RM204', name: 'NVMe SSD 1TB', kind: '物料', category: '原材料', warehouseId: 'WH-RM-02', warehouse: '二号原材料仓', location: 'B-01-05', stockQty: 45, lockQty: 0, availQty: 45, unit: 'PCS', status: '低库存' },
-  { id: 'FG001', name: '工业控制器顶配版', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-02-05', stockQty: 3500, lockQty: 1200, availQty: 2300, unit: '台', unitPrice: 500, status: '积压呆滞' },
-  { id: 'FG002', name: '边缘计算网关Pro', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-03-01', stockQty: 820, lockQty: 200, availQty: 620, unit: '台', unitPrice: 1200, status: '正常' },
-  { id: 'FG003', name: '智能视觉检测终端', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-03-02', stockQty: 150, lockQty: 30, availQty: 120, unit: '台', unitPrice: 3500, status: '正常' },
-  { id: 'FG004', name: '工业数据采集模块', kind: '产品', category: '成品', warehouseId: 'WH-FG-01', warehouse: '成品主仓', location: 'F-04-01', stockQty: 30, lockQty: 0, availQty: 30, unit: '套', unitPrice: 800, status: '低库存' },
-  { id: 'SA101', name: '核心主板组件', kind: '物料', category: '半成品', warehouseId: 'WH-WIP-01', warehouse: '线边暂存仓', location: 'W-01', stockQty: 420, lockQty: 420, availQty: 0, unit: '套', status: '正常' },
-  { id: 'SA102', name: '电源管理模组', kind: '物料', category: '半成品', warehouseId: 'WH-WIP-01', warehouse: '线边暂存仓', location: 'W-02', stockQty: 280, lockQty: 80, availQty: 200, unit: '套', status: '正常' },
-  { id: 'SA103', name: '散热模组总成', kind: '物料', category: '半成品', warehouseId: 'WH-WIP-02', warehouse: '组装线边仓', location: 'W-03', stockQty: 65, lockQty: 20, availQty: 45, unit: '套', status: '低库存' },
-];
+const inv_stockData = [];
 
 // 辅助函数：从库存管理-产品中查找"实际可用"(availQty)，作为销售订单可用量的唯一数据源
 function resolveOrderAvailQty(order) {
@@ -7096,24 +6916,9 @@ function resolveOrderAvailQty(order) {
   return m ? Number(m.availQty ?? 0) : Number(order.availableStock ?? 0);
 }
 
-const inv_inboundData = [
-  { id: 'IN-260701-01', type: '采购入库', source: 'PO-260688', item: 'AI算力芯片', qty: 2000, date: '2026-07-01 10:30', status: '已入库', operator: '王仓管' },
-  { id: 'IN-260701-02', type: '生产退料', source: 'JOB-260101-10', item: '12层空PCB板', qty: 5, date: '2026-07-01 14:15', status: '待质检', operator: '李质检' },
-];
+const inv_inboundData = [];
 
-const inv_outboundData = [
-  { id: 'OUT-260702-01', type: '销售发货', source: 'SO-20260615-001', item: '工业控制器顶配版', productId: 'FG001', qty: 1, date: '2026-07-02 11:15', status: '拣货中', operator: '张调度' },
-  { id: 'OUT-260702-02', type: '销售发货', source: 'SO-20260620-003', item: '边缘计算网关Pro', productId: 'FG002', qty: 50, date: '2026-07-03 09:20', status: '已出库', operator: '王仓管' },
-  // 测试：全部不足 → 去生产（FG004 availQty=30, 需求100, 缺口70）
-  { id: 'OUT-260703-01', type: '销售发货', source: 'SO-20260710-005', item: '工业数据采集模块', productId: 'FG004', qty: 100, date: '2026-07-10 10:00', status: '待发货', operator: '张调度' },
-  // 测试：部分充足部分不足 → 部分发货 + 去生产（FG001 充足, FG004 不足）
-  { id: 'OUT-260703-02', type: '销售发货', source: 'SO-20260712-008', item: '工业控制器顶配版+工业数据采集模块', productId: 'FG001', qty: 110, date: '2026-07-12 14:30', status: '待发货', operator: '张调度',
-    lines: [
-      { productId: 'FG001', productName: '工业控制器顶配版', spec: '旗舰配置', qty: 10, unit: '台', unitPrice: 500 },
-      { productId: 'FG004', productName: '工业数据采集模块', spec: '标准版', qty: 100, unit: '套', unitPrice: 800 },
-    ],
-  },
-];
+const inv_outboundData = [];
 
 const invEntityLabels = {
   stock: '库存台账',
@@ -9169,7 +8974,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                 <UnifiedMonitorCabin
                   metrics={[
                     { title: '总库存周转率', value: '-', suffix: '次/年', subtitle: '待后端统计', theme: 'emerald', icon: RefreshCw, trend: 'flat' },
-                    { title: '低位预警物料', value: String(inv_stockData.filter(item => item.kind === '物料' && item.availQty < 0).length), suffix: '项', subtitle: '低于安全库存', theme: 'amber', icon: AlertTriangle, trend: 'flat' },
+                    { title: '低位预警物料', value: formalInventory.status === 'ready' ? String(stockData.filter(item => item.kind === '物料' && item.availQty < Number(item.safetyStock || 0)).length) : '-', suffix: '项', subtitle: '低于安全库存', theme: 'amber', icon: AlertTriangle, trend: 'flat' },
                     { title: '呆滞积压资金', value: '-', suffix: '万元', subtitle: '待后端统计', theme: 'rose', icon: Wallet, trend: 'flat' },
                     { title: '本月出入库单', value: '-', suffix: '单', subtitle: '待后端统计', theme: 'blue', icon: ClipboardCheck, trend: 'flat' },
                   ]}
@@ -9394,9 +9199,9 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 // ==========================================
 // 4. 采购管理模块 (ProcurementManagement) 
 // ==========================================
-const proc_prData = [{ id: 'PR-260705-01', source: 'MRP运算自动生成', item: 'AI算力芯片 (RM201)', qty: 1000, reqDate: '2026-07-15', status: '待处理', applicant: '系统AI' }, { id: 'PR-260705-02', source: '手工提报申请', item: '微型贴片电容 (PR001)', qty: 5000, reqDate: '2026-07-20', status: '已转订单', applicant: '张工' }];
-const proc_poData = [{ id: 'PO-260706-001', supplier: '深圳华芯科技', item: 'AI算力芯片 (RM201)', amount: '¥ 125,000.00', deliveryDate: '2026-07-14', status: '供应商确认', creator: '李采购' }];
-const proc_suppliersData = [{ id: 'SUP-001', name: '深圳华芯科技有限公司', level: 'A', onTimeRate: '98.5%', qualityRate: '99.2%', leadTime: '7天', status: '合格供应商' }];
+const proc_prData = [];
+const proc_poData = [];
+const proc_suppliersData = [];
 
 const Procurement_SupplierCreateModal = ({ submitting, onClose, onSubmit }: any) => {
   const [draft, setDraft] = useState({

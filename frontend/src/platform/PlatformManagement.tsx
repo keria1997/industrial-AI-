@@ -42,7 +42,6 @@ import {
   AuditRecord,
   PlatformState,
   loadPlatformState,
-  savePlatformState,
 } from './platformSeed';
 import EmployeeAccountManagement from './EmployeeAccountManagement';
 import { platformApi } from '../api/platform/client';
@@ -520,7 +519,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       })
       .then(snapshot => {
         if (!active) return;
-        setState(prev => ({ ...prev, roles: snapshot.roles, permissions: snapshot.permissions, roleGrants: snapshot.roleGrants }));
+        setState(migratePlatformState(snapshot));
         setRoleVersions(Object.fromEntries(snapshot.roles.map(role => [role.id, role.version])));
         setPermissionLoaded(true);
       })
@@ -529,7 +528,6 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       });
     return () => { active = false; };
   }, [storageKey, currentUser?.accessToken]);
-  useEffect(() => { savePlatformState(state); }, [state, storageKey]);
   useEffect(() => {
     const closeOnOutsideClick = (event: MouseEvent) => {
       if (navRef.current && !navRef.current.contains(event.target as Node)) setOpenNavGroup(null);
@@ -588,8 +586,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     audits: [{ id: makeId('AUD'), time: nowText(), operator: currentUser?.name || '操作员 01', module: '平台管理', action, target, result, traceId: `TRACE-${Date.now()}` }, ...previous.audits],
   });
   const commit = (updater: (previous: PlatformState) => PlatformState, message: string, action: string, target: string, type = 'success') => {
-    setState((previous) => appendAudit(updater(previous), action, target, type === 'error' ? 'failed' : 'success'));
-    toast(message, type);
+    toast('未保存：当前入口尚未接入业务保存接口', 'error');
   };
 
   const orgById = useMemo(() => Object.fromEntries(state.orgUnits.map((item) => [item.id, item])), [state.orgUnits]);
@@ -941,6 +938,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   };
 
   const renderAccess = () => {
+    if (!selectedRole) return <EmptyState title={permissionError || '暂无角色数据'} description="请在角色数据加载完成后操作。" />;
     const grouped = Object.entries(state.permissions.reduce((acc: Record<string, typeof state.permissions>, permission) => { (acc[permission.module] ||= []).push(permission); return acc; }, {})) as Array<[string, typeof state.permissions]>;
     const setEffect = (permissionId: string, effect: 'allow' | 'deny' | 'unset') => setPermissionDraft((prev) => ({ ...prev, [permissionId]: effect }));
     const publishPermissions = async () => {

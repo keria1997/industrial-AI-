@@ -9,7 +9,7 @@ describe('production storage guard', () => {
     restore = undefined;
   });
 
-  it('allows reads but rejects every local write in production', () => {
+  it('allows reads and cleanup but rejects local business writes in production', () => {
     const storage = {
       length: 0,
       key: () => null,
@@ -21,7 +21,7 @@ describe('production storage guard', () => {
     restore = installProductionStorageGuard(storage, true);
     expect(storage.getItem('formal-data')).toBe('value:formal-data');
     expect(() => storage.setItem('local-data', '1')).toThrow('当前功能未开放生产写入');
-    expect(() => storage.removeItem('local-data')).toThrow('当前功能未开放生产写入');
+    expect(() => storage.removeItem('local-data')).not.toThrow();
     expect(() => storage.removeItem('industrial-ai-session')).not.toThrow();
     expect(() => storage.clear()).toThrow('当前功能未开放生产写入');
   });

@@ -31,20 +31,40 @@ export const buildFormalInventory = (
   products: ProductDto[],
   materials: MaterialDto[],
 ): { masterData: InventoryMasterData; stockData: InventoryStockFact[] } => {
-  const masterData: InventoryMasterData = { ...local, stockSource: 'formal', warehouses: warehouses.map(mapFormalWarehouse) };
+  const singleWarehouse = (id: string, code: string) => {
+    const ids = [...new Set(facts.filter(fact => [id, code].includes(fact.productId))
+      .map(fact => fact.warehouseId))];
+    return ids.length === 1 ? ids[0] : '';
+  };
+  // API metadata and facts replace browser snapshots, including empty collections.
+  const masterData: InventoryMasterData = {
+    schemaVersion: 1, stockSource: 'formal', warehouses: warehouses.map(mapFormalWarehouse),
+    products: products.map(product => ({
+      id: product.id, name: product.name, specification: product.specification || '',
+      category: product.category || '', unit: product.uom || '', unitPrice: Number(product.unitPrice || 0),
+      defaultWarehouseId: singleWarehouse(product.id, product.code),
+      safetyStock: Number(product.safetyStockQty || 0), traceMode: '', status: product.status === 'active' ? '启用' : '停用',
+      updatedAt: product.updatedAt || '',
+    })),
+    materials: materials.map(material => ({
+      id: material.id, name: material.name, specification: material.specification || '',
+      materialType: material.materialType || '', unit: material.uom || '', unitPrice: Number(material.unitPrice || 0),
+      defaultWarehouseId: singleWarehouse(material.id, material.code),
+      safetyStock: Number(material.safetyStockQty || 0), procurementType: '',
+      status: material.status === 'active' ? '启用' : '停用', updatedAt: material.updatedAt || '',
+    })),
+  };
   const stockData = facts.map(fact => {
     const warehouse = resolveWarehouse(warehouses, fact.warehouseId);
     const product = products.find(item => item.id === fact.productId || item.code === fact.productId);
     const material = materials.find(item => item.id === fact.productId || item.code === fact.productId);
-    const localProduct = local.products.find(item => item.id === fact.productId);
-    const localMaterial = local.materials.find(item => item.id === fact.productId);
-    const kind = product || localProduct ? '产品' as const : '物料' as const;
+    const kind = product ? '产品' as const : '物料' as const;
     const metadata = product || material;
     return {
       id: fact.productId,
       kind,
-      name: metadata?.name || localProduct?.name || localMaterial?.name || fact.productId,
-      category: metadata?.category || localProduct?.category || localMaterial?.materialType || kind,
+      name: metadata?.name || fact.productId,
+      category: metadata?.category || kind,
       specification: metadata?.specification,
       unitPrice: metadata?.unitPrice,
       warehouseId: warehouse?.id || fact.warehouseId,

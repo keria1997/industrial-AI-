@@ -22,7 +22,6 @@ import {
   isInventoryCodeAvailable,
   loadInventoryMasterData,
   normalizeInventoryCode,
-  saveInventoryMasterData,
   type InventoryMasterData,
   type InventoryMaterial,
   type InventoryProduct,
@@ -263,7 +262,6 @@ export const InventoryMasterDataPanel = ({
 
   const commit = (next: InventoryMasterData) => {
     setData(next);
-    saveInventoryMasterData(localStorage, tenantId, next);
     window.dispatchEvent(new CustomEvent('inventory-master-data-changed', { detail: { tenantId } }));
   };
   const warehouseName = (id: string) => data.warehouses.find((item) => item.id === id)?.name || id;
@@ -339,12 +337,7 @@ export const InventoryMasterDataPanel = ({
       }
     }
 
-    const rows = data[collection] as Array<Record<string, unknown>>;
-    const exists = rows.some((item) => item.id === editor.record.id);
-    const nextRows = exists ? rows.map((item) => item.id === editor.record.id ? draft : item) : [draft, ...rows];
-    commit({ ...data, [collection]: nextRows } as InventoryMasterData);
-    onToast(`${entityLabels[editor.entity]} ${draft.id} 已保存`, 'success');
-    setEditor(null);
+    onToast('未保存：当前入口尚未接入主数据保存接口', 'danger');
   };
 
   const deleteRecord = async (entity: MasterEntity, id: string) => {
@@ -384,9 +377,7 @@ export const InventoryMasterDataPanel = ({
         }
       }
     }
-    const collection = entity === 'warehouse' ? 'warehouses' : entity === 'product' ? 'products' : 'materials';
-    commit({ ...data, [collection]: (data[collection] as Array<{ id: string }>).filter((item) => item.id !== id) } as InventoryMasterData);
-    onToast(`${entityLabels[entity]} ${id} 已删除`, 'success');
+    onToast('未删除：当前入口尚未接入主数据删除接口', 'danger');
   };
 
   const openEditor = (entity: MasterEntity, mode: EditorMode, record?: InventoryWarehouse | InventoryProduct | InventoryMaterial) => setEditor({ entity, mode, record: (record ? { ...record } : newRecord(entity)) as Record<string, string | number> });
