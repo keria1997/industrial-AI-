@@ -7785,6 +7785,13 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
   const [inboundData, setInboundData] = useState(inv_inboundData);
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const formalInventory = useFormalInventory(formalContext);
+  // 后端会话建立后清除库存 localStorage 原型数据，确保 API 数据不被覆盖
+  useEffect(() => {
+    if (formalContext?.accessToken && currentTenant?.id) {
+      localStorage.removeItem(`industrial-ai-inventory-master-data:v1:${currentTenant.id}`);
+      localStorage.removeItem(`industrial-ai-inventory-sales-outbound:v1:${currentTenant.id}`);
+    }
+  }, [formalContext?.accessToken, currentTenant?.id]);
   // 后端会话建立后清除库存主数据 localStorage 原型数据
   useEffect(() => {
     if (formalContext?.accessToken) {
