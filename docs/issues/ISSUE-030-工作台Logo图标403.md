@@ -53,3 +53,14 @@ GET https://erp.wanshen.top/industrial-ai-logo.png 403 (Forbidden)
 chmod -R 755 dist/
 find dist/ -type f -exec chmod 644 {} \;
 ```
+
+### Playwright 黑盒验证（2026-10-17）
+
+| 检查项 | 结果 |
+|---|---|
+| 登录页 `login-logo.png` HTTPS | ✅ HTTP 200 |
+| 登录页破损图片 | 无 |
+| 工作台破损图片 | 无 |
+| 所有 PNG 文件 HTTPS 200 | ✅ |
+
+**结论：ISSUE-030 已修复确认。** Logo 图片在登录页和工作台均正常加载。
