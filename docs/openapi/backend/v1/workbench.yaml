@@ -42,7 +42,21 @@ paths:
                       todos: { type: object, additionalProperties: true }
                       alerts: { type: object, additionalProperties: true }
                       activities: { type: object, additionalProperties: true }
-                      sources: { type: array, items: { type: object, additionalProperties: true } }
+                      sources:
+                        type: array
+                        items:
+                          type: object
+                          required: [source, status, factVersion, lastSuccessAt, errorCode, retriable]
+                          properties:
+                            source: { type: string }
+                            metric: { type: string, description: Compatibility metric key }
+                            status: { type: string, enum: [AVAILABLE, PARTIAL, UNAVAILABLE, STALE, SOURCE_PENDING] }
+                            factVersion: { type: string, nullable: true }
+                            lastSuccessAt: { type: string, format: date-time, nullable: true }
+                            errorCode: { type: string, nullable: true }
+                            retriable: { type: boolean }
+                            availability: { type: string, description: Compatibility alias of status }
+                            unavailableReason: { type: string, nullable: true }
                   error: { nullable: true }
         '400': { description: Invalid role, date, section, scope, limit or cursor }
         '401': { description: Missing or expired session }

@@ -118,6 +118,55 @@ class WorkbenchControllerTests {
         assertThrows(com.wanshen.platform.web.ApiException.class, () -> controller.dashboard(request, "访客", null, null, null, "ALL", 5, 10, null));
     }
 
+    @Test
+    void exposesSourceStatusWithoutUndefinedValues() {
+        String now = Instant.now().toString();
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        RequestContextService contexts = mock(RequestContextService.class);
+        when(contexts.from(request)).thenReturn(new RequestContext(
+                "TENANT-SHWS", "admin", List.of("*"), "trace", null, null
+        ));
+        ProductionStore productionStore = mock(ProductionStore.class);
+        when(productionStore.demands(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(productionStore.workOrders(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(productionStore.inspections(any(), any())).thenReturn(List.of());
+        MessageStore messageStore = mock(MessageStore.class);
+        when(messageStore.records(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new AbstractMessageStore.Page<>(List.of(), 0));
+
+        FulfillmentStore fulfillmentStore = new FulfillmentStore();
+        fulfillmentStore.saveOrder(node("""
+                {"tenantId":"TENANT-SHWS","id":"SO-1","orderNo":"SO-001","createdAt":"%s",
+                 "updatedAt":"%s","version":3,"overallStatus":"CONFIRMED"}
+                """.formatted(now, now)));
+        fulfillmentStore.saveShipmentTask(node("""
+                {"tenantId":"TENANT-SHWS","id":"TASK-1","workflowStatus":"COMPLETED",
+                 "createdAt":"%s","updatedAt":"%s","version":2,
+                 "lines":[{"id":"LINE-1","postedQty":"2"}]}
+                """.formatted(now, now)));
+        WorkbenchController controller = new WorkbenchController(
+                new FinanceStore(), new PersonnelStore(), productionStore, fulfillmentStore,
+                new SupplyChainStore(), new AiStore(), messageStore, contexts, mapper
+        );
+
+        Map<String, Object> response = controller.dashboard(
+                request, "老板", null, null, null, "ALL", 5, 10, null);
+        Map<String, Object> data = (Map<String, Object>) response.get("data");
+        List<Map<String, Object>> sources = (List<Map<String, Object>>) data.get("sources");
+        Map<String, Map<String, Object>> bySource = new java.util.HashMap<>();
+        for (Map<String, Object> item : sources) {
+            bySource.put(String.valueOf(item.get("source")), item);
+        }
+        assertEquals("AVAILABLE", bySource.get("SalesOrder").get("status"));
+        assertEquals("SOURCE_PENDING", bySource.get("RevenueRecognition").get("status"));
+        assertEquals("SOURCE_MISSING", bySource.get("RevenueRecognition").get("errorCode"));
+        assertEquals("AVAILABLE", bySource.get("ShipmentRecognition").get("status"));
+        assertEquals("AVAILABLE", bySource.get("Message").get("status"));
+        org.junit.jupiter.api.Assertions.assertTrue(sources.stream()
+                .allMatch(item -> item.containsKey("status") && item.containsKey("errorCode")
+                        && item.get("status") != null));
+    }
+
     private WorkbenchController.Metric metric(List<WorkbenchController.Metric> values, String key) {
         return values.stream().filter(item -> item.key().equals(key)).findFirst().orElseThrow();
     }

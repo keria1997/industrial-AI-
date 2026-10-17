@@ -350,12 +350,32 @@ public class WorkbenchController {
             activityProjection.put("eventCatalogVersion", EVENT_CATALOG_VERSION);
             data.put("activities", activityProjection);
         }
+        boolean salesAvailable = salesOrders.stream()
+                .anyMatch(item -> !text(item, "id").isBlank() && !text(item, "createdAt").isBlank());
+        boolean shipmentRecognized = shipmentTasks.stream().anyMatch(task -> {
+            for (com.fasterxml.jackson.databind.JsonNode line : task.path("lines")) {
+                if (decimal(line, "postedQty").signum() > 0) return true;
+            }
+            return false;
+        });
+        String generatedAt = Instant.now().toString();
         data.put("sources", List.of(
-                sourceStatus("SalesOrder", "orderAmount",
-                        salesOrders.stream().anyMatch(item -> !text(item, "createdAt").isBlank())),
-                sourceStatus("RevenueRecognition", "confirmedRevenueAmount", false),
-                sourceStatus("ShipmentRecognition", "shippedRecognizedAmount", false),
-                sourceStatus("Message", "activities", !messageRecords.isEmpty())
+                sourceStatus("SalesOrder", "orderAmount", salesAvailable ? "AVAILABLE" : "SOURCE_PENDING",
+                        salesOrders.stream().map(item -> item.path("version").asText(null))
+                                .filter(java.util.Objects::nonNull).max(String::compareTo).orElse(null),
+                        salesOrders.stream().map(item -> firstText(item, "updatedAt", "createdAt"))
+                                .filter(value -> !value.isBlank()).max(String::compareTo).orElse(null),
+                        null),
+                sourceStatus("RevenueRecognition", "confirmedRevenueAmount", "SOURCE_PENDING",
+                        null, null, "SOURCE_MISSING"),
+                sourceStatus("ShipmentRecognition", "shippedRecognizedAmount",
+                        shipmentRecognized ? "AVAILABLE" : "SOURCE_PENDING",
+                        shipmentTasks.stream().map(item -> item.path("version").asText(null))
+                                .filter(java.util.Objects::nonNull).max(String::compareTo).orElse(null),
+                        shipmentTasks.stream().map(item -> firstText(item, "updatedAt", "createdAt"))
+                                .filter(value -> !value.isBlank()).max(String::compareTo).orElse(null),
+                        shipmentRecognized ? null : "SOURCE_MISSING"),
+                sourceStatus("Message", "activities", "AVAILABLE", EVENT_CATALOG_VERSION, generatedAt, null)
         ));
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("schemaVersion", "1.1");
@@ -434,12 +454,21 @@ public class WorkbenchController {
         return metrics.stream().filter(item -> key.equals(item.key())).findFirst().map(Metric::value).orElse(null);
     }
 
-    private Map<String, Object> sourceStatus(String source, String metric, boolean available) {
+    private Map<String, Object> sourceStatus(
+            String source, String metric, String status, String factVersion,
+            String lastSuccessAt, String errorCode
+    ) {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("source", source);
         value.put("metric", metric);
-        value.put("availability", available ? "AVAILABLE" : "UNAVAILABLE");
-        if (!available) value.put("unavailableReason", "SOURCE_MISSING");
+        value.put("status", status);
+        value.put("factVersion", factVersion);
+        value.put("lastSuccessAt", lastSuccessAt);
+        value.put("errorCode", errorCode);
+        value.put("retriable", "UNAVAILABLE".equals(status) || "STALE".equals(status));
+        // Compatibility for clients deployed while the PRD schema was being stabilized.
+        value.put("availability", status);
+        if ("SOURCE_PENDING".equals(status)) value.put("unavailableReason", errorCode);
         return value;
     }
 
