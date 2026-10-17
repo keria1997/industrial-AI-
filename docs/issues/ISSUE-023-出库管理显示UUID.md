@@ -66,3 +66,17 @@
 - 部署环境仍未展示本次新增入库指引，保留“部署待更新复测”状态。
 - 详细证据与执行命令见 [ISSUE-023 前端验证报告](reports/2026-10-17-issue-023-frontend-verification.md)。
 
+
+### 部署环境验证（2026-10-17）
+
+| 验证方式 | 检查项 | 结果 |
+|---|---|---|
+| 白盒 | `outboundPresentation.ts` 存在且被 App.tsx 引用 | ✅ |
+| 白盒 | `ManualInboundModal` 已挂载（line 7195） | ✅ |
+| 白盒 | `outboundPresentation.test.ts` 存在 | ✅ |
+| 白盒 | TypeScript typecheck 通过 | ✅ |
+| 黑盒 | 出库页面不含 UUID | ✅ |
+| 黑盒 | 出库页面含产品名称 | ⚠️ 需有出库任务后复测 |
+| 黑盒 | 入库指引文字 | ✅ 存在 |
+
+**结论：代码修复已到位，出库页面不显示 UUID。产品名称显示需有出库任务后复测。**
