@@ -17,6 +17,14 @@ const retiredKeys = [
   'industrial-ai-production-v2:TENANT-B',
   'industrial-ai-production-v99:TENANT-C',
   'industrial-ai-platform-v2:TENANT-A',
+  'industrial-ai-personnel:v2:TENANT-A',
+  'industrial-ai-supply-chain:v1:TENANT-B',
+  'industrial-ai-ai-hub:v2:TENANT-A',
+  'industrial-ai-analytics:v1:TENANT-B',
+  'industrial-ai-finance:v1:TENANT-A',
+  'industrial-ai-procurement:v1:TENANT-B',
+  'industrial-ai-messages:v1:TENANT-A',
+  'industrial-ai-feedback:v1:TENANT-A',
 ];
 const retainedKeys = [
   'industrial-ai-session:v2',

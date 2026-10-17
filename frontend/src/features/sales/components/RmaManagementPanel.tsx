@@ -4,7 +4,7 @@
  * PRD 7.3.9.2.6: RMA 独立退货闭环。
  * 状态机: REQUESTED → APPROVED → IN_TRANSIT → INSPECTING → INSPECTION_COMPLETED → RESTOCKED → CLOSED
  *
- * 当前使用模拟数据展示 UI，后续对接 POST /api/v1/sales/rma 系列 API。
+ * 通过业务 API 读取和办理退货，不使用浏览器原型记录。
  */
 
 import { useState } from 'react';

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
 import { SidebarItem } from './app/SidebarItem';
-import { tenantOptions, useAppRuntime } from './app/AppRuntimeProvider';
+import { useAppRuntime } from './app/AppRuntimeProvider';
 import { getModulesForRole, isRoleName } from './app/moduleRegistry';
 import PlatformManagementV2 from './platform/PlatformManagement';
 import {
@@ -18,12 +18,17 @@ import { procurementApi } from './api/procurement';
 import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, registerTenant, requestLoginCaptcha, requestPasswordReset, resetPasswordByEmail, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
 import * as financeApi from './api/finance';
 import { messagesApi } from "./api/messages";
+import { useApiResource } from './hooks/useApiResource';
+import { loadApiCollection, requireApiPage } from './shared/apiCollection';
+import { SalesMonitorFacts } from './features/sales/components/SalesMonitorFacts';
+import { ProductionScheduleView } from './features/production/components/ProductionScheduleView';
+import { ApiDataState } from './components/ApiDataState';
 import { personnelApi } from "./api/personnel";
 import { supplyChainApi } from "./api/supply-chain";
 import { platformApi } from './api/platform/client';
 import { workbenchApi, type WorkbenchDashboardDto, type WorkbenchRole } from './api/workbench';
-import { useSalesOrders, useInventoryAvailability, useProductionDemands, useWorkOrders } from './hooks/useApiData';
 import { AIHubManagement as AIHubManagementV2, AIAssistantDrawer } from './features/ai-hub';
+import { AIDataAnalysisManagement } from './features/analytics/AIDataAnalysisManagement';
 import {
   approveFulfillmentOrder,
   cancelFulfillmentOrder,
@@ -113,7 +118,7 @@ const getCardTheme = (theme) => {
 const StatCard = ({ title, value, unit, icon: Icon, trend, trendValue, theme = "blue" }: any) => {
   const { iconBg, iconText, iconBorder } = getCardTheme(theme);
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between relative shadow-sm group hover:border-blue-200 hover:shadow-md transition-all h-[140px]">
+    <div data-metric={title} className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between relative shadow-sm group hover:border-blue-200 hover:shadow-md transition-all h-[140px]">
       <div className="flex justify-between items-start mb-2">
         <div className="text-slate-500 text-[13px] font-bold">{title}</div>
         <div className={`p-2.5 rounded-xl ${iconBg} ${iconText} border ${iconBorder}`}>
@@ -122,7 +127,7 @@ const StatCard = ({ title, value, unit, icon: Icon, trend, trendValue, theme = "
       </div>
       <div>
         <div className="flex items-baseline">
-          <span className="text-3xl font-bold text-slate-800 tracking-tight leading-none">{value}</span>
+          <span data-metric-value className="text-3xl font-bold text-slate-800 tracking-tight leading-none">{value}</span>
           {unit && <span className="text-slate-500 ml-1 text-sm font-medium">{unit}</span>}
         </div>
         {trendValue && (
@@ -639,7 +644,7 @@ const MonitorAIAnalysisCard = ({ card }: any) => {
   const Icon = card.icon || Bot;
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
+    <div data-ai-card={card.title} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
       <div className="flex items-center mb-5 text-slate-800 font-bold text-[16px]">
         <div className={`p-1.5 rounded-lg mr-2.5 border ${tone.shell}`}>
           <Icon size={18} />
@@ -662,24 +667,22 @@ const MonitorAIAnalysisCard = ({ card }: any) => {
   );
 };
 
-const MonitorTrendChart = ({ trend }) => {
+const MonitorTrendChart = ({ trend = {} }: any) => {
   const primary = trend.primary || monitorToneMap.blue.stroke;
   const secondary = trend.secondary || monitorToneMap.purple.stroke;
-  const points = trend.points || [
-    { x: 6, y: 76 },
-    { x: 24, y: 62 },
-    { x: 42, y: 40 },
-    { x: 60, y: 48 },
-    { x: 78, y: 24 },
-    { x: 94, y: 38 },
-  ];
-  const path = trend.path || 'M 50 228 C 145 186, 195 186, 240 186 C 325 186, 350 120, 420 120 C 515 120, 555 145, 600 145 C 705 145, 740 72, 780 72 C 850 72, 890 114, 950 114';
-  const area = trend.area || `${path} L 950 300 L 50 300 Z`;
-  const labels = trend.labels || ['7月', '8月', '9月', '10月', '11月', '12月(预测)'];
-  const yAxis = trend.yAxis || [100, 75, 50, 25, 0];
+  const points = trend.points || [];
+  const hasData = !trend.loading && !trend.error && points.length > 0 && Boolean(trend.path);
+  const path = hasData ? trend.path : '';
+  const labels = hasData && trend.labels?.length ? trend.labels : Array.from({ length: 6 }, (_, index) => {
+    const date = new Date();
+    date.setDate(1);
+    date.setMonth(date.getMonth() - 5 + index);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const yAxis = hasData && trend.yAxis?.length > 1 ? trend.yAxis : [100, 75, 50, 25, 0];
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+    <div data-trend={trend.title} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-6">
         <div className="flex items-center text-slate-800 font-bold text-[16px]">
           <div className="bg-purple-50 p-1.5 rounded-lg text-purple-600 mr-2.5 border border-purple-100">
@@ -700,22 +703,22 @@ const MonitorTrendChart = ({ trend }) => {
         <div className="xl:w-[30%] flex flex-col justify-center border-b xl:border-b-0 xl:border-r border-slate-200 pb-6 xl:pb-0 xl:pr-8">
           <div className="flex items-center mb-5">
             <div className="w-[96px] h-[96px] rounded-full bg-white border-[8px] flex flex-col items-center justify-center shadow-sm mr-5 shrink-0" style={{ borderColor: trend.ringColor || '#e0e7ff' }}>
-              <span className="text-[24px] font-bold" style={{ color: trend.metricColor || primary }}>{trend.metric}</span>
+              <span className="text-[24px] font-bold" style={{ color: trend.metricColor || primary }}>{hasData ? trend.metric : '-'}</span>
               <span className="text-[11px] text-slate-400 font-bold">{trend.metricLabel}</span>
             </div>
             <div>
               <h4 className="font-bold text-slate-800 text-[14px] mb-2">{trend.insightTitle}</h4>
-              <p className="text-[13px] text-slate-600 leading-relaxed">{trend.insight}</p>
+              <p className="text-[13px] text-slate-600 leading-relaxed">{hasData ? trend.insight : '展示授权范围内的历史指标与趋势；尚未获取可展示的趋势数据。'}</p>
             </div>
           </div>
-          <div className="bg-white border border-slate-100 rounded-xl p-4 text-[13px] text-slate-600 leading-relaxed">
+          {hasData && trend.recommendation && <div className="bg-white border border-slate-100 rounded-xl p-4 text-[13px] text-slate-600 leading-relaxed">
             <span className="font-bold text-purple-600">AI 建议：</span> {trend.recommendation}
-          </div>
+          </div>}
         </div>
         <div className="xl:w-[70%] min-h-[320px] flex flex-col">
           <div className="flex items-center justify-between gap-4 mb-5">
             <span className="text-[13px] font-bold text-slate-700">{trend.chartTitle}</span>
-            <span className="text-[11px] text-slate-400 font-bold">{trend.note || '含预测值'}</span>
+            <span className="text-[11px] text-slate-400 font-bold">{hasData ? trend.note || '' : '近 6 个自然月'}</span>
           </div>
           <div className="relative flex-1 min-h-[260px]">
             <div className="absolute inset-0 right-[24px] left-[38px] z-0">
@@ -726,7 +729,7 @@ const MonitorTrendChart = ({ trend }) => {
                 </div>
               ))}
             </div>
-            <div className="absolute inset-0 right-[24px] left-[38px] z-10">
+            {hasData && <div className="absolute inset-0 right-[24px] left-[38px] z-10">
               <svg viewBox="0 0 1000 300" preserveAspectRatio="none" className="w-full h-full overflow-visible">
                 <defs>
                   <linearGradient id={trend.gradientId || 'monitorTrendGradient'} x1="0" y1="0" x2="0" y2="1">
@@ -734,19 +737,24 @@ const MonitorTrendChart = ({ trend }) => {
                     <stop offset="100%" stopColor={primary} stopOpacity="0"/>
                   </linearGradient>
                 </defs>
-                <path d={area} fill={`url(#${trend.gradientId || 'monitorTrendGradient'})`} />
-                <path d={path} fill="none" stroke={primary} strokeWidth="4" strokeLinecap="round" />
-                {trend.forecastPath && <path d={trend.forecastPath} fill="none" stroke={secondary} strokeWidth="4" strokeDasharray="8 8" strokeLinecap="round" />}
+                {trend.area && <path data-chart-series="area" d={trend.area} fill={`url(#${trend.gradientId || 'monitorTrendGradient'})`} />}
+                <path data-chart-series="actual" d={path} fill="none" stroke={primary} strokeWidth="4" strokeLinecap="round" />
+                {trend.forecastPath && <path data-chart-series="forecast" d={trend.forecastPath} fill="none" stroke={secondary} strokeWidth="4" strokeDasharray="8 8" strokeLinecap="round" />}
               </svg>
-            </div>
-            <div className="absolute inset-0 right-[24px] left-[38px] z-20">
+            </div>}
+            {hasData && <div className="absolute inset-0 right-[24px] left-[38px] z-20">
               {points.map((point, index) => (
                 <div key={index} className="absolute w-3.5 h-3.5 bg-white rounded-full shadow-sm" style={{ left: `${point.x}%`, top: `${point.y}%`, transform: 'translate(-50%, -50%)', border: `3px solid ${point.color || (index === points.length - 1 ? secondary : primary)}` }}></div>
               ))}
-            </div>
+            </div>}
+            {!hasData && <div className="absolute inset-0 z-20 flex items-center justify-center">
+              <div className="bg-white/95 rounded-md">
+                <ApiDataState loading={trend.loading} error={trend.error} onRetry={trend.onRetry} />
+              </div>
+            </div>}
             <div className="absolute top-[100%] right-[24px] left-[38px] h-8 mt-4">
               {labels.map((label, index) => (
-                <span key={label} className={`absolute text-[12px] transform -translate-x-1/2 ${index === labels.length - 1 ? 'text-purple-600 font-bold' : 'text-slate-500 font-medium'}`} style={{ left: `${points[index]?.x || (index * 18 + 5)}%` }}>{label}</span>
+                <span key={label} className="absolute text-[11px] text-slate-500 transform -translate-x-1/2" style={{ left: `${hasData ? points[index]?.x ?? (index * 18 + 5) : index * 18 + 5}%` }}>{label}</span>
               ))}
             </div>
           </div>
@@ -757,8 +765,6 @@ const MonitorTrendChart = ({ trend }) => {
 };
 
 const UnifiedMonitorCabin = ({ metrics, aiCards, trend }) => {
-  const hasAiCards = aiCards && aiCards.length > 0;
-  const hasTrendData = trend && (trend.points?.length > 0 || trend.labels?.length > 0);
   return (
   <div className="space-y-6 animate-in fade-in duration-300 pb-10">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -780,17 +786,7 @@ const UnifiedMonitorCabin = ({ metrics, aiCards, trend }) => {
         <MonitorAIAnalysisCard key={card.title} card={card} />
       ))}
     </div>
-    <MonitorTrendChart trend={hasTrendData ? trend : {
-      ...trend,
-      points: [
-        { x: 6, y: 90 }, { x: 24, y: 90 }, { x: 42, y: 90 },
-        { x: 60, y: 90 }, { x: 78, y: 90 }, { x: 94, y: 90 },
-      ],
-      path: 'M 50 270 C 145 270, 195 270, 240 270 C 325 270, 350 270, 420 270 C 515 270, 555 270, 600 270 C 705 270, 740 270, 780 270 C 850 270, 890 270, 950 270',
-      area: 'M 50 270 C 145 270, 195 270, 240 270 C 325 270, 350 270, 420 270 C 515 270, 555 270, 600 270 C 705 270, 740 270, 780 270 C 850 270, 890 270, 950 270 L 950 300 L 50 300 Z',
-      labels: ['5月', '6月', '7月', '8月', '9月', '10月(预测)'],
-      yAxis: [10, 8, 5, 3, 0],
-    }} />
+    <MonitorTrendChart trend={trend} />
   </div>
   );
 };
@@ -1374,10 +1370,10 @@ const sales_baseDataLevels = [];
 const sales_industriesData = [];
 
 const sales_defaultOutreachSettings = {
-  thresholdDays: 3,
-  recipients: { customer: true, salesman: true, manager: false },
-  channels: { wechat: true, sms: false, inbox: true },
-  enabled: true
+  thresholdDays: '',
+  recipients: { customer: false, salesman: false, manager: false },
+  channels: { wechat: false, sms: false, inbox: false },
+  enabled: false
 };
 
 const sales_formatMoney = (value) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1696,528 +1692,6 @@ const Sales_RecordModal = ({ type, mode, record, onClose, onSubmit }) => {
 };
 
 // --- 子组件区 ---
-
-const Sales_QuoteEditModal = ({ onClose, onConfirm }) => {
-  return (
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
-          <div className="bg-white rounded-xl w-[600px] max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
-                  <div className="flex items-center text-[16px] font-bold text-slate-800">
-                      <FileText size={18} className="text-blue-600 mr-2" /> 编辑产品报价单
-                  </div>
-                  <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-                      <X size={20} />
-                  </button>
-              </div>
-              <div className="p-6 overflow-y-auto flex-1 space-y-4 text-slate-600">
-                  <div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
-                      <div className="flex items-center text-[13px] font-bold text-purple-700 mb-2">
-                          <Sparkles size={15} className="mr-1.5" /> AI 已生成挽回报价建议
-                      </div>
-                      <p className="text-[13px] leading-relaxed text-slate-600">系统将基于过期报价单 QT-20260508-001 复制客户与产品明细，并增加 7 天价格保护期，用于重新激活 test01客户 的待确认订单。</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 text-[13px]">
-                      <div className="border border-slate-100 rounded-xl p-4 bg-slate-50"><span className="block text-slate-400 mb-1">客户</span><span className="font-bold text-slate-800">test01客户</span></div>
-                      <div className="border border-slate-100 rounded-xl p-4 bg-slate-50"><span className="block text-slate-400 mb-1">新有效期</span><span className="font-bold text-slate-800 font-mono">2026-06-29</span></div>
-                      <div className="border border-slate-100 rounded-xl p-4 bg-slate-50"><span className="block text-slate-400 mb-1">报价金额</span><span className="font-bold text-slate-800 font-mono">¥7,950.00</span></div>
-                      <div className="border border-slate-100 rounded-xl p-4 bg-slate-50"><span className="block text-slate-400 mb-1">策略</span><span className="font-bold text-emerald-600">价格保护</span></div>
-                  </div>
-              </div>
-              <div className="p-5 border-t border-slate-100 flex justify-end space-x-3 shrink-0 bg-slate-50/50 rounded-b-xl">
-                  <button onClick={onClose} className="px-5 py-2 text-[13px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors">
-                      取消
-                  </button>
-                  <button onClick={onConfirm || onClose} className="px-5 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm">
-                      确认生成
-                  </button>
-              </div>
-          </div>
-      </div>
-  );
-};
-
-const Sales_ReminderModal = ({ onClose, onConfirm }) => {
-  const [activeChannel, setActiveChannel] = useState('wechat');
-  const [isCopied, setIsCopied] = useState(false);
-
-  const scripts = {
-      wechat: "王总您好，打扰了。系统提示您这边的「test01产品」订单 (单号：SO-20260508-001) 还在待发货状态，且之前的报价刚好到期。最近产线排期比较满，如果近期有投产计划，您可以先确认订单，我这边帮您走个特批，把产线档期和物料价格先锁死，避免影响您的交期和成本。您看是否需要我发一份最新的合同给您？",
-      phone: "【沟通切入点】\n1. 寒暄后，直接点明意图：系统显示报价已过期，但考虑到长期合作，主动帮忙申请价格保护。\n2. 强调稀缺性：近期元器件价格波动，产线排期紧张，尽早确认可以锁定价格和档期。\n3. 提供台阶：询问是否有需要补充的方案细节或内部审批流程卡点，表达协助意愿。"
-  };
-  const [currentText, setCurrentText] = useState(scripts.wechat);
-
-  const handleChannelChange = (channel) => {
-      setActiveChannel(channel);
-      setCurrentText(scripts[channel]);
-  };
-
-  const handleAction = () => {
-      try {
-          document.execCommand('copy');
-      } catch (e) {
-          // fallback
-      }
-      setIsCopied(true);
-      setTimeout(() => {
-          onConfirm(); 
-      }, 350);
-  };
-
-  return (
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-6">
-          <div className="bg-white rounded-2xl w-[600px] max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
-                  <div className="flex items-center text-[16px] font-bold text-slate-800">
-                      <BrainCircuit size={18} className="text-[#8B5CF6] mr-2" /> AI 智能触达助手
-                  </div>
-                  <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-                      <X size={20} />
-                  </button>
-              </div>
-              
-              <div className="bg-[#F8FAFC] px-6 py-4 flex justify-between items-center text-[13px] border-b border-slate-100">
-                  <div className="flex flex-col space-y-1">
-                      <span className="text-slate-500">目标客户</span>
-                      <span className="font-bold text-slate-800">test01客户 (客户1)</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                      <span className="text-slate-500">关联单据</span>
-                      <span className="font-medium text-blue-600">SO-20260508-001</span>
-                  </div>
-                  <div className="flex flex-col space-y-1 text-right">
-                      <span className="text-slate-500">订单金额</span>
-                      <span className="font-bold text-rose-500">¥8,075.00</span>
-                  </div>
-              </div>
-
-              <div className="p-6">
-                  <div className="mb-4">
-                      <label className="block text-[13px] font-medium text-slate-700 mb-3">请选择触达与跟进渠道：</label>
-                      <div className="flex space-x-3">
-                          <button 
-                              onClick={() => handleChannelChange('wechat')}
-                              className={`flex-1 flex flex-col items-center justify-center py-3 rounded-xl border transition-all ${activeChannel === 'wechat' ? 'border-[#8B5CF6] bg-[#F5F3FF] text-[#8B5CF6]' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
-                          >
-                              <MessageCircle size={20} className="mb-1.5" />
-                              <span className="text-[12px] font-medium">微信/企微 复制</span>
-                          </button>
-                          <button 
-                              onClick={() => handleChannelChange('phone')}
-                              className={`flex-1 flex flex-col items-center justify-center py-3 rounded-xl border transition-all ${activeChannel === 'phone' ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
-                          >
-                              <Phone size={20} className="mb-1.5" />
-                              <span className="text-[12px] font-medium">电话沟通话术</span>
-                          </button>
-                      </div>
-                  </div>
-
-                  <div>
-                      <div className="flex justify-between items-end mb-2">
-                          <label className="text-[13px] font-medium text-slate-700">
-                              {activeChannel === 'phone' ? 'AI 沟通大纲提炼：' : 'AI 生成触达文案 (可修改)：'}
-                          </label>
-                          <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded flex items-center"><BrainCircuit size={10} className="mr-1"/> AI 已融合场景变量</span>
-                      </div>
-                      <textarea 
-                          value={currentText}
-                          onChange={(e) => setCurrentText(e.target.value)}
-                          className="w-full h-32 p-4 text-[13px] leading-relaxed text-slate-700 border border-slate-200 rounded-xl outline-none focus:border-[#8B5CF6] focus:ring-1 focus:ring-[#8B5CF6] resize-none"
-                      />
-                  </div>
-              </div>
-              
-              <div className="p-5 border-t border-slate-100 flex justify-end space-x-3 shrink-0 bg-slate-50/50 rounded-b-2xl">
-                  <button onClick={onClose} className="px-5 py-2 text-[13px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors">
-                      取消
-                  </button>
-                  <button 
-                      onClick={handleAction} 
-                      className={`px-5 py-2 text-[13px] font-bold text-white rounded-lg transition-colors shadow-sm flex items-center ${
-                          isCopied ? 'bg-emerald-500' : 'bg-[#8B5CF6] hover:bg-[#7C3AED]'
-                      }`}
-                  >
-                      {isCopied ? (
-                          <><Check size={16} className="mr-1.5" /> 已复制内容</>
-                      ) : (
-                          <><Copy size={16} className="mr-1.5" /> 复制并标记已提醒</>
-                      )}
-                  </button>
-              </div>
-          </div>
-      </div>
-  );
-};
-
-const Sales_MetricCard = ({ metric }) => {
-  return (
-    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col justify-between">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-slate-600 text-[14px] font-medium">{metric.title}</h3>
-        <span className={`px-2 py-0.5 rounded text-[12px] font-medium ${sales_getTagStyle(metric.tagColor)}`}>
-          {metric.tag}
-        </span>
-      </div>
-      <div className="mb-2">
-        <span className="text-3xl font-bold text-slate-800 mr-1">{metric.value}</span>
-        <span className="text-sm font-medium text-slate-600">{metric.suffix}</span>
-      </div>
-      <div className="text-[13px] text-slate-400">
-        {metric.subtitle}
-      </div>
-    </div>
-  );
-};
-
-const Sales_AIWarningCards = ({ onOpenQuoteModal, onOpenReminderModal, isReminded }) => {
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
-      <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-        <div className="flex items-center mb-4 text-slate-800 font-bold text-[16px]">
-          <Box className="text-[#8B5CF6] mr-2" size={18} />
-          AI 订单转化延期预警 & 智能挽回
-        </div>
-        
-        <div className="bg-[#F8FAFC] border border-slate-100 rounded-xl p-5 relative">
-          <div className="flex justify-between items-start mb-3">
-            <h3 className="font-bold text-slate-800 text-[15px]">客户：暂无停滞订单客户</h3>
-            <span className="px-2.5 py-1 bg-rose-50 text-rose-600 text-[12px] font-bold rounded">极高流失风险</span>
-          </div>
-          
-          <p className="text-[13px] text-slate-600 leading-relaxed mb-6">
-            <span className="font-bold text-slate-800">AI 根因分析：</span> 关联【产品报价】数据，该客户对应的报价单 (QT-20260508-001) 已于 2026-06-07 过期。综合测算，本单流失或需重新报价概率达 82%。
-          </p>
-          
-          <div className="flex gap-4">
-            <button onClick={onOpenQuoteModal} className="flex-1 bg-[#8A51FF] hover:bg-[#7839F4] text-white py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 shadow-sm hover:shadow active:scale-[0.98]">
-              生成挽回产品报价单
-            </button>
-            <button 
-                onClick={isReminded ? null : onOpenReminderModal} 
-                disabled={isReminded}
-                className={`flex-1 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 shadow-sm ${
-                    isReminded 
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200' 
-                    : 'bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 active:scale-[0.98]'
-                }`}
-            >
-              {isReminded ? '已提醒 (24h)' : '发送订单确认提醒'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-        <div className="flex items-center mb-4 text-slate-800 font-bold text-[16px]">
-          <AlertTriangle className="text-amber-500 mr-2" size={18} />
-          AI 客户资产盘点与激活提示
-        </div>
-        
-        <div className="bg-[#F8FAFC] border border-slate-100 rounded-xl p-5 relative h-[calc(100%-40px)]">
-          <div className="flex justify-between items-start mb-3">
-            <h3 className="font-bold text-slate-800 text-[15px]">客户：商洛墨翠宝石... / 上海万申...</h3>
-            <span className="px-2.5 py-1 bg-amber-50 text-amber-600 text-[12px] font-bold rounded">建议跟进</span>
-          </div>
-          
-          <div className="text-[13px] text-slate-600 leading-relaxed space-y-2">
-            <p><span className="font-bold text-slate-800">沉睡预警：</span> 发现 2 家客户当前处于 D 级，缺乏联系人关键资料记录，请及时补充，避免业务推进延迟。</p>
-            <p><span className="font-bold text-slate-800">推介建议：</span> 根据数据匹配，建议优先完善联系人档案，并定向推送相关产品信息，以有效激活沉睡客户并促成合作。</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const Sales_TrendChart = () => {
-  return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm mt-6">
-      <div className="flex items-center mb-6 text-slate-800 font-bold text-[16px]">
-        <Activity className="text-[#8B5CF6] mr-2" size={18} />
-        AI 报价-订单转化趋势与归因分析
-      </div>
-
-      <div className="bg-[#F8FAFC] border border-slate-100 rounded-xl p-8 flex flex-col lg:flex-row gap-10">
-        <div className="lg:w-[35%] flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-slate-200 pb-6 lg:pb-0 lg:pr-10">
-          <div className="flex items-center mb-6">
-            <div className="flex items-center justify-center w-[100px] h-[100px] rounded-full border-[8px] border-[#FFE4E6] bg-white relative shadow-sm mr-6 shrink-0">
-              <span className="text-[26px] font-bold text-[#F43F5E]">2单</span>
-              <span className="absolute -bottom-3 bg-white px-2 py-0.5 text-[11px] text-slate-400 border border-slate-100 rounded-full">确认滞留</span>
-            </div>
-            <div>
-              <h4 className="font-bold text-slate-800 text-[14px] mb-2">智能中枢深度关联分析：</h4>
-              <p className="text-[13px] text-slate-600 leading-relaxed">
-                追踪当前【销售订单】全盘数据，AI 发现多笔高额订单长期停滞在「待发货」状态。发现：<span className="font-bold text-slate-800">业务推进缓慢的核心原因为开单后缺乏对客户的自动化催办与提醒机制。</span>
-              </p>
-            </div>
-          </div>
-          <div className="text-[13px] bg-[#F5F3FF] p-4 rounded-xl border border-[#EDE9FE] text-slate-600 shadow-sm">
-            <span className="font-bold text-[#8B5CF6]">AI 建议：</span> 建议在系统中启用“订单超时自动触达”功能，立即向相关销售发送积压预警，并支持一键向客户推送确认链接。
-          </div>
-        </div>
-
-        <div className="lg:w-[65%] flex flex-col relative min-h-[280px]">
-          <div className="flex justify-between items-center mb-6">
-             <span className="text-[13px] font-bold text-slate-700">近半年报价与订单转化趋势 (单位: 笔)</span>
-             <div className="flex space-x-6 text-[12px] text-slate-600 font-medium">
-               <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-[#3B82F6] mr-2"></span>发出报价数</div>
-               <div className="flex items-center"><span className="w-3 h-3 rounded-full bg-[#8B5CF6] mr-2"></span>AI 预测成单趋势</div>
-             </div>
-          </div>
-
-          <div className="relative flex-1 w-full mt-4">
-            <div className="absolute inset-0 right-[20px] left-[30px] z-0">
-              {[20, 15, 10, 5, 0].map((val, i) => (
-                <div key={i} className="absolute w-full flex items-center" style={{ top: `${i * 25}%` }}>
-                  <span className="text-[11px] text-slate-400 w-8 absolute -left-10 text-right">{val}</span>
-                  <div className="w-full border-t border-slate-200 border-dashed"></div>
-                </div>
-              ))}
-            </div>
-
-            <div className="absolute inset-0 right-[20px] left-[30px] z-10">
-              <svg viewBox="0 0 1000 300" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-                <defs>
-                  <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.15"/>
-                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
-                  </linearGradient>
-                </defs>
-                <path d="M 50 247.5 C 110 247.5, 170 210, 230 210 C 290 210, 350 120, 410 120 C 470 120, 530 150, 590 150 C 650 150, 710 60, 770 60 L 770 300 L 50 300 Z" fill="url(#areaGradient)" />
-                <path d="M 50 247.5 C 110 247.5, 170 210, 230 210 C 290 210, 350 120, 410 120 C 470 120, 530 150, 590 150 C 650 150, 710 60, 770 60" fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" />
-                <path d="M 770 60 C 830 60, 890 150, 950 150" fill="none" stroke="#8B5CF6" strokeWidth="4" strokeDasharray="8 8" strokeLinecap="round" />
-              </svg>
-            </div>
-
-            <div className="absolute inset-0 right-[20px] left-[30px] z-20">
-              {[
-                { x: 5, y: 82.5, color: '#3b82f6' },
-                { x: 23, y: 70, color: '#3b82f6' },
-                { x: 41, y: 40, color: '#3b82f6' },
-                { x: 59, y: 50, color: '#3b82f6' },
-                { x: 77, y: 20, color: '#3b82f6' },
-                { x: 95, y: 50, color: '#8B5CF6' }
-              ].map((pt, i) => (
-                <div key={i} className="absolute w-3.5 h-3.5 bg-white rounded-full shadow-sm" style={{ left: `${pt.x}%`, top: `${pt.y}%`, transform: 'translate(-50%, -50%)', border: `3px solid ${pt.color}` }}></div>
-              ))}
-            </div>
-
-            <div className="absolute top-[100%] right-[20px] left-[30px] h-8 mt-4">
-              {['7月', '8月', '9月', '10月', '11月', '12月(预测)'].map((label, i) => {
-                  const leftPos = [5, 23, 41, 59, 77, 95][i];
-                  const isPrediction = i === 5;
-                  return (
-                      <span key={i} className={`absolute text-[12px] transform -translate-x-1/2 ${isPrediction ? 'text-[#8B5CF6] font-bold' : 'text-slate-500 font-medium'}`} style={{ left: `${leftPos}%` }}>{label}</span>
-                  )
-              })}
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
-};
-
-const Sales_DashboardView = ({ quotes, orders, customers, outreachSettings, onCreateQuote, onOpenOrders, onToast, reminderAt, setReminderAt, onAudit, apiContext }) => {
-  const [showQuoteModal, setShowQuoteModal] = useState(false);
-  const [showReminderModal, setShowReminderModal] = useState(false);
-  const [aiData, setAiData] = useState<any>(null);
-  const isReminded = !!reminderAt && Date.now() - new Date(reminderAt).getTime() < 24 * 60 * 60 * 1000;
-  useEffect(() => {
-    let active = true;
-    setAiData(null);
-    if (apiContext) import('./api/fulfillment').then(mod =>
-      mod.fetchAiInsights(apiContext)).then(data => { if (active) setAiData(data); }).catch(() => {});
-    return () => { active = false; };
-  }, [apiContext?.tenantId, apiContext?.accessToken]);
-  const normalizedQuotes = quotes.map((quote) => ({ ...quote, status: sales_getQuoteStatus(quote) }));
-  const riskyQuote = normalizedQuotes
-    .filter((quote) => ['临期', '已过期'].includes(quote.status))
-    .sort((a, b) => sales_daysUntil(a.validUntil) - sales_daysUntil(b.validUntil))[0];
-  const dormantCustomers = customers.filter((customer) => {
-    const missingProfile = !customer.phone || customer.phone === '-' || !customer.industry || customer.industry === '-';
-    const inactiveDays = customer.lastInteractionAt && customer.lastInteractionAt !== '-'
-      ? Math.floor((Date.now() - new Date(customer.lastInteractionAt).getTime()) / 86400000) : NaN;
-    return customer.level === 'D' && missingProfile && inactiveDays > 30;
-  });
-  const stalledOrders = orders.filter((order) => {
-    const created = order.createdAt || order.date;
-    const ageDays = created ? Math.floor((Date.now() - new Date(created).getTime()) / 86400000) : 0;
-    return order.status === '待发货' && ageDays > Number(outreachSettings.thresholdDays || 3);
-  });
-  const deliveryRiskOrders = orders.filter((order) => ['待发货', '已确认', '生产中', '生产补货中'].includes(order.status) && sales_daysUntil(order.deliveryDate) <= 3);
-  const orderAmount = orders.reduce((sum, order) => sum + sales_parseMoney(order.amount), 0);
-  const dashboardMetrics = [
-    { id: 1, title: '生效报价数', value: normalizedQuotes.filter((quote) => ['正常', '临期'].includes(quote.status)).length, suffix: '份', subtitle: '有效窗口内可继续转化', tagColor: 'emerald' },
-    { id: 2, title: '报价 ➔ 订单', value: orders.length, suffix: '单', subtitle: '当前销售订单总量', tagColor: 'blue' },
-    { id: 3, title: '异常停滞订单', value: stalledOrders.length, suffix: '单', subtitle: `待发货超过 ${outreachSettings.thresholdDays || 3} 天`, tagColor: stalledOrders.length ? 'rose' : 'emerald' },
-    { id: 4, title: '订单销售额', value: (orderAmount / 10000).toFixed(1), suffix: '万元', subtitle: `${deliveryRiskOrders.length} 单交付高危`, tagColor: deliveryRiskOrders.length ? 'amber' : 'emerald' },
-  ];
-
-  const handleReminderConfirm = () => {
-      setReminderAt(new Date().toISOString());
-      setShowReminderModal(false);
-      onToast('订单提醒已生成', '已标记为 24 小时内不再重复提醒');
-      onAudit('生成并复制 AI 订单确认提醒', riskyQuote?.id || 'SALES-RISK');
-  };
-
-  const handleQuoteGenerated = () => {
-      onCreateQuote({
-          id: sales_makeDocumentId('QT'),
-          client: riskyQuote?.client || '待跟进客户',
-          date: new Date().toISOString().slice(0, 10),
-          validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-          status: '正常',
-          product: riskyQuote?.product,
-          productName: riskyQuote?.productName,
-          spec: riskyQuote?.spec,
-          unit: riskyQuote?.unit,
-          qty: riskyQuote?.qty,
-          unitPrice: riskyQuote?.unitPrice,
-          discountRate: riskyQuote?.discountRate,
-          discountAmount: riskyQuote?.discountAmount,
-          amount: riskyQuote?.amount || '¥0.00'
-      });
-      setShowQuoteModal(false);
-      onToast('挽回报价单已生成', '已加入产品报价列表，可继续编辑或发送');
-      onAudit('生成 AI 挽回报价单', riskyQuote?.id || 'SALES-RISK');
-  };
-
-  return (
-    <>
-      <UnifiedMonitorCabin
-        metrics={dashboardMetrics.map(metric => ({
-          id: metric.id,
-          title: metric.title,
-          value: metric.value,
-          unit: metric.suffix,
-          subtitle: metric.subtitle,
-          theme: metric.tagColor,
-          icon: metric.id === 1 ? Target : metric.id === 2 ? ShoppingCart : metric.id === 3 ? AlertTriangle : Wallet,
-          trend: metric.tagColor === 'rose' ? 'down' : 'up',
-        }))}
-        aiCards={[
-          {
-            title: 'AI 订单转化延期预警 & 智能挽回',
-            icon: Box,
-            tone: 'purple',
-            subject: `客户：${riskyQuote?.client || '暂无风险客户'}`,
-            badge: riskyQuote ? (riskyQuote.status === '已过期' ? '极高流失风险' : '7 天内临期') : '风险正常',
-            lines: [
-              <><span className="font-bold text-slate-800">AI 根因分析：</span>{riskyQuote ? `报价单 ${riskyQuote.id} 的有效期为 ${riskyQuote.validUntil}，当前状态为“${riskyQuote.status}”。系统已结合剩余有效期与订单停滞情况生成挽回建议。` : '当前没有临期或过期报价单。'}</>,
-            ],
-            actions: riskyQuote ? (
-              <>
-                <button onClick={() => setShowQuoteModal(true)} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm">生成挽回产品报价单</button>
-                <button onClick={isReminded ? null : () => setShowReminderModal(true)} disabled={isReminded} className={`flex-1 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-sm ${isReminded ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200' : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-700'}`}>{isReminded ? '已提醒 (24h)' : '发送订单确认提醒'}</button>
-              </>
-            ) : null
-          },
-          {
-            title: 'AI 客户资产盘点与激活提示',
-            icon: AlertTriangle,
-            tone: 'amber',
-            subject: `客户：${dormantCustomers.length ? dormantCustomers.map((item) => item.name.slice(0, 8)).join(' / ') : '档案健康'}`,
-            badge: dormantCustomers.length ? '建议跟进' : '资料完整',
-            lines: dormantCustomers.length ? [
-              <><span className="font-bold text-slate-800">沉睡预警：</span>发现 {dormantCustomers.length} 家 D 级客户超过 30 天未互动且联系人或行业资料不完整。</>,
-              <><span className="font-bold text-slate-800">推介建议：</span>根据数据匹配，建议优先完善联系人档案，并定向推送相关产品信息，以激活沉睡客户。</>,
-            ] : [
-              <><span className="font-bold text-slate-800">暂未发现</span>超过 30 天未互动且联系人或行业资料不完整的客户。</>,
-            ],
-          },
-          {
-            title: '订单履约延期预警',
-            icon: Truck,
-            tone: 'rose',
-            subject: `${deliveryRiskOrders.length} 单进入交付倒计时`,
-            badge: deliveryRiskOrders.length ? '交付高危' : '交付正常',
-            lines: deliveryRiskOrders.length ? [
-              <><span className="font-bold text-slate-800">穿透分析：</span>高危订单为 {deliveryRiskOrders.map((item) => item.id).join('、')}，核心风险来自库存缺口或待出库环节。</>,
-              <><span className="font-bold text-slate-800">建议：</span>立即发起跨部门交付协同。</>,
-            ] : [
-              <><span className="font-bold text-slate-800">穿透分析：</span>当前没有距离交期不足 3 天的未发货订单。</>,
-            ],
-          }
-        ]}
-        trend={{
-          points: (() => {
-            const now = new Date();
-            const months = [];
-            for (let i = 5; i >= 0; i--) {
-              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-              months.push({ key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label: `${d.getMonth()+1}月` });
-            }
-            const monthlyTotals = months.map(m => {
-              const monthOrders = orders.filter(o => {
-                const d = o.createdAt || o.date || '';
-                return d.startsWith(m.key) && o.status !== '已取消';
-              });
-              const total = monthOrders.reduce((s, o) => s + (Number(o.qty) || 0) * (Number(o.unitPrice) || 500), 0);
-              return { ...m, total: Math.round(total / 10000 * 10) / 10 };
-            });
-            const maxVal = Math.max(...monthlyTotals.map(m => m.total), 1);
-            return monthlyTotals.map((m, i) => ({
-              x: i * 18 + 5,
-              y: 90 - (m.total / maxVal) * 70,
-              color: i === monthlyTotals.length - 1 ? '#8b5cf6' : undefined
-            }));
-          })(),
-          labels: (() => {
-            const now = new Date();
-            const labels = [];
-            for (let i = 5; i >= 0; i--) {
-              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-              labels.push(i === 0 ? `${d.getMonth()+1}月(预测)` : `${d.getMonth()+1}月`);
-            }
-            return labels;
-          })(),
-          yAxis: (() => {
-            const totals = orders.filter(o => o.status !== '已取消').map(o => (Number(o.qty) || 0) * (Number(o.unitPrice) || 500) / 10000);
-            const max = Math.max(...totals, 10);
-            return [Math.ceil(max), Math.ceil(max*0.75), Math.ceil(max*0.5), Math.ceil(max*0.25), 0];
-          })(),
-          path: (() => {
-            const now = new Date();
-            const months = [];
-            for (let i = 5; i >= 0; i--) {
-              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-              months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
-            }
-            const totals = months.map(m => {
-              const monthOrders = orders.filter(o => {
-                const d = o.createdAt || o.date || '';
-                return d.startsWith(m) && o.status !== '已取消';
-              });
-              return monthOrders.reduce((s, o) => s + (Number(o.qty) || 0) * (Number(o.unitPrice) || 500) / 10000, 0);
-            });
-            const max = Math.max(...totals, 1);
-            const pts = totals.map((t, i) => `${i === 0 ? 'M' : 'C'} ${i * 180 + 50} ${300 - (t / max) * 250}`);
-            return pts.join(', ').replace(/C /g, 'C ').replace(/, C/g, ', C');
-          })(),
-          title: 'AI 报价-订单转化趋势与归因分析',
-          metric: `${stalledOrders.length}单`,
-          metricLabel: '确认滞留',
-          metricColor: '#f43f5e',
-          ringColor: '#ffe4e6',
-          insightTitle: '智能中枢深度关联分析',
-          insight: stalledOrders.length ? `AI 发现 ${stalledOrders.length} 笔订单停留在“待确认”状态超过 ${outreachSettings.thresholdDays || 3} 天，核心原因是开单后缺乏自动化催办。` : '当前没有超过配置阈值的待确认订单，自动触达规则运行正常。',
-          recommendation: '启用“订单超时自动触达”功能，向相关销售发送积压预警，并支持一键向客户推送确认链接。',
-          chartTitle: '近半年报价金额与 AI 预测成单金额（万元）',
-          legend: [
-            { label: '发出报价金额', color: '#3b82f6' },
-            { label: 'AI 预测成单金额', color: '#8b5cf6' },
-          ],
-          primary: '#3b82f6',
-          secondary: '#8b5cf6',
-          gradientId: 'salesTrendGradient',
-        }}
-      />
-      {showQuoteModal && <Sales_QuoteEditModal onClose={() => setShowQuoteModal(false)} onConfirm={handleQuoteGenerated} />}
-      {showReminderModal && <Sales_ReminderModal onClose={() => setShowReminderModal(false)} onConfirm={handleReminderConfirm} />}
-    </>
-  );
-};
 
 const Sales_QuoteCreateModal = ({ mode = 'create', record = null, customers = [], warehouses = [], products = [], onClose, onCreate, documentType = 'quote', apiContext = null }) => {
   const editing = mode === 'edit';
@@ -2823,26 +2297,7 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   }, [menuOrderId]);
 
   const updateOrder = (order) => {
-      const currentOrder = orders.find(item => item.id === order.id);
-      if (!currentOrder || !isSalesOrderEditable(currentOrder.status, currentOrder.outStatus)) {
-          setRecordModal(null);
-          onToast('订单不可编辑', `${order.id} 已进入后续履约流程，请刷新后查看最新状态`, 'warning');
-          return;
-      }
-      const editableFields = ['client', 'salesman', 'product', 'productName', 'productId', 'spec', 'unit', 'qty', 'unitPrice', 'lines', 'discountRate', 'discountAmount', 'amount', 'date', 'deliveryDate', 'remark'];
-      const editableChanges = Object.fromEntries(editableFields.map(field => [field, order[field]]));
-      setOrders(prev => prev.map(item => item.id === order.id ? {
-          ...item,
-          ...editableChanges,
-          shortage: Math.max(0, Number(editableChanges.qty ?? item.qty ?? 0) - resolveOrderAvailQty(item)),
-          status: item.status,
-          outStatus: item.outStatus,
-          receivable: item.receivable,
-          updatedAt: new Date().toISOString(),
-      } : item));
-      setRecordModal(null);
-      onToast('订单已更新', order.id);
-      onAudit('编辑销售订单', order.id);
+      onToast('未保存', '请通过正式销售订单编辑接口提交，当前记录未更新', 'warning');
   };
 
   const submitShipmentOrderEdit = async (order) => {
@@ -2869,96 +2324,31 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   };
 
   const duplicateOrder = (row) => {
-      const newOrder = { ...row, id: sales_makeDocumentId('SO'), sourceQuoteId: '', status: '待发货', outStatus: '未发货', receivable: '待生成', createdAt: new Date().toISOString() };
-      setOrders(prev => [newOrder, ...prev]);
-      onToast('订单已复制', `${row.id} 已生成副本`);
-      onAudit('复制销售订单', newOrder.id);
+      onToast('未生成副本', '请通过快速开单创建正式订单，当前订单未复制', 'warning');
   };
 
   const runOrderAction = async () => {
+      if (!confirmAction) return;
       const { action, row } = confirmAction;
-      if (action === 'review') {
-          setIsSubmitting(true);
-          try {
-              const updatedOrder = await onReviewFormalOrder(row);
-              if (updatedOrder) setOrders(prev => prev.map(item => item.aggregateId === row.aggregateId ? updatedOrder : item));
-              onToast('订单复核已通过', `${row.id} 总体仍为待发货，可由销售发起发货`);
-              onAudit('完成订单复核', row.id);
-          } catch (error) {
-              onToast('订单复核失败', error instanceof Error ? error.message : '请由独立复核人登录后重试', 'danger');
-          } finally {
-              setIsSubmitting(false);
-              setConfirmAction(null);
-          }
-          return;
-      }
-      if (action === 'dispatch') {
-          if (row.aggregateId) {
-              onToast('请按正式流程操作', `${row.id} 需先完成复核，再发起发货`, 'warning');
-              setConfirmAction(null);
-              return;
-          }
-          const updatedOrder = {
-              ...row,
-              status: '已确认',
-              outStatus: '未发货',
-              confirmedAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-          };
-          setOrders(prev => prev.map(item => item.id === row.id ? updatedOrder : item));
-          onToast('订单已确认', `${row.id} 已交由仓库执行出库`);
-          onAudit('确认销售订单并移交仓库', row.id);
-          onBusinessFlowAction?.('confirmSalesOrder', updatedOrder);
+      if (!row.aggregateId || !['review', 'cancel'].includes(action)) {
+          onToast('未执行', '请通过正式业务操作办理，当前订单状态未变更', 'warning');
           setConfirmAction(null);
           return;
-      } else if (action === 'recheck') {
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, availableStock: resolveOrderAvailQty(item), shortage: 0, status: '已确认', outStatus: '未发货', updatedAt: new Date().toISOString() } : item));
-          onToast('库存再校验通过', `${row.id} 已回到待出库队列`);
-          onAudit('生产入库后库存自动再校验', row.id);
-      } else if (action === 'partialShip') {
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '部分发货', outStatus: '部分发货', receivable: sales_formatMoney(sales_parseMoney(item.amount) / 2), updatedAt: new Date().toISOString() } : item));
-          onToast('部分发货已回写', `${row.id} 已生成部分应收`);
-          onAudit('销售订单部分发货', row.id);
-      } else if (action === 'ship') {
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '已发货', outStatus: '全部发货', receivable: item.amount, updatedAt: new Date().toISOString() } : item));
-          onToast('销售出库完成', `${row.id} 已生成财务应收`);
-          onAudit('销售订单全部发货并生成应收', row.id);
-      } else if (action === 'complete') {
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '已完成', updatedAt: new Date().toISOString() } : item));
-          onToast('销售订单已完成', row.id);
-          onAudit('完成销售订单', row.id);
-          if (businessFlow?.orderId === row.id) {
-              onBusinessFlowAction?.('confirmReceipt');
-          }
-      } else if (action === 'rollback') {
-          onCancelOrderOutbound?.(row);
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '待发货', outStatus: '未发货', updatedAt: new Date().toISOString() } : item));
-          onToast('订单已退回待发货', `${row.id} 已退回待发货，可编辑订单内容`, 'warning');
-          onAudit('已确认订单退回待发货编辑', row.id);
-          setConfirmAction(null);
-          return;
-      } else {
-          if (row.aggregateId) {
-              setIsSubmitting(true);
-              try {
-                  const updatedOrder = await onCancelFormalOrder(row);
-                  if (updatedOrder) setOrders(prev => prev.map(item => item.aggregateId === row.aggregateId ? updatedOrder : item));
-                  onToast('销售订单已取消', row.id, 'warning');
-                  onAudit('取消销售订单', row.id);
-              } catch (error) {
-                  onToast('订单取消失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
-              } finally {
-                  setIsSubmitting(false);
-                  setConfirmAction(null);
-              }
-              return;
-          }
-          onCancelOrderOutbound?.(row);
-          setOrders(prev => prev.map(item => item.id === row.id ? { ...item, status: '已取消', outStatus: '已取消', updatedAt: new Date().toISOString() } : item));
-          onToast('销售订单已取消', row.id, 'warning');
-          onAudit('取消销售订单', row.id);
       }
-      setConfirmAction(null);
+      setIsSubmitting(true);
+      try {
+          const updatedOrder = action === 'review'
+              ? await onReviewFormalOrder(row) : await onCancelFormalOrder(row);
+          if (!updatedOrder) throw new Error('未收到订单更新结果');
+          setOrders(prev => prev.map(item => item.aggregateId === row.aggregateId ? updatedOrder : item));
+          onToast(action === 'review' ? '订单复核已通过' : '销售订单已取消', row.id);
+          onAudit(action === 'review' ? '完成订单复核' : '取消销售订单', row.id);
+          setConfirmAction(null);
+      } catch (error) {
+          onToast('操作失败', error instanceof Error ? error.message : '请稍后重试', 'danger');
+      } finally {
+          setIsSubmitting(false);
+      }
   };
 
   const navigateToOutbound = (row) => {
@@ -3371,6 +2761,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
                   <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
                       <h3 className="text-[15px] font-bold text-slate-800">自动化触达规则</h3>
                       <p className="text-[13px] text-slate-500 mt-1">配置销售订单超时后的系统自动提醒与推送行为</p>
+                      <p className="mt-2 text-[12px] text-amber-700">尚未获取正式配置，当前输入为未保存草稿。</p>
                   </div>
                   <div className="p-6 space-y-8">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -3527,7 +2918,6 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
   const [industries, setIndustries] = useState(sales_industriesData);
   const [outreachSettings, setOutreachSettings] = useState(sales_defaultOutreachSettings);
   const [audits, setAudits] = useState([]);
-  const [reminderAt, setReminderAt] = useState(null);
   const [toast, setToast] = useState(null);
   const [outboundRequestModal, setOutboundRequestModal] = useState(null);
   const [salesWarehouseList, setSalesWarehouseList] = useState([]);
@@ -3872,7 +3262,7 @@ const SalesManagement = ({ resetSignal = 0, businessFlow, onBusinessFlowAction, 
                           .catch(error => { if (salesIdentity.current === formalContext) setCustomerDataError(error.message || '客户加载失败'); });
                   }}>重新加载</button></div>}
                   {['quotes', 'basic-data'].includes(activeTab) && <div role="status" className="mb-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{activeTab === 'quotes' ? '报价单持久化接口尚未接入，当前不能保存或转单。' : '完整销售基础数据与触达配置尚未接入，当前不能保存配置。'}</div>}
-                  {activeTab === 'dashboard' && <Sales_DashboardView quotes={quotes} orders={orders} customers={customers} outreachSettings={outreachSettings} apiContext={formalContext} onCreateQuote={() => { throw new Error('未保存：报价单持久化接口尚未提供'); }} onOpenOrders={() => navigateSalesTab('orders')} onToast={showToast} reminderAt={reminderAt} setReminderAt={setReminderAt} onAudit={addAudit} />}
+                  {activeTab === 'dashboard' && <SalesMonitorFacts apiContext={formalContext} Cabin={UnifiedMonitorCabin} />}
                   {activeTab === 'quotes' && <Sales_QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} quoteWarehouses={quoteOptions.warehouses} quoteProducts={quoteOptions.products} onToast={showToast} onAudit={addAudit} onApproveAndConvert={approveQuoteAndConvert} onOpenOrder={openSalesOrder} />}
                   {activeTab === 'orders' && <Sales_OrdersView orders={orders} setOrders={setOrders} onToast={showToast} businessFlow={businessFlow} onBusinessFlowAction={onBusinessFlowAction} audits={audits} onAudit={addAudit} onRequestOutbound={requestOutbound} onReviewFormalOrder={reviewFormalOrder} onConfirmFormalOrder={confirmFormalOrder} onCancelFormalOrder={cancelFormal} onCancelOrderOutbound={cancelOrderOutbound} onNavigateProduction={() => onNavigateModule?.('生产管理')} customers={customers} products={quoteOptions.products} orderCreationRevision={orderCreationRevision} apiContext={formalContext} />}
                   {activeTab === 'customers' && <Sales_CustomersView apiContext={formalContext} customers={customers} setCustomers={setCustomers} industries={industries} onToast={showToast} onAudit={addAudit} />}
@@ -4262,7 +3652,7 @@ const Prod_EqModal = ({ editItem, onClose, onSave, productionLines }) => {
 	                </div>
 	                <div className="p-4 border-t flex justify-end gap-3 bg-slate-50/50">
 	                    <button onClick={onClose} className="px-5 py-2 text-[13px] border rounded-xl bg-white hover:bg-slate-50">取消</button>
-	                    <button onClick={() => { if(id&&name) onSave({id, name, type, status, lineCode, oee: editItem?.oee || '88%'})}} className="px-5 py-2 text-[13px] bg-blue-600 text-white rounded-xl hover:bg-blue-700">保存资产</button>
+	                    <button disabled title="尚未提供设备维护接口" className="rounded-lg bg-slate-100 px-5 py-2 text-[13px] text-slate-400">保存资产</button>
 	                </div>
             </div>
         </div>
@@ -4270,61 +3660,42 @@ const Prod_EqModal = ({ editItem, onClose, onSave, productionLines }) => {
 };
 
 // --- 子视图组件 (重构以接入完整逻辑) ---
-const Prod_DashboardView = ({ onAutoReschedule, onTransferLine, workOrders = [], demands = [] }) => (
+const Prod_DashboardView = ({ workOrders = [], demands = [], error = null, loading = false }) => (
     <UnifiedMonitorCabin
         metrics={[
-            { title: '销售 → 生产', value: String(demands.filter(d => !['COMPLETED','CLOSED'].includes(d.status)).length), unit: '笔新单', subtitle: '订单同步成功待排产', theme: 'blue', icon: ClipboardList, trend: 'up' },
-            { title: '生产 → 采购', value: String(demands.filter(d => d.blockReasons?.length > 0).length), unit: '项缺料', subtitle: '已推送PR采购申请', theme: 'amber', icon: FilePlus, trend: 'up' },
-            { title: '设备异常预警', value: '85%', unit: '%产能', subtitle: '2号机台主轴震动偏高', theme: 'rose', icon: MonitorCog, trend: 'down' },
-            { title: '财务核算闭环', value: String(workOrders.filter(w => w.status === 'COMPLETED').length), unit: '单完工', subtitle: '实际成本核算无偏差', theme: 'emerald', icon: ShieldCheck, trend: 'up' },
+            { title: '待完成生产需求', value: error || loading ? '-' : String(demands.filter(d => !['COMPLETED','CLOSED'].includes(d.status)).length), unit: '笔', subtitle: '当前已加载需求', theme: 'blue', icon: ClipboardList, trend: 'flat' },
+            { title: '存在阻断的需求', value: error || loading ? '-' : String(demands.filter(d => d.blockReasons?.length > 0).length), unit: '笔', subtitle: '来源业务阻断状态', theme: 'amber', icon: FilePlus, trend: 'flat' },
+            { title: '设备异常预警', value: '-', unit: '台', subtitle: '尚未获取设备状态', theme: 'rose', icon: MonitorCog, trend: 'flat' },
+            { title: '已完工工单', value: error || loading ? '-' : String(workOrders.filter(w => ['COMPLETED', '已完工'].includes(w.status)).length), unit: '单', subtitle: '不代表财务结案', theme: 'emerald', icon: ShieldCheck, trend: 'flat' },
         ]}
         aiCards={[
             {
                 title: 'AI 生产延期预警 & 智能排产',
                 icon: Bot,
                 tone: 'purple',
-                subject: (() => {
-                    const active = workOrders.filter(w => ['RELEASED','IN_PROGRESS'].includes(w.status));
-                    return active.length ? `工单：${active[0]?.code || active[0]?.id}` : '暂无活跃工单';
-                })(),
-                badge: workOrders.some(w => ['RELEASED','IN_PROGRESS'].includes(w.status)) ? '延期风险' : '-',
-                lines: [
-                    workOrders.some(w => ['RELEASED','IN_PROGRESS'].includes(w.status))
-                        ? <><span className="font-bold text-slate-800">AI 根因分析：</span>关联【设备管理】和【库存管理】数据，综合评估工单逾期风险。</>
-                        : <><span className="font-bold text-slate-800">分析：</span>当前没有处于活跃状态的工单。</>
-                ],
-                actions: workOrders.some(w => ['RELEASED','IN_PROGRESS'].includes(w.status)) ? (
-                    <>
-                        <button onClick={onAutoReschedule} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">AI 自动重新排产</button>
-                        <button onClick={onTransferLine} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-[13px] font-bold py-2.5 rounded-xl shadow-sm transition-colors">转移至备用产线</button>
-                    </>
-                ) : undefined
+                subject: '生产交期与排产风险分析',
+                badge: '尚未获取 AI 分析结果',
+                lines: ['关注生产交期、齐套与排程风险。当前暂无可展示的分析结果。'],
             },
             {
                 title: 'AI 缺料违约双重预警',
                 icon: AlertTriangle,
                 tone: 'rose',
-                subject: (() => {
-                    const atRisk = workOrders.filter(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status));
-                    return atRisk.length ? `工单：${atRisk[0]?.code || 'N/A'} 交期违约` : '暂无风险工单';
-                })(),
-                badge: workOrders.some(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status)) ? '极高风险' : '-',
-                lines: [
-                    workOrders.some(w => new Date(w.dueDate) < new Date() && !['COMPLETED','CLOSED'].includes(w.status))
-                        ? <><span className="font-bold text-slate-800">风险来源：</span>关键物料供应和物流波动导致工单交期存在违约风险。</>
-                        : <><span className="font-bold text-slate-800">分析：</span>当前没有逾期或即将逾期的工单。</>
-                ],
+                subject: '物料缺口与履约影响分析',
+                badge: '尚未获取 AI 分析结果',
+                lines: ['关注物料缺口及其对工单履约的影响。当前暂无可展示的分析结果。'],
             },
         ]}
         trend={{
             title: '生产计划达成率与延期风险趋势',
-            metric: workOrders.length > 0 ? Math.round(workOrders.reduce((s,w) => s + Number(w.reportedGoodQty || 0), 0) / Math.max(workOrders.reduce((s,w) => s + Number(w.plannedQty || 0), 0), 1) * 100) + '%' : '-',
+            metric: '-',
             metricLabel: '按期达成',
             metricColor: '#8b5cf6',
             ringColor: '#ede9fe',
             insightTitle: '瓶颈工序识别',
-            insight: '近 6 期生产达成率在设备稼动波动时明显下滑，AI 判断 SMT 与外协回场是主要瓶颈。',
-            recommendation: '将高优先级工单提前做齐套检查，并把瓶颈工序预排至备用产线，减少临近交期的被动改排。',
+            insight: '展示正式生产历史统计与风险序列。',
+            error,
+            loading,
             chartTitle: '近半年生产达成与风险预测 (单位: %)',
             legend: [
                 { label: '计划达成率', color: '#2563eb' },
@@ -4334,7 +3705,6 @@ const Prod_DashboardView = ({ onAutoReschedule, onTransferLine, workOrders = [],
             secondary: '#8b5cf6',
             yAxis: [100, 90, 80, 70, 60],
             gradientId: 'prodTrendGradient',
-            forecastPath: 'M 780 92 C 830 110, 890 130, 950 122',
         }}
     />
 );
@@ -4643,289 +4013,6 @@ const Prod_MrpView = ({ mrp, onIssueMrp, onRunGlobalMrp, onCreatePurchase, showT
                 </tbody></table></div>
             </div>
             {peggingItem && <Prod_PeggingModal item={peggingItem} onClose={() => setPeggingItem(null)} />}
-        </div>
-    );
-};
-
-const Prod_ApsView = ({ orders, equipments, onUpdateOrder, showToast }) => {
-    const [draggingId, setDraggingId] = useState(null);
-    const [highlightedIds, setHighlightedIds] = useState([]);
-    const [optimizing, setOptimizing] = useState(false);
-    const [optimizationResult, setOptimizationResult] = useState(null);
-    const [dragOverMachine, setDragOverMachine] = useState(null);
-
-    const WEEK_DAYS = ['周一 (Mon)', '周二 (Tue)', '周三 (Wed)', '周四 (Thu)', '周五 (Fri)'];
-
-    const getDaySlot = (dateStr) => {
-        if (!dateStr) return 0;
-        const d = new Date(dateStr);
-        const day = d.getDay();
-        return Math.max(0, Math.min(4, day - 1));
-    };
-
-    const getDuration = (startStr, endStr) => {
-        if (!startStr || !endStr) return 1;
-        const start = new Date(startStr);
-        const end = new Date(endStr);
-        const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-        return Math.max(1, Math.min(5, diff));
-    };
-
-    const getOrderMachine = (order, index) => {
-        if (order.assignedMachine) return order.assignedMachine;
-        if (!equipments || equipments.length === 0) return 'SMT-M01';
-        return equipments[index % equipments.length]?.id || equipments[0]?.id;
-    };
-
-    const machineOrders = useMemo(() => {
-        const groups = {};
-        (equipments || []).forEach(eq => { groups[eq.id] = []; });
-        orders.forEach((order, idx) => {
-            const mid = getOrderMachine(order, idx);
-            if (!groups[mid]) groups[mid] = [];
-            groups[mid].push(order);
-        });
-        return groups;
-    }, [orders, equipments]);
-
-    const handleDragStart = (e, orderId) => {
-        setDraggingId(orderId);
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', orderId);
-    };
-
-    const handleDragOver = (e, machineId) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        if (dragOverMachine !== machineId) setDragOverMachine(machineId);
-    };
-
-    const handleDrop = (e, machineId) => {
-        e.preventDefault();
-        if (!draggingId) { setDragOverMachine(null); return; }
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const width = rect.offsetWidth;
-        const slotWidth = width / 5;
-        const newSlot = Math.max(0, Math.min(4, Math.floor(x / slotWidth)));
-        
-        const order = orders.find(o => o.id === draggingId);
-        if (!order) { setDraggingId(null); setDragOverMachine(null); return; }
-        
-        const duration = getDuration(order.startDate, order.endDate);
-        const today = new Date();
-        const dayOfWeek = today.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const baseDate = new Date(today);
-        baseDate.setDate(today.getDate() + mondayOffset);
-        
-        const newStart = new Date(baseDate);
-        newStart.setDate(baseDate.getDate() + newSlot);
-        const newEnd = new Date(newStart);
-        newEnd.setDate(newStart.getDate() + duration - 1);
-        
-        onUpdateOrder({
-            ...order,
-            startDate: newStart.toISOString().slice(0, 10),
-            endDate: newEnd.toISOString().slice(0, 10),
-            assignedMachine: machineId,
-        });
-        
-        showToast(`工单 ${draggingId} 已拖拽调整到 ${machineId} · 第${newSlot + 1}天`, 'success');
-        setDraggingId(null);
-        setDragOverMachine(null);
-    };
-
-    const handleOptimize = () => {
-        if (optimizing) return;
-        setOptimizing(true);
-        setOptimizationResult(null);
-        
-        setTimeout(() => {
-            const machines = (equipments && equipments.length > 0) ? equipments : [{ id: 'SMT-M01', name: 'SMT-M01', oee: '88%', type: 'SMT' }];
-            const machineLoads = {};
-            machines.forEach(m => { machineLoads[m.id] = 0; });
-            
-            const statusPriority = { '执行中': 0, '齐套待下发': 1, '待检查': 2, '已完工': 3 };
-            const sortedOrders = [...orders].sort((a, b) => {
-                const pa = statusPriority[a.status] ?? 9;
-                const pb = statusPriority[b.status] ?? 9;
-                if (pa !== pb) return pa - pb;
-                return (b.quantity || 0) - (a.quantity || 0);
-            });
-            
-            const today = new Date();
-            const dayOfWeek = today.getDay();
-            const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-            const baseDate = new Date(today);
-            baseDate.setDate(today.getDate() + mondayOffset);
-            
-            const movedIds = [];
-            const optimizedOrders = sortedOrders.map((order) => {
-                const duration = getDuration(order.startDate, order.endDate);
-                let leastMachine = machines[0];
-                let minLoad = Infinity;
-                machines.forEach(m => {
-                    if (machineLoads[m.id] < minLoad) {
-                        minLoad = machineLoads[m.id];
-                        leastMachine = m;
-                    }
-                });
-                
-                const slot = Math.min(4, machineLoads[leastMachine.id]);
-                machineLoads[leastMachine.id] += duration;
-                
-                const newStart = new Date(baseDate);
-                newStart.setDate(baseDate.getDate() + slot);
-                const newEnd = new Date(newStart);
-                newEnd.setDate(newStart.getDate() + duration - 1);
-                
-                const newStartDate = newStart.toISOString().slice(0, 10);
-                const newEndDate = newEnd.toISOString().slice(0, 10);
-                const oldMachine = order.assignedMachine || '';
-                const oldStart = order.startDate || '';
-                
-                if (oldStart !== newStartDate || oldMachine !== leastMachine.id) {
-                    movedIds.push(order.id);
-                }
-                
-                return {
-                    ...order,
-                    startDate: newStartDate,
-                    endDate: newEndDate,
-                    assignedMachine: leastMachine.id,
-                };
-            });
-            
-            optimizedOrders.forEach(o => onUpdateOrder(o));
-            
-            setHighlightedIds(movedIds);
-            setOptimizationResult({
-                totalOrders: optimizedOrders.length,
-                movedCount: movedIds.length,
-                machineLoads,
-                machines: machines.map(m => ({ id: m.id, name: m.name || m.id, load: machineLoads[m.id] })),
-            });
-            
-            setOptimizing(false);
-            showToast(`AI优化平衡完成：${movedIds.length}/${optimizedOrders.length} 个工单已重新排期，设备负载已均衡`, 'success');
-            
-            setTimeout(() => setHighlightedIds([]), 3000);
-        }, 1500);
-    };
-
-    const machineRows = useMemo(() => {
-        if (equipments && equipments.length > 0) return equipments;
-        return [
-            { id: 'SMT-M01', name: 'SMT-M01', type: 'SMT', status: '运行正常', oee: '88%' },
-            { id: 'ASSY-W02', name: 'ASSY-W02', type: 'Assembly', status: '闲置待产', oee: '92%' },
-            { id: 'TEST-T01', name: '测试线-T01', type: 'Test', status: '运行正常', oee: '85%' },
-        ];
-    }, [equipments]);
-
-    const getStatusColor = (status) => {
-        if (status === '执行中') return 'bg-blue-500 hover:bg-blue-600';
-        if (status === '齐套待下发') return 'bg-emerald-500 hover:bg-emerald-600';
-        if (status === '待检查') return 'bg-amber-500 hover:bg-amber-600';
-        if (status === '已完工') return 'bg-slate-400 hover:bg-slate-500';
-        return 'bg-purple-500 hover:bg-purple-600';
-    };
-
-    return (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full flex flex-col animate-in fade-in duration-300">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
-                <div><h3 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CalendarRange className="w-4.5 h-4.5 text-blue-600"/> 智能排产甘特图 (APS)</h3><p className="text-[12px] text-slate-500 mt-1">拖拽工单色块调整时段，点击AI优化平衡自动排程</p></div>
-                <button 
-                    onClick={handleOptimize} 
-                    disabled={optimizing}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-[12px] px-4 py-2 rounded-lg font-bold shadow-sm transition-all flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                    {optimizing ? <><Loader2 size={14} className="animate-spin"/> AI优化中...</> : <><Sparkles size={14}/> 执行AI优化平衡</>}
-                </button>
-            </div>
-            
-            {optimizationResult && (
-                <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-4 text-[12px] flex-wrap">
-                    <span className="text-blue-700 font-bold flex items-center gap-1"><CheckCircle2 size={14}/> 优化完成</span>
-                    <span className="text-slate-600">工单总数: <strong className="text-slate-800">{optimizationResult.totalOrders}</strong></span>
-                    <span className="text-slate-600">调整工单: <strong className="text-amber-600">{optimizationResult.movedCount}</strong></span>
-                    <div className="flex items-center gap-2 ml-auto">
-                        {optimizationResult.machines.map(m => (
-                            <span key={m.id} className="text-[11px] bg-white border border-slate-200 px-2 py-0.5 rounded-full">
-                                {m.name}: <strong className="text-blue-600">{m.load}天</strong>
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            )}
-            
-            <div className="p-6 flex-1 bg-slate-50/50 overflow-auto custom-scrollbar">
-                <div className="flex border-b border-slate-200 pb-3 text-[12px] font-bold text-slate-400 uppercase">
-                    <div className="w-32 shrink-0">设备资产中心</div>
-                    <div className="flex-1 min-w-[500px] grid grid-cols-5 text-center">
-                        {WEEK_DAYS.map(day => <div key={day}>{day}</div>)}
-                    </div>
-                </div>
-                
-                <div className="mt-4 space-y-5">
-                    {machineRows.map((machine) => {
-                        const machineId = machine.id;
-                        const machineName = machine.name || machine.id;
-                        const rowOrders = machineOrders[machineId] || [];
-                        
-                        return (
-                            <div key={machineId} className="flex items-center group">
-                                <div className="w-32 shrink-0">
-                                    <div className="font-bold text-[13px] text-slate-700">{machineName}</div>
-                                    <div className="text-[10px] text-slate-400 mt-0.5">{machine.type || ''} · OEE {machine.oee || '-'}</div>
-                                </div>
-                                <div 
-                                    className={`flex-1 min-w-[500px] grid grid-cols-5 gap-1 relative h-12 bg-white rounded-lg border-2 transition-colors ${dragOverMachine === machineId ? 'border-blue-400 bg-blue-50/30' : 'border-slate-200 shadow-sm'}`}
-                                    onDragOver={(e) => handleDragOver(e, machineId)}
-                                    onDragLeave={() => setDragOverMachine(null)}
-                                    onDrop={(e) => handleDrop(e, machineId)}
-                                >
-                                    {[0, 1, 2, 3, 4].map(i => (
-                                        <div key={i} className="border-r border-slate-100 last:border-r-0"></div>
-                                    ))}
-                                    
-                                    {rowOrders.map((order) => {
-                                        const slot = getDaySlot(order.startDate);
-                                        const duration = getDuration(order.startDate, order.endDate);
-                                        const leftPct = (slot / 5) * 100;
-                                        const widthPct = (duration / 5) * 100;
-                                        const isHighlighted = highlightedIds.includes(order.id);
-                                        const isDragging = draggingId === order.id;
-                                        
-                                        return (
-                                            <div
-                                                key={order.id}
-                                                draggable
-                                                onDragStart={(e) => handleDragStart(e, order.id)}
-                                                onDragEnd={() => { setDraggingId(null); setDragOverMachine(null); }}
-                                                className={`absolute top-1.5 bottom-1.5 ${getStatusColor(order.status)} rounded-md text-white text-[11px] font-bold flex items-center px-2 cursor-move shadow-sm transition-all ${isDragging ? 'opacity-40 scale-95' : ''} ${isHighlighted ? 'ring-2 ring-yellow-400 animate-pulse' : ''}`}
-                                                style={{ left: `${leftPct}%`, width: `calc(${widthPct}% - 4px)` }}
-                                                title={`${order.id} | ${order.product} | ${order.startDate} ~ ${order.endDate} | ${order.status}`}
-                                            >
-                                                <span className="truncate">{order.id} · {order.product?.split(' - ')[0] || order.product}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-                
-                <div className="mt-6 flex items-center gap-4 text-[11px] text-slate-400 flex-wrap">
-                    <span className="flex items-center gap-1"><Move size={12}/> 拖拽色块调整时段</span>
-                    <span className="flex items-center gap-1"><Sparkles size={12}/> AI优化自动平衡设备负载</span>
-                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded"></div>执行中</span>
-                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-emerald-500 rounded"></div>齐套待下发</span>
-                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-amber-500 rounded"></div>待检查</span>
-                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-slate-400 rounded"></div>已完工</span>
-                </div>
-            </div>
         </div>
     );
 };
@@ -5449,7 +4536,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
   };
 
-  const formalCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const formalCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || '', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
   const productionInventory = useFormalInventory(formalCtx);
   useEffect(() => {
       let active = true;
@@ -5485,7 +4572,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       apiId: demand.id,
       apiStatus: demand.status,
       formalDemand: demand,
-      type: demand.sourceType === 'SALES_ORDER_SHORTAGE' ? '销售缺货' : '预测补货',
+      type: demand.sourceType === 'SALES_ORDER_SHORTAGE' ? '销售缺货' : demand.sourceType === 'RUSH_ORDER' ? '客户加急' : '生产需求',
       source: sourceLabel,
       sourceTrace: trace || null,
       sourceSalesOrder,
@@ -5497,7 +4584,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       product: `${demand.productId} - ${demand.productName || demand.productId}`,
       shortage: Number(demand.qty),
       requiredDate: demand.dueDate,
-      priority: '紧急',
+      priority: '-',
       status: mapProductionDemandStatus(demand),
       owner: demand.acceptedAt ? `${demand.handlerRole || '生产计划员'} · ${demand.handlerId || demand.createdBy}` : demand.createdBy || '生产服务',
       reason: `需求版本 v${demand.version} · ${demand.correlationId}`,
@@ -5508,14 +4595,14 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       let cancelled = false;
       setProductionDemands([]); setMps([]); setMrp([]);
       listProductionDemands({
-          tenantId: currentTenant?.id || 'TENANT-SHWS',
+          tenantId: currentTenant?.id || '',
           accessToken: currentUser?.accessToken || '',
       }).then(async (result) => {
           if (cancelled) return;
           setProductionDemands(result.items.map(mapFormalDemandRow));
           const planned = result.items.filter((item) => item.status === 'PLANNED' && item.mrpTaskId);
           const tasks = await Promise.allSettled(planned.map((item) => productionOperationsApi.getTask({
-              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              tenantId: currentTenant?.id || '',
               accessToken: currentUser?.accessToken || '',
           }, item.mrpTaskId)));
           if (cancelled) return;
@@ -5582,7 +4669,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       if (!targetDemand?.formalDemand) return;
       try {
           const updated = await productionOperationsApi.validateDemand({
-              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              tenantId: currentTenant?.id || '',
               accessToken: currentUser?.accessToken || '',
           }, targetDemand.formalDemand);
           setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
@@ -5600,7 +4687,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       if (!targetDemand?.formalDemand) return;
       try {
           const updated = await productionOperationsApi.approveDemand({
-              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              tenantId: currentTenant?.id || '',
               accessToken: currentUser?.accessToken || '',
           }, targetDemand.formalDemand);
           setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
@@ -5615,7 +4702,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       if (!targetDemand?.formalDemand) return;
       try {
           const updated = await productionOperationsApi.claimDemand({
-              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              tenantId: currentTenant?.id || '',
               accessToken: currentUser?.accessToken || '',
           }, targetDemand.formalDemand);
           setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
@@ -5650,7 +4737,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       setMps(prev => [pendingMps, ...prev.filter(item => item.demandId !== targetDemand.apiId)]);
       try {
           const result = await productionOperationsApi.startPlanningTask({
-              tenantId: currentTenant?.id || 'TENANT-SHWS',
+              tenantId: currentTenant?.id || '',
               accessToken: currentUser?.accessToken || '',
           }, 'MRP', [targetDemand.apiId], `${targetDemand.apiId}:${targetDemand.formalDemand?.version || 1}`);
           const mpsLine = result.result?.mpsLines?.find((line) => line.demandId === targetDemand.apiId);
@@ -5755,7 +4842,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           showToast('请先登录正式会话后再创建工单', 'warning');
           return;
       }
-      const seed = `${currentTenant?.id || 'TENANT-SHWS'}:${targetMps.demandId}:${targetMps.scheduleCandidateId}`;
+      const seed = `${currentTenant?.id || ''}:${targetMps.demandId}:${targetMps.scheduleCandidateId}`;
       setMps(prev => prev.map(item => item.id === mpsId ? { ...item, status: '创建工单中' } : item));
       try {
           const order = await productionOperationsApi.createWorkOrder(formalCtx, {
@@ -5810,7 +4897,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
               return;
           }
           try {
-              const request = await procurementApi.createRequest({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser?.accessToken || '' }, { mrpTaskId: businessFlow.mrpTaskId, demandId: businessFlow.mrpDemandId, materialId: shortage.materialId });
+              const request = await procurementApi.createRequest({ tenantId: currentTenant?.id || '', accessToken: currentUser?.accessToken || '' }, { mrpTaskId: businessFlow.mrpTaskId, demandId: businessFlow.mrpDemandId, materialId: shortage.materialId });
               setMrp(prev => prev.map(item => item.mrpTaskId === businessFlow.mrpTaskId && item.itemCode === shortage.materialId ? { ...item, status: '已转采购', purchaseRequestId: request.id } : item));
               onBusinessFlowAction?.('formalPrCreated', { purchaseRequest: request });
           } catch (error) {
@@ -6110,39 +5197,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   const handleAutoReschedule = () => showToast('未执行：请从正式主计划运行 APS，不支持演示工单重排', 'error');
   const handleTransferLine = () => showToast('未执行：后端尚未提供工序转线接口', 'error');
 
-  const openProdAction = (kind) => {
-      const configs = {
-          reschedule: {
-              kind,
-              title: 'AI 自动重新排产',
-              desc: '系统会重算受影响工单的齐套、产线和交期，并回写生产订单。',
-              icon: Bot,
-              tone: 'purple',
-              confirmText: '执行重新排产',
-              details: [
-                  { label: '受影响工单', value: 'WO-260102' },
-                  { label: '瓶颈工序', value: 'SMT-M01' },
-                  { label: '推荐产线', value: 'SMT-M02' },
-                  { label: '结果界面', value: '生产监控舱' }
-              ]
-          },
-          transfer: {
-              kind,
-              title: '转移至备用产线',
-              desc: '系统会把当前执行工序切换到备用产线，并跳转到车间与物流页查看派工结果。',
-              icon: Route,
-              tone: 'blue',
-              confirmText: '转移并跳转',
-              details: [
-                  { label: '工序任务', value: 'JOB-260101-10' },
-                  { label: '原机台', value: '贴片机-M01' },
-                  { label: '目标机台', value: '贴片机-M02' },
-                  { label: '目标界面', value: '车间与物流' }
-              ]
-          }
-      };
-      setActionModal(configs[kind]);
-  };
 
 	  const confirmProdAction = () => {
 	      if (!actionModal) return;
@@ -6207,15 +5261,15 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	          <main className="relative mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-8 pb-8">
 	              <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar relative pr-2 pb-6">
 	                  <BusinessFlowDock moduleName="生产管理" flow={businessFlow} onAction={handleProductionFlowAction} onNavigate={onNavigateModule} />
-	                  {activeTab === 'dashboard' && <Prod_DashboardView onAutoReschedule={() => openProdAction('reschedule')} onTransferLine={() => openProdAction('transfer')} workOrders={orders} demands={productionDemands} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')} canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')} canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')} canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
+	                  {activeTab === 'dashboard' && <Prod_DashboardView workOrders={orders} demands={productionDemands} error={formalError} loading={!formalSnapshot && !formalError} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')} canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')} canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')} canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
                   {activeTab === 'mrp' && <Prod_MrpView mrp={mrp} onIssueMrp={handleIssueMrp} onRunGlobalMrp={handleGlobalMrp} onCreatePurchase={handleCreatePurchase} showToast={showToast} />}
-                  {activeTab === 'aps' && <Prod_ApsView orders={orders} equipments={equipments} onUpdateOrder={handleUpdateOrder} showToast={showToast} />}
+                  {activeTab === 'aps' && <ProductionScheduleView orders={orders} equipments={equipments} />}
                   {activeTab === 'orders' && <Prod_OrdersView orders={orders} onCheckKit={handleCheckKit} onDispatch={handleDispatch} onUpdateOrder={handleUpdateOrder} onDeleteOrder={handleDeleteOrder} showToast={showToast} />}
                   {activeTab === 'execution' && <Prod_ExecutionView jobs={jobs} onStartJob={handleStartJob} onReportJob={handleReportJob} onSendFqc={handleSendFqc} onMaterialReq={handleMaterialReq} onReturnMaterial={handleReturnMaterial} onSendOutsource={handleSendOutsource} onReceiveOutsource={handleReceiveOutsource} onReworkOrder={handleReworkOrder} showToast={showToast} />}
 	                  {activeTab === 'qc_cost' && <Prod_QcView qc={qc} orders={orders} onCloseOrder={handleCloseOrder} onQcComplete={handleQcComplete} onConfirmInbound={handleConfirmInbound} onDisposition={handleQualityDisposition} showToast={showToast} />}
 	                  {activeTab === 'qc_cost' && (
 	                      <div className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-	                          <CostAccumulationPanel workOrderNo={jobs.find(j => j.status === 'COMPLETED')?.orderId || 'WO-2026-001'} />
+	                          <CostAccumulationPanel apiContext={formalCtx} workOrders={orders.map(order => ({ id: order.apiId, code: order.id }))} />
 	                      </div>
 	                  )}
 	                  {activeTab === 'equipment' && <Prod_EquipmentView productionLines={productionLines} equipments={equipments} onAddEq={handleAddEq} onEditEq={handleEditEq} onDeleteEq={handleDeleteEq} onFixEquipment={handleFixEquipment} onSimulateFailure={handleSimulateFailure} />}
@@ -7405,15 +6459,15 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     setActionReview({
       kind: 'quickInventory',
       title: '下发快速盘点任务',
-      desc: '系统会生成盘点任务，并同步到相关库管 PDA。',
+      desc: '请在正式盘点流程选择授权仓库和物料，当前未下发任务。',
       icon: ScanLine,
       tone: 'blue',
       confirmText: '下发盘点',
       details: [
-        { label: '盘点范围', value: '全部仓库 / 重点预警物料' },
-        { label: '执行终端', value: '库管 PDA' },
-        { label: '重点物料', value: 'RM202 12层空PCB板' },
-        { label: '盘点结果', value: '自动回写库存健康度' }
+        { label: '盘点范围', value: '未选择' },
+        { label: '执行终端', value: '尚未获取配置' },
+        { label: '重点物料', value: '未选择' },
+        { label: '盘点结果', value: '尚未获取' }
       ]
     });
   };
@@ -7561,29 +6615,12 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     });
   };
 
-  const handleProcessDeadStock = () => {
-    setActionReview({
-      kind: 'deadStock',
-      title: '生成呆滞物料调拨单',
-      desc: '系统会创建一张调拨出库任务，并把 FG001 从呆滞状态转入去化流程。',
-      icon: ArrowRightLeft,
-      tone: 'amber',
-      confirmText: '生成调拨单',
-      details: [
-        { label: '产品', value: 'FG001 工业控制器顶配版' },
-        { label: '建议数量', value: '120 台' },
-        { label: '调出仓', value: '成品主仓' },
-        { label: '目标流程', value: '去化中转 / 销售协同' }
-      ]
-    });
-  };
-
   const handleTransferStock = (row) => {
     setActionReview({
       kind: 'transferStock',
       record: row,
       title: '确认库存调拨',
-      desc: '调拨后会更新该产品的仓库与库位信息。',
+      desc: '尚未选择正式调入仓库与库位，未生成调拨单。',
       icon: ArrowRightLeft,
       tone: 'amber',
       confirmText: '确认调拨',
@@ -7591,7 +6628,7 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
         { label: '产品', value: `${row.id} ${row.name}` },
         { label: '当前仓库', value: row.warehouse },
         { label: '当前库位', value: row.location },
-        { label: '调入位置', value: '去化中转仓 / T-01-01' }
+        { label: '调入位置', value: '未选择' }
       ]
     });
   };
@@ -7622,7 +6659,11 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 
   const openInventoryPurchaseRequest = (row) => {
     const material = formalInventory.masterData?.materials.find((item) => item.id === row.id);
-    const procurementType = row.procurementType || material?.procurementType || '外购';
+    const procurementType = row.procurementType || material?.procurementType;
+    if (!procurementType) {
+      showToast('未提交：物料尚未配置采购策略，请先完善主数据', 'warning');
+      return;
+    }
     if (procurementType === '自制') {
       showToast('自制物料不能发起采购，请改为发起生产申请', 'warning');
       return;
@@ -7648,40 +6689,6 @@ const InventoryManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       quantityFields: [{ id: 'requestedQty', label: '申请采购数量', value: suggestedQty, uom: row.unit }],
       dateFields: [{ id: 'requiredDate', label: '需求日期', value: requiredDate, min: new Date().toISOString().slice(0, 10) }],
       note: '相同物料、仓库和库存快照存在未终结采购申请时，将定位原 PR。',
-    });
-  };
-
-  const handleCreatePurchaseRequest = () => {
-    setActionReview({
-      kind: 'createPurchaseRequest',
-      title: '生成采购申请',
-      desc: '系统会把低库存预警转成采购申请，并在入库流水中生成待到货记录。',
-      icon: FilePlus,
-      tone: 'rose',
-      confirmText: '生成 PR',
-      details: [
-        { label: '物料', value: 'RM202 12层空PCB板' },
-        { label: '建议数量', value: '500 PCS' },
-        { label: '需求来源', value: 'AI安全库存预警' },
-        { label: '预计到货', value: '2026-07-06 09:00' }
-      ]
-    });
-  };
-
-  const handlePushSalesTask = () => {
-    setActionReview({
-      kind: 'pushSalesTask',
-      title: '推送销售去化任务',
-      desc: '系统会把 FG001 标记为去化中，并向销售管理模块推送处理任务。',
-      icon: Send,
-      tone: 'blue',
-      confirmText: '推送任务',
-      details: [
-        { label: '物料', value: 'FG001 工业控制器顶配版' },
-        { label: '库存风险', value: '90天低出库率' },
-        { label: '建议动作', value: '降价促销 / 客户定向推荐' },
-        { label: '接收部门', value: '销售部' }
-      ]
     });
   };
 
@@ -8196,11 +7203,11 @@ const Procurement_SupplierCreateModal = ({ submitting, onClose, onSubmit }: any)
               </div>
               <div>
                 <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">供应商名称 <span className="text-rose-500">*</span></label>
-                <input value={draft.name} onChange={(event) => updateField('name', event.target.value)} placeholder="苏州芯联电子有限公司" maxLength={200} className={inputClass} />
+                <input value={draft.name} onChange={(event) => updateField('name', event.target.value)} placeholder="请输入供应商名称" maxLength={200} className={inputClass} />
               </div>
               <div>
                 <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">供应商简称</label>
-                <input value={draft.shortName} onChange={(event) => updateField('shortName', event.target.value)} placeholder="苏州芯联电子" className={inputClass} />
+                <input value={draft.shortName} onChange={(event) => updateField('shortName', event.target.value)} placeholder="请输入供应商简称" className={inputClass} />
               </div>
               <div>
                 <label className="block text-[13px] text-slate-600 mb-1.5 font-medium">系统评级</label>
@@ -8273,13 +7280,14 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
   const [formalSuppliers, setFormalSuppliers] = useState([]);
   const [approvalSupplierId, setApprovalSupplierId] = useState('');
   const [procurementError, setProcurementError] = useState('');
+  const [procurementLoading, setProcurementLoading] = useState(true);
   const procurementRevision = useRef(0);
   const procurementIdentity = useRef('');
   const procurementScope = `${currentTenant?.id}:${currentUser?.accessToken || ''}`;
   procurementIdentity.current = procurementScope;
   const [supplierCreateOpen, setSupplierCreateOpen] = useState(false);
   const [supplierCreating, setSupplierCreating] = useState(false);
-  const formalContext = currentUser?.accessToken ? { tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken } : null;
+  const formalContext = currentUser?.accessToken ? { tenantId: currentTenant?.id || '', accessToken: currentUser.accessToken } : null;
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -8288,9 +7296,15 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
 
   const refreshProcurement = async () => {
     const revision = ++procurementRevision.current;
-    if (!formalContext) { setFormalRequests([]); setFormalOrders([]); setFormalSuppliers([]); return; }
+    setProcurementLoading(true);
+    setFormalRequests([]); setFormalOrders([]); setFormalSuppliers([]);
+    if (!formalContext) { setProcurementError('请登录后加载采购数据'); setProcurementLoading(false); return; }
     try {
       const [requests, orders, suppliers] = await Promise.all([procurementApi.listRequests(formalContext), procurementApi.listOrders(formalContext), procurementApi.listSuppliers(formalContext)]);
+      [requests, orders, suppliers].forEach(value => {
+        const page = requireApiPage<unknown>(value);
+        if (page.items.length !== page.total) throw new Error('采购列表不完整，无法统计，请重试');
+      });
       if (procurementIdentity.current !== procurementScope || revision !== procurementRevision.current) return;
       setFormalRequests(Array.isArray(requests.items) ? requests.items : []);
       setFormalOrders(Array.isArray(orders.items) ? orders.items : []);
@@ -8301,6 +7315,8 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
       setFormalRequests([]); setFormalOrders([]); setFormalSuppliers([]);
       setProcurementError(error.message || '采购数据加载失败');
       throw error;
+    } finally {
+      if (procurementIdentity.current === procurementScope && revision === procurementRevision.current) setProcurementLoading(false);
     }
   };
 
@@ -8374,60 +7390,9 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
     onTimeRate: '-',
     qualityRate: '-',
     leadTime: `${supplier.leadTimeDays ?? '-'}天`,
-    status: supplier.status === 'enabled' ? '合格供应商' : supplier.status === 'disabled' ? '已停用' : '黑名单',
+    status: supplier.status === 'enabled' ? '合格供应商' : supplier.status === 'disabled' ? '已停用' : supplier.status === 'blacklisted' ? '黑名单' : '-',
     formalSupplier: supplier
   }));
-
-  const openProcAction = (kind) => {
-    const configs = {
-      adopt: {
-        kind,
-        title: '采纳 AI 寻源并生成采购订单',
-        desc: '系统会把 PR-260705-01 转为正式采购订单，并跳转到采购订单页核对。',
-        icon: ShoppingCart,
-        tone: 'blue',
-        confirmText: '生成 PO 并跳转',
-        details: [
-          { label: '采购申请', value: 'PR-260705-01' },
-          { label: '推荐供应商', value: '深圳华芯科技' },
-          { label: '采购物料', value: 'AI算力芯片 RM201' },
-          { label: '建议数量', value: '1000 PCS' }
-        ],
-        steps: ['锁定推荐供应商', '生成采购订单草稿', '跳转至采购订单台账']
-      },
-      quote: {
-        kind,
-        title: '发起备选供应商询价',
-        desc: '系统会生成备选询价任务，并跳转到供应商管理页查看候选供应商。',
-        icon: Store,
-        tone: 'rose',
-        confirmText: '发起询价并跳转',
-        details: [
-          { label: '风险订单', value: 'PO-260706-001' },
-          { label: '备选供应商', value: '苏州芯联电子' },
-          { label: '询价数量', value: '300 PCS' },
-          { label: '目标', value: '降低停线风险' }
-        ],
-        steps: ['创建备选询价单', '通知采购员跟进', '跳转到供应商管理']
-      },
-      notify: {
-        kind,
-        title: '通知生产计划调整',
-        desc: '系统会把采购交期风险推送给生产计划员，并跳转回采购监控舱保留风险上下文。',
-        icon: Send,
-        tone: 'amber',
-        confirmText: '发送通知',
-        details: [
-          { label: '风险来源', value: '深圳华芯科技交付波动' },
-          { label: '影响物料', value: 'AI算力芯片 RM201' },
-          { label: '接收角色', value: '生产计划员 / MPS负责人' },
-          { label: '建议动作', value: '预留替代供应窗口' }
-        ],
-        steps: ['生成风险通知', '推送生产计划', '保留采购监控舱上下文']
-      }
-    };
-    setActionModal(configs[kind]);
-  };
 
   const openProcRowAction = (kind, row) => {
     const configs = {
@@ -8692,10 +7657,10 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
             {activeTab === 'dashboard' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                      <StatCard title="待处理采购申请" value={String(formalRequests.filter(r => r.status === 'PENDING_APPROVAL').length)} unit="单" icon={FilePlus} trend="up" trendValue="当前待处理" theme="blue" />
-                      <StatCard title="本月累计采购额" value={String(Math.round(formalOrders.reduce((s,o) => s + Number(o.totalAmount || 0), 0) / 10000 * 10) / 10)} unit="万元" icon={BadgeDollarSign} trend="flat" trendValue="订单总额" theme="purple" />
+                      <StatCard title="待处理采购申请" value={procurementLoading || procurementError ? '-' : String(formalRequests.filter(r => r.status === 'PENDING_APPROVAL').length)} unit="单" icon={FilePlus} trend="flat" trendValue="当前待处理" theme="blue" />
+                      <StatCard title="本月累计采购额" value="-" unit="万元" icon={BadgeDollarSign} trend="flat" trendValue="尚未获取本月统计" theme="purple" />
                       <StatCard title="整体供应商准交率" value="-" unit="%" icon={CheckCircle2} trend="flat" trendValue="待后端统计" theme="emerald" />
-                      <StatCard title="异常交付订单" value={String(formalOrders.filter(o => o.status === 'PARTIALLY_RECEIVED').length)} unit="单" icon={AlertTriangle} trend="flat" trendValue="部分收货中" theme="red" />
+                      <StatCard title="异常交付订单" value="-" unit="单" icon={AlertTriangle} trend="flat" trendValue="尚未获取异常统计" theme="red" />
                     </div>
 
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -8731,13 +7696,14 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                     <MonitorTrendChart
                       trend={{
                         title: 'PR → PO → 到货闭环趋势',
-                        metric: formalOrders.length > 0 ? Math.round(formalOrders.filter(o => o.status === 'RECEIVED').length / formalOrders.length * 100) + '%' : '-',
+                        metric: '-',
                         metricLabel: '准交率',
                         metricColor: '#10b981',
                         ringColor: '#d1fae5',
                         insightTitle: '采购闭环分析',
-                        insight: 'PR 转 PO 效率稳定提升，但高价值芯片类订单仍受供应商产能和物流波动影响。',
-                        recommendation: '对高金额 PR 启用优先寻源策略，并为核心芯片建立备选供应商询价池，降低单点晚交风险。',
+                        insight: '展示采购准交率与交付异常的正式历史统计。',
+                        error: procurementError,
+                        onRetry: refreshProcurement,
                         chartTitle: '近半年采购准交率与异常订单趋势',
                         legend: [
                           { label: '供应商准交率', color: '#2563eb' },
@@ -8747,7 +7713,6 @@ const ProcurementManagement = ({ businessFlow, onBusinessFlowAction, onNavigateM
                         secondary: '#f43f5e',
                         yAxis: [100, 95, 90, 85, 80],
                         gradientId: 'procTrendGradient',
-                        forecastPath: 'M 780 55 C 845 80, 895 105, 950 96',
                       }}
                     />
 
@@ -8990,9 +7955,10 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
     const [arSourceOrder, setArSourceOrder] = useState('');
     const [apSourceOrderInput, setApSourceOrderInput] = useState('');
     const [apSourceOrder, setApSourceOrder] = useState('');
-    const formatCurrency = (val) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(val);
+    const formatCurrency = (val) => val == null || val === '' || !Number.isFinite(Number(val))
+      ? '-' : new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(Number(val));
 
-    const finCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || 'TENANT-SHWS', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+    const finCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || '', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
 
     const mapApiAr = (item) => ({
       id: item.docNo, customer: item.customerName, soId: item.sourceDocNo || item.sourceId,
@@ -9017,7 +7983,8 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
       status: item.status === 'done' ? '已核算' : item.status === 'void' ? '已作废' : '核算中'
     });
 
-    const toWan = (value?: string) => ((Number.parseFloat(value || '0') || 0) / 10000).toFixed(1);
+    const toWan = (value?: string) => value == null || value === '' || !Number.isFinite(Number(value))
+      ? '-' : (Number(value) / 10000).toFixed(1);
 
     useEffect(() => {
       if (!finCtx) return;
@@ -9096,7 +8063,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           tone: 'blue',
           confirmText: '打开应收账款',
           details: [
-            { label: '当前未结应收', value: formatCurrency((Number.parseFloat(apiDashboard?.totalReceivable || '0') || 0)) },
+            { label: '当前未结应收', value: formatCurrency(apiDashboard?.totalReceivable) },
             { label: '待结算笔数', value: String(apiDashboard?.pendingSettlementCount ?? '-') }
           ],
           steps: ['筛选源销售订单', '核对未结余额', '登记并确认收款']
@@ -9109,7 +8076,7 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
           tone: 'amber',
           confirmText: '打开应付账款',
           details: [
-            { label: '当前未结应付', value: formatCurrency((Number.parseFloat(apiDashboard?.totalPayable || '0') || 0)) },
+            { label: '当前未结应付', value: formatCurrency(apiDashboard?.totalPayable) },
             { label: '待结算笔数', value: String(apiDashboard?.pendingSettlementCount ?? '-') }
           ]
         },
@@ -9358,10 +8325,10 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                               {[
-                                  { label: '应收总额', value: apiDashboard?.totalReceivable ? Number.parseFloat(apiDashboard.totalReceivable) : 0, tone: 'text-blue-600' },
-                                  { label: '已收金额', value: apiDashboard?.totalReceived ? Number.parseFloat(apiDashboard.totalReceived) : 0, tone: 'text-emerald-600' },
-                                  { label: '应付总额', value: apiDashboard?.totalPayable ? Number.parseFloat(apiDashboard.totalPayable) : 0, tone: 'text-purple-600' },
-                                  { label: '已付金额', value: apiDashboard?.totalPaid ? Number.parseFloat(apiDashboard.totalPaid) : 0, tone: 'text-rose-600' },
+                                  { label: '应收总额', value: apiDashboard?.totalReceivable, tone: 'text-blue-600' },
+                                  { label: '已收金额', value: apiDashboard?.totalReceived, tone: 'text-emerald-600' },
+                                  { label: '应付总额', value: apiDashboard?.totalPayable, tone: 'text-purple-600' },
+                                  { label: '已付金额', value: apiDashboard?.totalPaid, tone: 'text-rose-600' },
                               ].map(item => (
                                   <div key={item.label} className="border border-slate-100 bg-slate-50 rounded-xl p-5">
                                       <div className="text-[12px] font-bold text-slate-500 mb-2">{item.label}</div>
@@ -9370,9 +8337,9 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
                               ))}
                           </div>
                           <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">应收单据</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.receivableCount ?? 0} 笔</div></div>
-                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">应付单据</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.payableCount ?? 0} 笔</div></div>
-                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">待结算</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.pendingSettlementCount ?? 0} 笔</div></div>
+                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">应收单据</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.receivableCount ?? '-'} 笔</div></div>
+                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">应付单据</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.payableCount ?? '-'} 笔</div></div>
+                              <div className="border border-slate-100 rounded-xl p-4"><div className="text-[12px] text-slate-500 font-bold">待结算</div><div className="text-[18px] font-bold text-slate-800 mt-1">{apiDashboard?.pendingSettlementCount ?? '-'} 笔</div></div>
                           </div>
                       </div>
                   </div>
@@ -9443,6 +8410,14 @@ const FinancialManagement = ({ businessFlow, onBusinessFlowAction, onNavigateMod
 // ==========================================
 // 6. 人员管理模块 (PersonnelManagement)
 // ==========================================
+const loadPersonnelFacts = async (context) => {
+  const [employees, skills] = await Promise.all([
+    loadApiCollection((page, pageSize) => personnelApi.listEmployees(context, { page, pageSize })),
+    loadApiCollection((page, pageSize) => personnelApi.listSkills(context, { page, pageSize })),
+  ]);
+  return { employees, skills };
+};
+
 const PersonnelManagement = ({ currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [actionModal, setActionModal] = useState(null);
@@ -9450,20 +8425,16 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
 
   // Phase 9: 人员管理 API 集成
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
-  const [employees, setEmployees] = useState([]);
-  const [attendances, setAttendances] = useState([]);
-  const [skills, setSkills] = useState([]);
+  const personnelFacts = useApiResource(formalContext, loadPersonnelFacts);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeeStatus, setEmployeeStatus] = useState('');
+  const [employeeDepartment, setEmployeeDepartment] = useState('');
 
   const mapBackendEmployee = (emp) => ({
     id: emp.employeeNo, name: emp.name, dept: emp.department, role: emp.position,
-    phone: emp.phone || '138****' + (emp.employeeNo || '').slice(-4),
-    status: emp.status === 'active' ? '在职' : emp.status === 'transferring' ? '调动中' : emp.status === 'leave' ? '休假' : emp.status === 'resigned' ? '离职' : '在职',
+    phone: emp.phone || '-',
+    status: ({ active: '在职', transferring: '调动中', leave: '休假', resigned: '离职' })[emp.status] || '-',
     _backend: emp,
-  });
-  const mapBackendAttendance = (att) => ({
-    id: att.recordNo, empName: att.employeeName, date: att.recordDate,
-    shift: att.shift, clockIn: att.clockIn || '-', clockOut: att.clockOut || '-',
-    status: att.status, _backend: att,
   });
   const mapBackendSkill = (sk) => ({
     id: sk.certNo, empName: sk.employeeName, skillName: sk.skillName,
@@ -9471,62 +8442,18 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
     level: sk.level, status: sk.status, _backend: sk,
   });
 
-  const refreshPersonnel = async () => {
-    if (!formalContext) return;
-    try {
-      const [empRes, attRes, skillRes] = await Promise.all([
-        personnelApi.listEmployees(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
-        personnelApi.listAttendances(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
-        personnelApi.listSkills(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
-      ]);
-      setEmployees(empRes?.items?.map(mapBackendEmployee) || []);
-      setAttendances(attRes?.items?.map(mapBackendAttendance) || []);
-      setSkills(skillRes?.items?.map(mapBackendSkill) || []);
-    } catch {
-      setEmployees([]);
-      setAttendances([]);
-      setSkills([]);
-    }
-  };
-  useEffect(() => { refreshPersonnel(); }, [formalContext?.tenantId, formalContext?.accessToken]);
+  const employees = (personnelFacts.data?.employees ?? []).map(mapBackendEmployee);
+  const skills = (personnelFacts.data?.skills ?? []).map(mapBackendSkill);
+  const filteredEmployees = employees.filter(row =>
+    (!employeeStatus || row.status === employeeStatus)
+    && (!employeeDepartment || row.dept === employeeDepartment)
+    && [row.id, row.name, row.dept].some(value => String(value || '').toLowerCase().includes(employeeSearch.trim().toLowerCase())),
+  );
+  const personnelCount = (value) => personnelFacts.data ? String(value) : '-';
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 2600);
-  };
-
-  const openHrAction = (kind) => {
-    const configs = {
-      rest: {
-        kind,
-        title: '生成强制调休与 HR 介入任务',
-        desc: '系统会把高离职风险预警转为 HR 待办，并跳转到考勤与排班页处理。',
-        icon: ShieldAlert,
-        tone: 'rose',
-        confirmText: '生成并跳转排班',
-        details: [
-          { label: '员工', value: '王建国' },
-          { label: '部门', value: '总装车间' },
-          { label: '近30天加班', value: '85 小时' },
-          { label: '建议动作', value: '安排调休 / HR 访谈' }
-        ]
-      },
-      skill: {
-        kind,
-        title: '生成资质复训与替班任务',
-        desc: '系统会跳转到资质技能页，标记临期证书并准备替班建议。',
-        icon: Award,
-        tone: 'amber',
-        confirmText: '跳转资质技能',
-        details: [
-          { label: '临期人员', value: '12 人' },
-          { label: '影响岗位', value: '焊接 / 电气调试' },
-          { label: '风险窗口', value: '未来 14 天' },
-          { label: '处理方式', value: '复训提醒 + 同技能替班' }
-        ]
-      }
-    };
-    setActionModal(configs[kind]);
   };
 
   const openHrRowAction = (kind, row) => {
@@ -9547,64 +8474,6 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
           { label: '当前状态', value: row.status }
         ]
       },
-      employeeEdit: {
-        kind,
-        title: '编辑员工基础信息',
-        desc: `${row.name} 的员工档案为基础资料，可维护部门、岗位、联系方式和在职状态。`,
-        icon: Edit2,
-        tone: 'purple',
-        confirmText: '保存档案信息',
-        details: [
-          { label: '工号', value: row.id },
-          { label: '当前状态', value: row.status }
-        ],
-        fields: [
-          { label: '姓名', value: row.name },
-          { label: '所属部门', value: row.dept, options: ['总装车间', '机加工车间', '质量部', '采购部', '仓储部', '财务部'] },
-          { label: '岗位', value: row.role, options: ['高级装配工', '装配工', '质检员', '仓库管理员', '采购专员', '生产计划员'] },
-          { label: '联系电话', value: row.phone },
-          { label: '在职状态', value: row.status, options: ['在职', '试用', '休假', '停用', '离职办理中'] },
-          { label: '维护说明', type: 'textarea', wide: true, value: '更新员工基础信息后，同步人员档案、排班与权限范围。' },
-        ],
-        checks: ['同步员工档案表', '更新岗位与排班引用', '写入人员维护日志']
-      },
-      attendanceDetail: {
-        kind,
-        title: '查看考勤明细',
-        desc: `查看 ${row.empName} 在 ${row.date} 的打卡与班次信息。`,
-        icon: CalendarDays,
-        tone: 'blue',
-        confirmText: '已查看',
-        details: [
-          { label: '员工', value: row.empName },
-          { label: '日期', value: row.date },
-          { label: '班次', value: row.shift },
-          { label: '打卡时间', value: `${row.clockIn} - ${row.clockOut}` }
-        ]
-      },
-      attendanceAdjust: {
-        kind,
-        title: '调整排班',
-        desc: `为 ${row.empName} 维护 ${row.date} 的班次安排，保存后同步给班组长确认。`,
-        icon: CalendarRange,
-        tone: 'amber',
-        confirmText: '保存排班调整',
-        details: [
-          { label: '员工', value: row.empName },
-          { label: '原班次', value: row.shift },
-          { label: '日期', value: row.date },
-          { label: '当前考勤', value: row.status }
-        ],
-        fields: [
-          { label: '调整后班次', value: row.shift === '早班' ? '中班' : '早班', options: ['早班', '中班', '晚班', '夜班', '休息', '调休'] },
-          { label: '生效日期', type: 'date', value: row.date },
-          { label: '调整原因', value: '人员调配', options: ['人员调配', '调休补班', '临时请假', '加班支援', '资质替岗', '其它'] },
-          { label: '班组长', value: '李班长', options: ['李班长', '赵班长', '陈主管', 'HR专员'] },
-          { label: '交接说明', type: 'textarea', wide: true, value: '请确认交接工序、设备权限和当天考勤口径。' },
-        ],
-        checks: ['通知班组长确认', '同步考勤台账', '更新排班看板'],
-        note: '原来的三步流程只是系统后台动作提示，不应该占据主要操作区域；当前已改为可维护班次的表单，保存后再自动触发通知与同步。'
-      },
       skillView: {
         kind,
         title: '查看资质证书',
@@ -9618,52 +8487,25 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
           { label: '资质名称', value: row.skillName },
           { label: '到期日期', value: row.expiryDate }
         ],
-        attachments: [
-          {
-            name: `${row.skillName}扫描件.pdf`,
-            meta: `证书附件 · PDF · 已归档 · ${row.empName}`
-          }
-        ]
+        note: '尚未获取可下载的证书附件。'
       },
-      skillRenew: {
-        kind,
-        title: '发起资质复训',
-        desc: `为 ${row.empName} 发起 ${row.skillName} 的复训与证书续期提醒。`,
-        icon: Send,
-        tone: 'emerald',
-        confirmText: '发起复训',
-        details: [
-          { label: '证书编号', value: row.id },
-          { label: '持证人', value: row.empName },
-          { label: '资质等级', value: row.level },
-          { label: '当前状态', value: row.status }
-        ]
-      }
     };
     setActionModal(configs[kind]);
   };
 
   const confirmHrAction = () => {
     if (!actionModal) return;
-    if (actionModal.kind === 'rest') {
-      setActiveTab('attendance');
-      showCenterToast('调休与 HR 介入任务已生成，已跳转排班页', 'warning');
-    }
-    if (actionModal.kind === 'skill') {
-      setActiveTab('skills');
-      showCenterToast('资质复训任务已生成，已跳转资质技能页', 'success');
-    }
     if (actionModal.kind === 'employeeView' || actionModal.kind === 'attendanceDetail' || actionModal.kind === 'skillView') {
       showCenterToast('人员明细已打开', 'success');
     }
     if (actionModal.kind === 'employeeEdit') {
-      showCenterToast('员工基础信息已保存', 'success');
+      showCenterToast('未保存：员工档案当前仅支持查询', 'warning');
     }
     if (actionModal.kind === 'attendanceAdjust') {
-      showCenterToast('排班调整已保存并通知班组长', 'success');
+      showCenterToast('未保存：考勤与排班暂不开放', 'warning');
     }
     if (actionModal.kind === 'skillRenew') {
-      showCenterToast('资质复训提醒已发起', 'success');
+      showCenterToast('未发起：尚未接入复训任务接口', 'warning');
     }
     setActionModal(null);
   };
@@ -9691,48 +8533,44 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
           <button onClick={() => setActiveTab('skills')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'skills' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Award size={14} className="mr-1.5" /> 资质技能</button>
         </div>
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
+            {(personnelFacts.loading || personnelFacts.error) && <ApiDataState loading={personnelFacts.loading} error={personnelFacts.error} onRetry={personnelFacts.reload} />}
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
                   metrics={[
-                    { title: '在职员工总数', value: String(employees.length), unit: '人', icon: Users, trend: 'flat', trendValue: '当前在职', theme: 'blue' },
-                    { title: '在职比例', value: employees.length > 0 ? Math.round(employees.filter(e => e.status === '在职').length / employees.length * 100) + '' : '-', unit: '%', icon: UserCheck, trend: 'flat', trendValue: '在职/总数', theme: 'emerald' },
-                    { title: '资质证书数', value: String(skills.length), unit: '份', icon: Award, trend: 'flat', trendValue: '已登记证书', theme: 'amber' },
-                    { title: '涉及部门数', value: String(new Set(employees.map(e => e.dept)).size), unit: '个', icon: Building, trend: 'flat', trendValue: '涉及部门', theme: 'red' },
+                    { title: '在职员工总数', value: personnelCount(employees.filter(e => e.status === '在职').length), unit: '人', icon: Users, trend: 'flat', trendValue: '当前在职', theme: 'blue' },
+                    { title: '在职比例', value: personnelFacts.data && employees.length > 0 ? String(Math.round(employees.filter(e => e.status === '在职').length / employees.length * 100)) : '-', unit: '%', icon: UserCheck, trend: 'flat', trendValue: '在职/总数', theme: 'emerald' },
+                    { title: '资质证书数', value: personnelCount(skills.length), unit: '份', icon: Award, trend: 'flat', trendValue: '已登记证书', theme: 'amber' },
+                    { title: '涉及部门数', value: personnelCount(new Set(employees.map(e => e.dept).filter(Boolean)).size), unit: '个', icon: Building, trend: 'flat', trendValue: '已登记部门', theme: 'red' },
                   ]}
                   aiCards={[
                     {
                       title: 'AI 离职风险预警',
                       icon: ShieldAlert,
                       tone: 'rose',
-                      subject: '预警对象：总装车间 - 王建国',
-                      badge: '极高离职风险',
-                      lines: [
-                        <><span className="font-bold text-slate-800">AI 归因：</span>近 30 天累计加班 85 小时，且不良率环比上升。建议立即安排调休并由 HR 介入。</>,
-                      ],
-                      actions: <button onClick={() => openHrAction('rest')} className="ml-auto bg-rose-500 hover:bg-rose-600 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm">生成调休任务</button>
+                      subject: '人员稳定性风险分析',
+                      badge: personnelFacts.error ? '数据加载失败' : personnelFacts.loading ? '加载中' : employees.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
+                      lines: ['关注人员稳定性变化与岗位风险。当前暂无可展示的分析结果。'],
                     },
                     {
                       title: 'AI 资质临期预警',
                       icon: Award,
                       tone: 'amber',
-                      subject: '特种岗位资质：12 人临期',
-                      badge: '需复核排班',
-                      lines: [
-                        <><span className="font-bold text-slate-800">风险识别：</span>检测到 2 名员工的关键岗位证书即将到期，若未及时复训将影响工序合规。</>,
-                        <><span className="font-bold text-slate-800">AI 建议：</span>自动生成证书复训提醒，并通知直接主管跟进。</>,
-                      ],
-                      actions: <button onClick={() => openHrAction('skill')} className="ml-auto bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm">生成复训与替班</button>
+                      subject: '岗位证书有效期与资质风险',
+                      badge: personnelFacts.error ? '数据加载失败' : personnelFacts.loading ? '加载中' : skills.length ? '尚未获取 AI 分析结果' : '暂无 AI 预警',
+                      lines: ['展示正式资质风险分析；证书明细可在资质技能中查看。'],
                     },
                   ]}
                   trend={{
                     title: '人员资质与稳定性趋势',
-                    metric: '8人',
+                    metric: '-',
                     metricLabel: '高风险',
                     metricColor: '#f43f5e',
                     ringColor: '#ffe4e6',
                     insightTitle: '人员稳定性洞察',
-                    insight: '资质临期数量上升，需关注关键岗位的证书续期和人员稳定性。',
-                    recommendation: '优先跟进资质临期员工的复训安排，确保证书在到期前完成更新。',
+                    insight: '展示人员资质与稳定性历史序列。',
+                    loading: personnelFacts.loading,
+                    error: personnelFacts.error,
+                    onRetry: personnelFacts.reload,
                     chartTitle: '近半年人员稳定性趋势',
                     legend: [
                       { label: '人员稳定性', color: '#2563eb' },
@@ -9742,7 +8580,6 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                     secondary: '#f43f5e',
                     yAxis: [100, 95, 90, 85, 80],
                     gradientId: 'hrTrendGradient',
-                    forecastPath: 'M 780 42 C 840 58, 895 82, 950 78',
                   }}
                 />
             )}
@@ -9754,36 +8591,17 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
 
                         </div>
                         <div className="flex gap-3 items-center">
-                            <div className="relative flex-1 max-w-xs"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/><input placeholder="搜索工号、姓名、部门..." className="w-full h-8 pl-8 pr-3 rounded-lg border border-slate-200 text-[12px] outline-none focus:border-blue-400"/></div>
-                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部状态</option><option>在职</option><option>离职</option><option>休假</option></select>
-                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部部门</option><option>总装车间</option><option>计划物流部</option></select>
+                            <div className="relative flex-1 max-w-xs"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/><input value={employeeSearch} onChange={event => setEmployeeSearch(event.target.value)} placeholder="搜索工号、姓名、部门..." className="w-full h-8 pl-8 pr-3 rounded-lg border border-slate-200 text-[12px] outline-none focus:border-blue-400"/></div>
+                            <select aria-label="员工状态" value={employeeStatus} onChange={event => setEmployeeStatus(event.target.value)} className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部状态</option>{['在职', '离职', '休假', '调动中'].map(status => <option key={status}>{status}</option>)}</select>
+                            <select aria-label="员工部门" value={employeeDepartment} onChange={event => setEmployeeDepartment(event.target.value)} className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部部门</option>{[...new Set(employees.map(employee => employee.dept).filter(Boolean))].map(department => <option key={department}>{department}</option>)}</select>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">工号</th><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">部门</th><th className="px-6 py-4 font-bold">岗位</th><th className="px-6 py-4 font-bold">入职日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">{employees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept}</td><td className="px-6 py-4 font-medium text-slate-600">{r.role}</td><td className="px-6 py-4 text-slate-500 font-mono text-[12px]">{r._backend?.hireDate || '-'}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>在职</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /><TableActionButton icon={Edit2} label="维护" tone="purple" onClick={() => openHrRowAction('employeeEdit', r)} /></TableActionGroup></td></tr>)}</tbody></table>
-                    </div><Pagination total={employees.length} page={1} limit={10} />
-                </div>
-            )}
-            {false && activeTab === 'attendance' && ( /* 考勤与排班暂不露出 */
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in duration-300">
-                    <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><CalendarDays className="w-4.5 h-4.5 text-blue-600" /> 考勤与排班</h4>
-                            <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-medium hover:bg-slate-50" onClick={() => showCenterToast('考勤导出功能开发中')}><Download size={14}/>导出考勤</button>
-                        </div>
-                        <div className="flex gap-3 items-center">
-                            <input type="date" className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400" defaultValue="2026-10-01"/>
-                            <span className="text-slate-400 text-[12px]">至</span>
-                            <input type="date" className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400" defaultValue="2026-10-31"/>
-                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部员工</option><option>张工</option><option>李敏</option><option>王强</option></select>
-                            <select className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] outline-none focus:border-blue-400"><option value="">全部班次</option><option>白班</option><option>夜班</option></select>
-                        </div>
+                        <tbody className="divide-y divide-slate-100">{filteredEmployees.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.name}</td><td className="px-6 py-4 font-medium text-slate-700">{r.dept || '-'}</td><td className="px-6 py-4 font-medium text-slate-600">{r.role || '-'}</td><td className="px-6 py-4 text-slate-500 font-mono text-[12px]">{r._backend?.hireDate || '-'}</td><td className="px-6 py-4">{r.status}</td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="档案" onClick={() => openHrRowAction('employeeView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
                     </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">姓名</th><th className="px-6 py-4 font-bold">日期</th><th className="px-6 py-4 font-bold">班次</th><th className="px-6 py-4 font-bold font-mono">打卡时间</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">{attendances.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.date}</td><td className="px-6 py-4 font-medium text-slate-600">{r.shift}</td><td className="px-6 py-4 font-mono font-bold text-slate-800">{r.clockIn} - {r.clockOut}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="明细" onClick={() => openHrRowAction('attendanceDetail', r)} /><TableActionButton icon={CalendarRange} label="调班" tone="amber" onClick={() => openHrRowAction('attendanceAdjust', r)} /></TableActionGroup></td></tr>)}</tbody></table>
-                    </div><Pagination total={attendances.length} page={1} limit={10} />
+                    {!personnelFacts.loading && !personnelFacts.error && filteredEmployees.length === 0 && <ApiDataState empty="没有符合条件的员工" />}
+                    <div className="px-6 py-3 text-[12px] text-slate-500">共 {filteredEmployees.length} 条</div>
                 </div>
             )}
             {activeTab === 'skills' && (
@@ -9792,7 +8610,9 @@ const PersonnelManagement = ({ currentTenant, currentUser }) => {
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">证书编号</th><th className="px-6 py-4 font-bold">持证人</th><th className="px-6 py-4 font-bold">资质名称</th><th className="px-6 py-4 font-bold">到期日期</th><th className="px-6 py-4 font-bold">状态</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">{skills.map(r=><tr key={r.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-bold text-blue-600 font-mono">{r.id}</td><td className="px-6 py-4 font-bold text-slate-800">{r.empName}</td><td className="px-6 py-4 font-bold text-slate-800">{r.skillName}</td><td className="px-6 py-4 text-slate-700 font-mono font-bold">{r.expiryDate}</td><td className="px-6 py-4"><span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 w-max"><CheckCircle2 size={12}/>{r.status}</span></td><td className="px-6 py-4"><TableActionGroup><TableActionButton icon={Eye} label="证书" onClick={() => openHrRowAction('skillView', r)} /></TableActionGroup></td></tr>)}</tbody></table>
-                    </div><Pagination total={skills.length} page={1} limit={10} />
+                    </div>
+                    {!personnelFacts.loading && !personnelFacts.error && skills.length === 0 && <ApiDataState empty="暂无资质证书" />}
+                    <div className="px-6 py-3 text-[12px] text-slate-500">共 {skills.length} 条</div>
                 </div>
             )}
         </div>
@@ -9810,8 +8630,10 @@ const SupplyRiskBadge = ({ level }) => {
     ? 'bg-rose-50 text-rose-600 border-rose-100'
     : level === '中' || level === '中风险'
       ? 'bg-amber-50 text-amber-600 border-amber-100'
-      : 'bg-emerald-50 text-emerald-600 border-emerald-100';
-  return <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold border ${tone}`}>{level}</span>;
+      : level === '低' || level === '低风险'
+        ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+        : 'bg-slate-50 text-slate-500 border-slate-200';
+  return <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold border ${tone}`}>{level || '-'}</span>;
 };
 
 const SupplyStatusPill = ({ status }) => {
@@ -9823,7 +8645,7 @@ const SupplyStatusPill = ({ status }) => {
   return <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border ${tone}`}><span className="w-1.5 h-1.5 rounded-full bg-current"></span>{status}</span>;
 };
 
-const isCustomerAbnormal = (customer) => customer.operation !== '正常' || customer.alerts.length > 0;
+const isCustomerAbnormal = (customer) => ['异常', '经营异常', '非存续'].includes(customer.operation) || customer.alerts.length > 0;
 
 const CustomerRiskStrategyCards = ({ items }) => (
   <div className={`grid grid-cols-1 ${items.length > 1 ? 'xl:grid-cols-2' : ''} gap-4`}>
@@ -9842,12 +8664,21 @@ const CustomerRiskStrategyCards = ({ items }) => (
           <div className="bg-slate-50 border border-slate-100 rounded-xl p-3"><div className="text-[11px] text-slate-400 font-bold mb-1">逾期天数</div><div className="text-[12px] font-bold text-slate-800">{item.overdueDays} 天</div></div>
         </div>
         <div className={`${item.exposure === '高' ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-amber-50 border-amber-100 text-amber-700'} mt-4 border rounded-xl px-4 py-3 text-[12px] font-medium leading-relaxed`}>
-          {item.alerts.length ? item.alerts.join('；') : '暂无经营异常。'} 建议：{item.exposure === '高' ? '冻结新增赊销额度，改为预付款或分批交付，并由财务发起催收。' : '保留低额度账期，持续同步企业经营信息。'}
+          {item.alerts.length ? item.alerts.join('；') : '尚未获取该客户的风险分析结果。'}
         </div>
       </div>
     ))}
   </div>
 );
+
+const loadSupplyChainFacts = async (context) => {
+  const [suppliers, customers, riskEvents] = await Promise.all([
+    loadApiCollection((page, pageSize) => supplyChainApi.listSuppliers(context, { page, pageSize })),
+    loadApiCollection((page, pageSize) => supplyChainApi.listCustomers(context, { page, pageSize })),
+    loadApiCollection((page, pageSize) => supplyChainApi.listRiskEvents(context, { page, pageSize })),
+  ]);
+  return { suppliers, customers, riskEvents };
+};
 
 const SupplyChainManagement = ({ currentTenant, currentUser }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -9858,28 +8689,26 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
 
   // Phase 9: 产业链管理 API 集成
   const formalContext = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant.id, accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [riskEvents, setRiskEvents] = useState([]);
+  const supplyFacts = useApiResource(formalContext, loadSupplyChainFacts);
   const [verifyingCustomerId, setVerifyingCustomerId] = useState<string | null>(null);
 
   const mapBackendSupplier = (sup) => ({
     id: sup.supplierNo, name: sup.name, creditCode: sup.creditCode || '-',
     type: sup.type, category: sup.category,
-    qualification: sup.qualification || '附件待上传',
-    certs: (sup.metadata?.certs) || (sup.qualification === '附件完整' ? '营业执照 / ISO9001' : '附件待上传'),
+    qualification: sup.qualification || '-',
+    certs: sup.metadata?.certs || '-',
     expire: (sup.metadata?.expire) || '-',
-    admittance: sup.admittance || '可建档',
+    admittance: typeof sup.admittance === 'boolean' ? (sup.admittance ? '准入' : '未准入') : sup.admittance || '-',
     rating: sup.rating, risk: sup.riskLevel, owner: sup.owner || '-',
-    cooperation: sup.cooperationCount > 0 ? sup.cooperationCount + ' 次' : '0 次',
-    amount: sup.totalAmount || '-', _backend: sup,
+    cooperation: Number.isFinite(sup.cooperationCount) ? `${sup.cooperationCount} 次` : '-',
+    amount: sup.totalAmount ?? '-', _backend: sup,
   });
   const mapBackendCustomer = (cus) => ({
     id: cus.customerNo, name: cus.name, creditCode: cus.creditCode || '-',
-    legal: cus.legalRepresentative || '-', operation: cus.operationStatus || '待核验',
+    legal: cus.legalRepresentative || '-', operation: cus.operationStatus || '-',
     businessStatus: cus.businessStatus || '-', size: cus.enterpriseSize || '-',
-    receivable: cus.receivable || '¥ 0', overdueDays: cus.overdueDays || 0,
-    exposure: cus.exposureLevel || '低', pressure: cus.pressureLevel || '低',
+    receivable: cus.receivable ?? '-', overdueDays: cus.overdueDays ?? '-',
+    exposure: cus.exposureLevel || '-', pressure: cus.pressureLevel || '-',
     role: cus.role || '下游客户', industry: cus.industry || '-',
     revenue: cus.revenue || '-', alerts: cus.alerts || [], _backend: cus,
   });
@@ -9889,24 +8718,14 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
     _backend: risk,
   });
 
-  const refreshSupplyChain = async () => {
-    if (!formalContext) return;
-    try {
-      const [supRes, cusRes, riskRes] = await Promise.all([
-        supplyChainApi.listSuppliers(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
-        supplyChainApi.listCustomers(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
-        supplyChainApi.listRiskEvents(formalContext, { page: 1, pageSize: 50 }).catch(() => null),
-      ]);
-      setSuppliers(supRes?.items?.map(mapBackendSupplier) || []);
-      setCustomers(cusRes?.items?.map(mapBackendCustomer) || []);
-      setRiskEvents(riskRes?.items?.map(mapBackendRiskEvent) || []);
-    } catch {
-      setSuppliers([]);
-      setCustomers([]);
-      setRiskEvents([]);
-    }
-  };
-  useEffect(() => { refreshSupplyChain(); }, [formalContext?.tenantId, formalContext?.accessToken]);
+  const suppliers = (supplyFacts.data?.suppliers ?? []).map(mapBackendSupplier);
+  const customers = (supplyFacts.data?.customers ?? []).map(mapBackendCustomer);
+  const riskEvents = (supplyFacts.data?.riskEvents ?? []).map(mapBackendRiskEvent);
+  const supplyCount = (rows, field, predicate) =>
+    !supplyFacts.data || rows.some(row => !row._backend?.[field]) ? '-' : String(rows.filter(predicate).length);
+  const highPressureCount = supplyCount(customers, 'pressureLevel', row => row.pressure === '高');
+  const unverifiedCount = supplyCount(customers, 'operationStatus', row => ['待核验', '待确认'].includes(row.operation));
+  const supplyAiBadge = supplyFacts.error ? '数据加载失败' : supplyFacts.loading ? '加载中' : !suppliers.length && !customers.length && !riskEvents.length ? '暂无 AI 预警' : '尚未获取 AI 分析结果';
 
   const showCenterToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -9946,7 +8765,7 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
           },
         },
       });
-      setCustomers((prev) => prev.map((item) => item.id === row.id ? mapBackendCustomer(saved.customer) : item));
+      supplyFacts.reload();
       showCenterToast(`已核验：${candidate.name} ${candidate.registrationStatus}`, verification.result === 'SURVIVING' ? 'success' : 'warning');
     } catch (error) {
       const message = error instanceof Error ? error.message : '企查查核验失败';
@@ -9954,42 +8773,6 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
     } finally {
       setVerifyingCustomerId(null);
     }
-  };
-
-  const openSupplyAction = (kind) => {
-    const configs = {
-      trace: {
-        kind,
-        title: '穿透客户经营风险链路',
-        desc: '系统会把客户经营异常、应收逾期、交付订单和小企业现金流压力放到同一张风险链路里。',
-        icon: Route,
-        tone: 'rose',
-        confirmText: '跳转风险中心',
-        details: [
-          { label: '风险客户', value: '上蔡泉洁商贸有限公司' },
-          { label: '经营状态', value: '异常' },
-          { label: '应收逾期', value: '¥ 186,000 / 42 天' },
-          { label: '传导影响', value: '小企业客户可能拖累本方现金流' }
-        ],
-        steps: ['对接企业经营信息', '匹配应收账款与账期', '计算客户承压等级', '生成风控与催收建议']
-      },
-      diversify: {
-        kind,
-        title: '生成客户信用额度优化任务',
-        desc: '系统会按客户经营状态、欠款、规模和历史合作情况重算账期与额度。',
-        icon: Gauge,
-        tone: 'purple',
-        confirmText: '跳转客户经营',
-        details: [
-          { label: '高压客户', value: '3 家' },
-          { label: '逾期金额', value: '¥ 336,000' },
-          { label: '建议策略', value: '冻结赊销 + 分批交付 + 预付款' },
-          { label: '责任部门', value: '销售 / 财务 / 风控' }
-        ],
-        checks: ['经营异常客户改为人工审批', '小企业客户账期缩短到 15 天', '大客户保留绿色履约通道']
-      }
-    };
-    setActionModal(configs[kind]);
   };
 
   const openSupplyRowAction = (kind, row) => {
@@ -10093,23 +8876,23 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
     if (!actionModal) return;
     if (actionModal.kind === 'trace') {
       setActiveTab('risk');
-      showCenterToast('客户经营风险链路已生成，已跳转风险数据中心', 'warning');
+      showCenterToast('已打开风险数据中心', 'success');
     }
     if (actionModal.kind === 'diversify') {
       setActiveTab('customers');
-      showCenterToast('客户信用额度优化任务已生成，已跳转客户经营', 'success');
+      showCenterToast('已打开客户经营', 'success');
     }
     if (actionModal.kind === 'supplierView') {
-      showCenterToast('供应商详情与附件更新已保存', 'success');
+      showCenterToast('未保存：尚未接入附件上传与版本管理接口', 'warning');
     }
     if (actionModal.kind === 'customerView') {
       showCenterToast('客商经营档案已打开', 'success');
     }
     if (actionModal.kind === 'supplierRisk') {
-      showCenterToast('供应商附件已保存到档案', 'success');
+      showCenterToast('未保存：尚未接入附件上传接口', 'warning');
     }
     if (actionModal.kind === 'customerLink') {
-      showCenterToast('客户风控与回款策略已生成', 'success');
+      showCenterToast('未生成：尚未获取正式风控策略', 'warning');
     }
     setActionModal(null);
   };
@@ -10158,49 +8941,44 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
           <button onClick={() => setActiveTab('risk')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 whitespace-nowrap ${activeTab === 'risk' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><ShieldAlert size={14} className="mr-1.5" /> 风险数据中心</button>
         </div>
         <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
+            {(supplyFacts.loading || supplyFacts.error) && <ApiDataState loading={supplyFacts.loading} error={supplyFacts.error} onRetry={supplyFacts.reload} />}
             {activeTab === 'dashboard' && (
                 <UnifiedMonitorCabin
                   metrics={[
-                    { title: '供应商附件待完善', value: '2', unit: '家', icon: UploadCloud, trend: 'down', trendValue: '-1家', theme: 'amber' },
-                    { title: '附件临期提醒', value: '1', unit: '家', icon: FileText, trend: 'down', trendValue: '-0家', theme: 'red' },
-                    { title: '客户经营异常', value: '1', unit: '家', icon: AlertTriangle, trend: 'down', trendValue: '+1家', theme: 'red' },
-                    { title: '高压应收客户', value: '3', unit: '家', icon: Receipt, trend: 'down', trendValue: '+3家', theme: 'purple' },
+                    { title: '供应商附件待完善', value: supplyCount(suppliers, 'qualification', row => ['附件待上传', '附件待完善'].includes(row.qualification)), unit: '家', icon: UploadCloud, trend: 'flat', trendValue: '正式附件状态', theme: 'amber' },
+                    { title: '附件临期提醒', value: supplyCount(suppliers, 'qualification', row => row.qualification === '附件临期提醒'), unit: '家', icon: FileText, trend: 'flat', trendValue: '正式临期状态', theme: 'red' },
+                    { title: '客户经营异常', value: supplyCount(customers, 'operationStatus', isCustomerAbnormal), unit: '家', icon: AlertTriangle, trend: 'flat', trendValue: '正式经营状态', theme: 'red' },
+                    { title: '高压应收客户', value: highPressureCount, unit: '家', icon: Receipt, trend: 'flat', trendValue: '正式承压等级', theme: 'purple' },
                   ]}
                   aiCards={[
                     {
                       title: 'AI 客户经营与回款风险',
                       icon: Receipt,
                       tone: 'rose',
-                      subject: '上蔡泉洁商贸有限公司：经营异常 + 逾期42天',
-                      badge: '小企业承压高',
-                      lines: [
-                        <><span className="font-bold text-slate-800">风险识别：</span>该客户存在经营异常记录，同时应收账款已逾期。若继续赊销，可能把客户经营压力传导成本方现金流风险。</>,
-                        <><span className="font-bold text-slate-800">AI 建议：</span>冻结新增账期，改为预付款或分批交付，并把客户经营解除情况作为恢复额度条件。</>,
-                      ],
-                      actions: <button onClick={() => openSupplyAction('trace')} className="ml-auto bg-rose-500 hover:bg-rose-600 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm">穿透经营风险</button>
+                      subject: '客户经营状态与应收风险分析',
+                      badge: supplyAiBadge,
+                      lines: ['关注客户经营状况与应收回款风险。当前暂无可展示的分析结果。'],
                     },
                     {
                       title: 'AI 供应商附件档案',
                       icon: UploadCloud,
                       tone: 'purple',
-                      subject: '附件按需上传，不对所有供应商做资质审查',
-                      badge: '2家待完善',
-                      lines: [
-                        <><span className="font-bold text-slate-800">档案洞察：</span>深圳恒通缺少营业执照附件，苏州精密传感器 ISO 附件临期；普通供应商可先建档查看信息。</>,
-                        <><span className="font-bold text-slate-800">AI 建议：</span>附件作为供应商档案管理，只有关键件、监管许可或高金额采购时再重点校验。</>,
-                      ],
-                      actions: <button onClick={() => setActiveTab('suppliers')} className="ml-auto bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold shadow-sm">查看供应商信息</button>
+                      subject: '供应商档案与附件有效期分析',
+                      badge: supplyAiBadge,
+                      lines: ['展示供应商附件相关的正式分析结果；档案明细以供应商信息为准。'],
                     },
                   ]}
                   trend={{
                     title: '客商经营健康与现金流风险趋势',
-                    metric: '¥33.6万',
+                    metric: '-',
                     metricLabel: '风险应收',
                     metricColor: '#f43f5e',
                     ringColor: '#ffe4e6',
                     insightTitle: '经营承压分析',
-                    insight: '产业链风险不只来自供应交付，也来自客户经营异常和欠款。小企业客户一旦经营恶化，逾期应收会更快传导成本方资金压力。',
-                    recommendation: '对高压客户缩短账期、冻结新增赊销；对大型稳定客户保留履约绿色通道；供应商附件按采购场景留档和提醒。',
+                    insight: '展示客商经营健康与风险应收历史序列。',
+                    loading: supplyFacts.loading,
+                    error: supplyFacts.error,
+                    onRetry: supplyFacts.reload,
                     chartTitle: '近半年经营健康指数与风险应收趋势',
                     legend: [
                       { label: '经营健康指数', color: '#2563eb' },
@@ -10210,7 +8988,6 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
                     secondary: '#f43f5e',
                     yAxis: [100, 80, 60, 40, 20],
                     gradientId: 'supplyTrendGradient',
-                    forecastPath: 'M 780 70 C 835 88, 895 122, 950 112',
                   }}
                 />
             )}
@@ -10301,22 +9078,22 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
                         <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center"><AlertTriangle size={22} /></div>
                         <div>
                           <div className="text-[18px] font-bold text-slate-800">小企业客户承压预警</div>
-                          <div className="text-[13px] text-slate-500 leading-relaxed mt-2">客户经营异常、工商信息缺失和应收逾期会叠加放大风险。系统建议对小企业客户优先采用预付款、分批交付和人工授信复核。</div>
+                          <div className="text-[13px] text-slate-500 leading-relaxed mt-2">展示授权客户的经营状态、承压等级和逾期事实；尚未获取正式授信与回款策略。</div>
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-3 mt-6">
-                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-4"><div className="text-[11px] text-rose-500 font-bold mb-1">高压客户</div><div className="text-[22px] font-bold text-rose-600">3</div></div>
-                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-4"><div className="text-[11px] text-amber-600 font-bold mb-1">逾期金额</div><div className="text-[22px] font-bold text-amber-600">33.6万</div></div>
-                        <div className="bg-purple-50 border border-purple-100 rounded-xl p-4"><div className="text-[11px] text-purple-600 font-bold mb-1">待核验客户</div><div className="text-[22px] font-bold text-purple-600">2</div></div>
+                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-4"><div className="text-[11px] text-rose-500 font-bold mb-1">高压客户</div><div className="text-[22px] font-bold text-rose-600">{highPressureCount}</div></div>
+                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-4"><div className="text-[11px] text-amber-600 font-bold mb-1">逾期金额</div><div className="text-[22px] font-bold text-amber-600">-</div><div className="text-[11px] text-slate-500">尚未获取逾期金额</div></div>
+                        <div className="bg-purple-50 border border-purple-100 rounded-xl p-4"><div className="text-[11px] text-purple-600 font-bold mb-1">待核验客户</div><div className="text-[22px] font-bold text-purple-600">{unverifiedCount}</div></div>
                       </div>
                     </div>
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                       <div className="font-bold text-[15px] text-slate-800 mb-4 flex items-center gap-2"><Wallet size={16} className="text-blue-600" /> 客户经营联动规则</div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         {[
-                          ['经营正常 + 无逾期', '保留原账期，自动放行履约'],
-                          ['经营异常 + 有逾期', '冻结新增赊销，转预付款'],
-                          ['小企业 + 信息缺失', '人工复核授信，限制额度'],
+                          ['经营与逾期规则', '尚未获取配置'],
+                          ['授信与账期规则', '尚未获取配置'],
+                          ['人工复核规则', '尚未获取配置'],
                         ].map(([title, desc]) => (
                           <div key={title} className="bg-slate-50 border border-slate-100 rounded-xl p-4">
                             <div className="font-bold text-[13px] text-slate-800 mb-2">{title}</div>
@@ -10329,7 +9106,7 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                       <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><ShieldAlert className="w-4.5 h-4.5 text-rose-600" /> 风险异常企业名录</h4>
-                      <button onClick={() => openSupplyAction('diversify')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-[13px] font-bold shadow-sm">生成额度策略</button>
+                      <button disabled title="尚未获取正式额度策略" className="bg-slate-100 text-slate-400 px-4 py-2 rounded-xl text-[13px] font-bold disabled:cursor-not-allowed">生成额度策略</button>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-[13px] whitespace-nowrap"><thead className="bg-white text-slate-500 border-b border-slate-200 text-[12px] uppercase"><tr><th className="px-6 py-4 font-bold">企业名称</th><th className="px-6 py-4 font-bold">异常类型</th><th className="px-6 py-4 font-bold">等级</th><th className="px-6 py-4 font-bold">责任部门</th><th className="px-6 py-4 font-bold">建议动作</th><th className="px-6 py-4 font-bold text-right">操作</th></tr></thead>
@@ -10337,6 +9114,7 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
                         const matchedCustomer = customers.find(item => item.name === r.company);
                         return <tr key={`${r.company}-${r.type}`} className="hover:bg-slate-50/60"><td className="px-6 py-4 font-bold text-blue-600">{r.company}</td><td className="px-6 py-4 text-slate-700">{r.type}</td><td className="px-6 py-4"><SupplyRiskBadge level={r.level} /></td><td className="px-6 py-4 text-slate-600 font-bold">{r.owner}</td><td className="px-6 py-4 text-slate-700">{r.action}</td><td className="px-6 py-4 text-right"><button type="button" onClick={() => openCustomerRiskDetail(matchedCustomer)} disabled={!matchedCustomer} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100"><Eye size={14} />查看</button></td></tr>;
                       })}</tbody></table>
+                      {!supplyFacts.loading && !supplyFacts.error && riskEvents.length === 0 && <ApiDataState empty="暂无风险事件" />}
                     </div>
                   </div>
                 </div>
@@ -10349,733 +9127,6 @@ const SupplyChainManagement = ({ currentTenant, currentUser }) => {
 
 // ==========================================
 // 8. AI智能中枢模块 (AIHubManagement)
-// ==========================================
-const ai_digitalEmployees = [
-  { id: 'ADE-01', name: '采销对账专员', dept: '财务部', desc: '自动核对采购入库单与供应商发票，精准识别数量与价格差异。', tasks: 1250, accuracy: '99.9%', status: '运行中', iconBg: 'bg-blue-50', iconColor: 'text-blue-600', border: 'border-blue-100' },
-  { id: 'ADE-03', name: '排产调度引擎', dept: '生产部', desc: '基于设备实时OEE、人员出勤与紧急插单动态演算APS排程。', tasks: 320, accuracy: '99.1%', status: '运行中', iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600', border: 'border-emerald-100' },
-  { id: 'ADE-05', name: '呆滞物料分析师', dept: '仓储部', desc: '定期盘点库存账龄，自动预警呆滞风险并生成低价促销调拨建议。', tasks: 56, accuracy: '99.5%', status: '运行中', iconBg: 'bg-rose-50', iconColor: 'text-rose-600', border: 'border-rose-100' }
-];
-
-const ai_industrialAssistantConfig = [
-  { title: '助手身份', value: 'AI 工业助手', desc: '面向销售、生产、库存、采购、财务的跨模块业务问答与分析。', icon: Bot, tone: 'blue' },
-  { title: '知识范围', value: 'ERP / MES / WMS / 财务', desc: '已接入订单、BOM、工单、库存流水、PR/PO、AR/AP 数据。', icon: Database, tone: 'emerald' },
-  { title: '执行权限', value: '建议 + 草稿', desc: '可生成分析、预警、单据草稿；关键业务动作需人工确认。', icon: ShieldCheck, tone: 'amber' },
-  { title: '响应模式', value: '实时分析', desc: '支持自然语言查询、异常归因、趋势预测、任务派发建议。', icon: Activity, tone: 'purple' },
-];
-
-const ai_assistantSkills = [
-  '生产异常归因',
-  '缺料风险推演',
-  '库存账龄分析',
-  '采购交期预警',
-  '应收应付对账',
-  '销售订单跟进',
-];
-
-const ai_knowledgeSources = [
-  { name: '销售订单与客户档案', status: '已同步', rows: '2.4万' },
-  { name: 'BOM / MPS / MRP / 工单', status: '已同步', rows: '8,620' },
-  { name: '库存流水与安全水位', status: '实时', rows: '12.8万' },
-  { name: '采购 PR/PO 与供应商绩效', status: '已同步', rows: '3.1万' },
-  { name: '财务 AR/AP 与资金计划', status: '实时', rows: '1.7万' },
-];
-
-const AIHubManagement = ({ onOpenAssistant }) => {
-    const [activeTab, setActiveTab] = useState('assistant');
-    const [isIndustrialAssistantOpen, setIsIndustrialAssistantOpen] = useState(false);
-    const [assistantDrawerWidth, setAssistantDrawerWidth] = useState(520);
-    const [isResizingAssistant, setIsResizingAssistant] = useState(false);
-    const [assistantInput, setAssistantInput] = useState('');
-    const [assistantMessages, setAssistantMessages] = useState([
-      { role: 'assistant', text: '你好！我是工业AI助手。我可以帮你分析生产数据、预警库存风险、优化排产计划、生成业务报告。请问有什么需要帮助的？', time: '刚刚' }
-    ]);
-
-    useEffect(() => {
-      if (!isResizingAssistant) return;
-      const handleMouseMove = (event) => {
-        const nextWidth = Math.min(Math.max(window.innerWidth - event.clientX, 420), Math.min(920, window.innerWidth - 280));
-        setAssistantDrawerWidth(nextWidth);
-      };
-      const handleMouseUp = () => setIsResizingAssistant(false);
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      };
-    }, [isResizingAssistant]);
-
-    const sendIndustrialAssistantMessage = (text = assistantInput) => {
-      const value = text.trim();
-      if (!value) return;
-      setAssistantMessages(prev => [
-        ...prev,
-        { role: 'user', text: value, time: '刚刚' },
-        { role: 'assistant', text: `已收到：“${value}”。我会优先关联销售订单、库存水位、MPS/MRP、采购交期与财务应收应付，生成一份可追溯的工业业务分析。`, time: '刚刚' }
-      ]);
-      setAssistantInput('');
-    };
-
-    return (
-        <div className="w-full h-full font-sans flex flex-col">
-            <main className="px-8 py-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
-                <div className="flex justify-between items-start mb-6 shrink-0">
-                    <div className="flex items-center">
-                        <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center rounded-2xl mr-4 shadow-md"><Sparkles size={24} /></div>
-                        <div className="flex flex-col justify-center">
-                            <h1 className="text-[20px] font-bold text-slate-800 leading-tight tracking-wide">AI 智能中枢</h1>
-                            <div className="text-[13px] text-slate-500 mt-1 font-medium">企业级大模型驱动的 AI 助手与数字员工调度平台</div>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-xl inline-flex p-1.5 shadow-sm mb-6 shrink-0 w-max relative z-10">
-                  <button onClick={() => setActiveTab('assistant')} className={`flex items-center px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'assistant' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><MessageCircle size={15} className="mr-1.5" /> 工业 Copilot 助手</button>
-                  <div className="w-px h-5 bg-slate-200 mx-1 self-center"></div>
-                  <button onClick={() => setActiveTab('digital_employee')} className={`flex items-center px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'digital_employee' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><UserCheck size={15} className="mr-1.5" /> AI 数字员工专员</button>
-                </div>
-                <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
-                    {activeTab === 'assistant' && (
-                        <div className="space-y-6 animate-in fade-in duration-300">
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                                {ai_industrialAssistantConfig.map(item => {
-                                  const Icon = item.icon;
-                                  const tone = monitorToneMap[item.tone] || monitorToneMap.blue;
-                                  return (
-                                    <div key={item.title} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:border-blue-200 transition-colors">
-                                      <div className="flex items-start justify-between mb-4">
-                                        <div className={`w-11 h-11 rounded-xl border flex items-center justify-center ${tone.shell}`}><Icon size={20} /></div>
-                                        <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg">已启用</span>
-                                      </div>
-                                      <div className="text-[12px] font-bold text-slate-400 mb-1">{item.title}</div>
-                                      <div className="text-[16px] font-bold text-slate-800 mb-2">{item.value}</div>
-                                      <div className="text-[12px] text-slate-500 leading-relaxed">{item.desc}</div>
-                                    </div>
-                                  );
-                                })}
-                            </div>
-
-                            <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6">
-                              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                                  <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Settings className="w-4.5 h-4.5 text-blue-600" /> 工业助手配置</h4>
-                                  <button onClick={onOpenAssistant} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-[13px] font-bold shadow-sm flex items-center"><MessageCircle size={15} className="mr-1.5"/> 打开助手</button>
-                                </div>
-                                <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-5">
-                                  <div className="border border-slate-100 bg-slate-50 rounded-xl p-4">
-                                    <div className="font-bold text-[13px] text-slate-800 mb-3 flex items-center gap-2"><Bot size={15} className="text-blue-600" /> 助手基础设定</div>
-                                    <div className="space-y-3">
-                                      {[
-                                        ['默认称呼', '工业AI助手'],
-                                        ['业务风格', '先诊断、再给建议、最后生成动作草稿'],
-                                        ['回答深度', '展示依据数据与关联单据'],
-                                        ['安全策略', '关键业务动作需人工确认'],
-                                      ].map(([label, value]) => (
-                                        <div key={label} className="flex items-start justify-between gap-4 bg-white border border-slate-100 rounded-lg px-3 py-2.5">
-                                          <span className="text-[12px] text-slate-500 font-bold shrink-0">{label}</span>
-                                          <span className="text-[12px] text-slate-800 font-bold text-right leading-relaxed">{value}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <div className="border border-slate-100 bg-slate-50 rounded-xl p-4">
-                                    <div className="font-bold text-[13px] text-slate-800 mb-3 flex items-center gap-2"><Zap size={15} className="text-amber-500" /> 可调用能力</div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {ai_assistantSkills.map(skill => (
-                                        <span key={skill} className="px-3 py-2 rounded-lg bg-white border border-blue-100 text-blue-600 text-[12px] font-bold">{skill}</span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-                                  <h4 className="font-bold text-[15px] text-slate-800 flex items-center gap-2"><Database className="w-4.5 h-4.5 text-blue-600" /> 知识库与数据源</h4>
-                                </div>
-                                <div className="p-5 space-y-3">
-                                  {ai_knowledgeSources.map(source => (
-                                    <div key={source.name} className="border border-slate-100 bg-slate-50 rounded-xl p-4">
-                                      <div className="flex items-center justify-between gap-3 mb-1">
-                                        <span className="font-bold text-[13px] text-slate-800">{source.name}</span>
-                                        <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-lg">{source.status}</span>
-                                      </div>
-                                      <div className="text-[12px] text-slate-500">可检索记录：{source.rows}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                        </div>
-                    )}
-                    {activeTab === 'digital_employee' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in duration-300">
-                            {ai_digitalEmployees.map(emp => (
-                                <div key={emp.id} className={`bg-white rounded-2xl border p-6 shadow-sm hover:-translate-y-1 transition-all ${emp.status==='运行中'?'border-slate-200 hover:border-blue-300':'opacity-70'}`}>
-                                    <div className="flex items-center gap-3 mb-5">
-                                        <div className={`p-3 rounded-xl border ${emp.iconBg} ${emp.iconColor} ${emp.border}`}><Bot size={22} /></div>
-                                        <div><h3 className="font-bold text-[16px] text-slate-800">{emp.name}</h3><span className="bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-500 mt-1 inline-block">{emp.dept}</span></div>
-                                    </div>
-                                    <p className="text-[13px] text-slate-600 mb-6 h-10">{emp.desc}</p>
-                                    <div className="grid grid-cols-2 gap-3 mb-5">
-                                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                                            <div className="text-[11px] text-slate-400 font-bold mb-1">触发方式</div>
-                                            <div className="text-[12px] font-bold text-slate-800">定时 + 事件</div>
-                                        </div>
-                                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                                            <div className="text-[11px] text-slate-400 font-bold mb-1">人工复核</div>
-                                            <div className="text-[12px] font-bold text-slate-800">高风险必审</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between pt-4 border-t border-slate-100 text-[12px] font-bold">
-                                        <span className="flex items-center gap-1 text-emerald-600"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> 自动值守中</span>
-                                        <span className="text-slate-500 font-mono">今日任务: {emp.tasks}</span>
-                                    </div>
-                                    <button className="mt-5 w-full bg-blue-50 hover:bg-blue-100 border border-blue-100 text-blue-600 py-2.5 rounded-xl text-[13px] font-bold transition-colors flex items-center justify-center gap-1.5"><Settings size={14}/> 配置数字员工</button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </main>
-            {isIndustrialAssistantOpen && (
-              <div className="fixed inset-y-0 right-0 z-[130] flex justify-end pointer-events-none">
-                <div
-                  className="relative h-full bg-white border-l-4 border-blue-600 shadow-2xl pointer-events-auto flex flex-col animate-in slide-in-from-right duration-200"
-                  style={{ width: assistantDrawerWidth }}
-                >
-                  <div
-                    onMouseDown={() => setIsResizingAssistant(true)}
-                    className="absolute left-[-10px] top-0 bottom-0 w-5 cursor-col-resize group flex items-center justify-center"
-                    title="向左拖拽放大对话窗口"
-                  >
-                    <div className="w-1.5 h-16 rounded-full bg-blue-300 group-hover:bg-blue-600 transition-colors shadow-sm"></div>
-                  </div>
-                  <div className="h-[72px] bg-blue-600 text-white px-6 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center"><Bot size={20} /></div>
-                      <div>
-                        <div className="text-[16px] font-bold">AI 工业助手</div>
-                        <div className="text-[12px] text-blue-100 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse"></span>在线 · 实时分析中</div>
-                      </div>
-                    </div>
-                    <button type="button" aria-label="关闭 AI 助手" onClick={() => setIsIndustrialAssistantOpen(false)} className="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"><X size={18}/></button>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#FBFCFF] p-5">
-                    <div className="space-y-5">
-                      {assistantMessages.map((message, index) => {
-                        const isUser = message.role === 'user';
-                        return (
-                          <div key={`${message.role}-${index}`} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                            {!isUser && <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0"><Bot size={15}/></div>}
-                            <div className={`max-w-[82%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
-                              <div className={`px-4 py-3 rounded-2xl text-[13px] leading-relaxed shadow-sm ${isUser ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm'}`}>
-                                {message.text}
-                              </div>
-                              <div className="text-[11px] text-slate-400 mt-1.5">{message.time}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-slate-100 bg-white shrink-0">
-                    <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">
-                      {['查询热丝的库存？', '库存哪些物料需要补货？', '上传文档详情？'].map(prompt => (
-                        <button key={prompt} onClick={() => sendIndustrialAssistantMessage(prompt)} className="px-3 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100 text-[12px] font-bold transition-colors">{prompt}</button>
-                      ))}
-                    </div>
-                    <div className="p-4 flex items-center gap-3">
-                      <button type="button" aria-label="上传附件" className="w-11 h-11 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border border-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><UploadCloud size={18}/></button>
-                      <div className="flex-1 h-11 border border-slate-200 bg-slate-50 rounded-xl px-4 flex items-center focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400 transition-all">
-                        <input
-                          value={assistantInput}
-                          onChange={(event) => setAssistantInput(event.target.value)}
-                          onKeyDown={(event) => event.key === 'Enter' && sendIndustrialAssistantMessage()}
-                          aria-label="向 AI 助手提问"
-                          placeholder="输入问题，回车发送..."
-                          className="w-full bg-transparent outline-none focus-visible:outline-none text-[13px] text-slate-700"
-                        />
-                      </div>
-                      <button type="button" aria-label="发送问题" onClick={() => sendIndustrialAssistantMessage()} className="w-11 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"><Send size={18}/></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-        </div>
-    );
-};
-
-// ==========================================
-// 9. AI数据分析模块 (AIDataAnalysisManagement)
-// ==========================================
-const AIDataAnalysisManagement = () => {
-    const [activeTab, setActiveTab] = useState('dashboard');
-    const [queryText, setQueryText] = useState('');
-    const [hasQueried, setHasQueried] = useState(false);
-    const [isThinking, setIsThinking] = useState(false);
-    
-    // Sandbox parameters
-    const [materialPriceInc, setMaterialPriceInc] = useState(0);
-    const [demandInc, setDemandInc] = useState(0);
-
-    // Sandbox calculations
-    const baseProfit = 1250;
-    const baseDelivery = 15;
-    const baseInventory = 320;
-    const projectedProfit = baseProfit - (materialPriceInc * 15) + (demandInc * 20);
-    const projectedDelivery = baseDelivery + (demandInc * 0.5) + (materialPriceInc > 10 ? 3 : 0);
-    const projectedInventory = baseInventory + (materialPriceInc * 5) + (demandInc * 8);
-
-    const handleQuery = () => {
-        if (!queryText.trim()) return;
-        setIsThinking(true);
-        setTimeout(() => {
-            setIsThinking(false);
-            setHasQueried(true);
-        }, 1200);
-    };
-
-    return (
-        <div className="w-full h-full font-sans flex flex-col relative bg-[#F5F7FA]">
-            <main className="px-8 py-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col overflow-hidden">
-                <div className="flex justify-between items-start mb-6 shrink-0">
-                    <div className="flex items-center">
-                        <div className="w-12 h-12 bg-gradient-to-tr from-purple-600 to-blue-600 text-white flex items-center justify-center rounded-2xl mr-4 shadow-md"><BrainCircuit size={24} /></div>
-                        <div className="flex flex-col justify-center">
-                            <h1 className="text-[20px] font-bold text-slate-800 leading-tight tracking-wide">AI 数据分析</h1>
-                            <div className="text-[13px] text-slate-500 mt-1 font-medium">看过去 · 问原因 · 测未来 —— 全局经营大脑</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="bg-white border border-slate-200 rounded-xl inline-flex p-1.5 shadow-sm mb-6 shrink-0 w-max relative z-10">
-                    <button onClick={() => setActiveTab('dashboard')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><LayoutDashboard size={14} className="mr-1.5" /> 经营决策舱</button>
-                    <button onClick={() => setActiveTab('copilot')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'copilot' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><MessageCircle size={14} className="mr-1.5" /> AI 数据问答 (NL2SQL)</button>
-                    <button onClick={() => setActiveTab('rootcause')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'rootcause' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><GitMerge size={14} className="mr-1.5" /> 智能归因树</button>
-                    <button onClick={() => setActiveTab('sandbox')} className={`flex items-center px-4 py-2 rounded-lg text-[13px] font-bold transition-all duration-200 ${activeTab === 'sandbox' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}><Layers size={14} className="mr-1.5" /> 推演沙盘</button>
-                </div>
-
-                <div className="w-full flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
-                    {/* 3.1 经营决策驾驶舱 */}
-                    {activeTab === 'dashboard' && (
-                        <div className="space-y-6 animate-in fade-in duration-300">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                <StatCard title="本月总营收 (预估)" value="1,850" unit="万元" icon={BadgeDollarSign} trend="up" trendValue="+12.5%" theme="blue" />
-                                <StatCard title="综合毛利率" value="32.4" unit="%" icon={PieChart} trend="up" trendValue="+1.2%" theme="emerald" />
-                                <StatCard title="整体订单准交率" value="94.2" unit="%" icon={CheckCircle2} trend="down" trendValue="-2.1%" theme="amber" />
-                                <StatCard title="全厂设备综合效率 (OEE)" value="82.5" unit="%" icon={Activity} trend="up" trendValue="+0.8%" theme="purple" />
-                            </div>
-                            
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                {/* 业务雷达图 */}
-                                <div className="lg:col-span-1 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col hover:border-blue-300 transition-colors">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <h3 className="font-bold text-slate-800 text-[15px] flex items-center"><Target size={16} className="text-blue-600 mr-2"/> 部门绩效达成雷达</h3>
-                                        <span className="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded">当期实时</span>
-                                    </div>
-                                    <div className="flex-1 flex justify-center items-center py-4 relative">
-                                        <svg viewBox="0 0 200 200" className="w-56 h-56 transform -rotate-90">
-                                            {/* 背景网格 */}
-                                            <polygon points="100,10 178,50 178,150 100,190 22,150 22,50" fill="none" stroke="#f1f5f9" strokeWidth="1.5"/>
-                                            <polygon points="100,32 158,65 158,135 100,168 42,135 42,65" fill="none" stroke="#e2e8f0" strokeWidth="1.5"/>
-                                            <polygon points="100,55 139,78 139,122 100,145 61,122 61,78" fill="none" stroke="#f1f5f9" strokeWidth="1.5"/>
-                                            {/* 坐标轴 */}
-                                            <line x1="100" y1="10" x2="100" y2="100" stroke="#cbd5e1" strokeDasharray="2 2" />
-                                            <line x1="178" y1="50" x2="100" y2="100" stroke="#cbd5e1" strokeDasharray="2 2" />
-                                            <line x1="178" y1="150" x2="100" y2="100" stroke="#cbd5e1" strokeDasharray="2 2" />
-                                            <line x1="100" y1="190" x2="100" y2="100" stroke="#cbd5e1" strokeDasharray="2 2" />
-                                            <line x1="22" y1="150" x2="100" y2="100" stroke="#cbd5e1" strokeDasharray="2 2" />
-                                            <line x1="22" y1="50" x2="100" y2="100" stroke="#cbd5e1" strokeDasharray="2 2" />
-                                            {/* 数据多边形 (蓝: 目标, 紫: 实际) */}
-                                            <polygon points="100,20 165,58 165,142 100,180 35,142 35,58" fill="rgba(59, 130, 246, 0.1)" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 4"/>
-                                            <polygon points="100,25 140,65 170,145 100,160 50,120 40,55" fill="rgba(139, 92, 246, 0.25)" stroke="#8b5cf6" strokeWidth="2"/>
-                                            {/* 数据点 */}
-                                            <circle cx="100" cy="25" r="3" fill="#8b5cf6" />
-                                            <circle cx="140" cy="65" r="3" fill="#8b5cf6" />
-                                            <circle cx="170" cy="145" r="3" fill="#8b5cf6" />
-                                            <circle cx="100" cy="160" r="3" fill="#8b5cf6" />
-                                            <circle cx="50" cy="120" r="3" fill="#8b5cf6" />
-                                            <circle cx="40" cy="55" r="3" fill="#8b5cf6" />
-                                        </svg>
-                                        <span className="absolute top-0 right-[40%] text-[11px] font-bold text-slate-600">销售转化</span>
-                                        <span className="absolute top-[25%] right-2 text-[11px] font-bold text-slate-600">生产达成</span>
-                                        <span className="absolute bottom-[25%] right-4 text-[11px] font-bold text-slate-600">采购准交</span>
-                                        <span className="absolute bottom-0 left-[45%] text-[11px] font-bold text-slate-600">质量合格</span>
-                                        <span className="absolute bottom-[25%] left-4 text-[11px] font-bold text-rose-500">库存周转 (低)</span>
-                                        <span className="absolute top-[25%] left-2 text-[11px] font-bold text-slate-600">回款率</span>
-                                    </div>
-                                    <div className="flex justify-center gap-4 text-[11px] font-bold mt-2">
-                                        <span className="flex items-center gap-1 text-blue-500"><span className="w-2 h-2 bg-blue-500 rounded-full"></span>目标值</span>
-                                        <span className="flex items-center gap-1 text-purple-500"><span className="w-2 h-2 bg-purple-500 rounded-full"></span>实际值</span>
-                                    </div>
-                                </div>
-
-                                {/* 高风险红绿灯预警 */}
-                                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 hover:border-blue-300 transition-colors">
-                                    <div className="flex items-center justify-between mb-5">
-                                        <h3 className="font-bold text-slate-800 text-[15px] flex items-center"><AlertTriangle size={16} className="text-amber-500 mr-2"/> 全平台高风险聚合监测</h3>
-                                        <button className="text-[12px] text-blue-600 font-bold hover:underline">查看完整预警单</button>
-                                    </div>
-                                    <div className="space-y-4">
-                                        {/* 预警卡片 1 */}
-                                        <div className="p-4 rounded-xl border border-rose-100 bg-rose-50/30 flex items-start gap-4 hover:bg-rose-50/60 transition-colors">
-                                            <div className="w-2 h-2 mt-1.5 bg-rose-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)] shrink-0"></div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <span className="font-bold text-slate-800 text-[14px]">财务资金流断裂风险预警</span>
-                                                    <span className="text-[11px] text-slate-500 font-mono">2小时前</span>
-                                                </div>
-                                                <p className="text-[12px] text-slate-600 mb-2">系统测算发现未来 15 天内应付账款波峰叠加，存在 <strong className="text-rose-600">¥ 41,200.00</strong> 流动性缺口。</p>
-                                                <button className="text-[11px] bg-white border border-slate-200 px-3 py-1 rounded shadow-sm font-bold text-slate-700 hover:text-blue-600 flex items-center gap-1"><Link size={12}/> 穿透至财务管理 (AP)</button>
-                                            </div>
-                                        </div>
-                                        {/* 预警卡片 2 */}
-                                        <div className="p-4 rounded-xl border border-amber-100 bg-amber-50/30 flex items-start gap-4 hover:bg-amber-50/60 transition-colors">
-                                            <div className="w-2 h-2 mt-1.5 bg-amber-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.6)] shrink-0"></div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <span className="font-bold text-slate-800 text-[14px]">核心客户 (VIP) 流失高危预警</span>
-                                                    <span className="text-[11px] text-slate-500 font-mono">5小时前</span>
-                                                </div>
-                                                <p className="text-[12px] text-slate-600 mb-2">客户 [test01客户] 对应报价单已过期，且历史同类订单逾期率达 85%，流失概率陡增。</p>
-                                                <button className="text-[11px] bg-white border border-slate-200 px-3 py-1 rounded shadow-sm font-bold text-slate-700 hover:text-blue-600 flex items-center gap-1"><Link size={12}/> 穿透至销售管理 (报价)</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 3.2 AI 自然语言问答报表 (Data Copilot) */}
-                    {activeTab === 'copilot' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[600px] animate-in fade-in duration-300">
-                            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-                                <h3 className="font-bold text-slate-800 text-[15px] flex items-center gap-2"><Sparkles className="w-4 h-4 text-purple-600" /> 工业AI平台助手 - 报表随心问</h3>
-                            </div>
-                            
-                            <div className="flex-1 p-6 overflow-y-auto bg-[#fafcff]/50 custom-scrollbar flex flex-col gap-6">
-                                <div className="self-start max-w-[80%] flex gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-white shrink-0"><Bot size={16}/></div>
-                                    <div className="bg-white border border-slate-200 p-4 rounded-2xl rounded-tl-sm shadow-sm text-[13px] text-slate-700">
-                                        您好！我是您的数据副驾驶。您可以直接用自然语言向我提问，例如：
-                                        <ul className="mt-2 space-y-1 text-blue-600 cursor-pointer">
-                                            <li onClick={() => setQueryText('帮我对比一下去年第三季度和今年第三季度华东地区的工业控制器销量和毛利变化')} className="hover:underline">“帮我对比一下去年第三季度和今年第三季度华东地区的工业控制器销量和毛利变化”</li>
-                                            <li className="hover:underline">“盘点一下当前超90天未动库的成品并按资金占用排序”</li>
-                                        </ul>
-                                    </div>
-                                </div>
-
-                                {hasQueried && (
-                                    <>
-                                        <div className="self-end max-w-[80%] flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2">
-                                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 shrink-0"><User size={16}/></div>
-                                            <div className="bg-blue-600 text-white p-3.5 rounded-2xl rounded-tr-sm shadow-sm text-[13px]">
-                                                {queryText}
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="self-start max-w-[85%] flex gap-3 animate-in fade-in slide-in-from-bottom-4">
-                                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-white shrink-0"><Bot size={16}/></div>
-                                            <div className="bg-white border border-purple-200 p-5 rounded-2xl rounded-tl-sm shadow-md flex flex-col w-full">
-                                                <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
-                                                    <span className="font-bold text-[14px] flex items-center gap-1.5"><PieChart size={16} className="text-purple-600"/> 华东区工业控制器 Q3 销量与毛利对比</span>
-                                                    <button className="text-[12px] bg-slate-50 text-slate-600 border border-slate-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-slate-100"><Layers size={14}/> 钉 (Pin) 到看板</button>
-                                                </div>
-                                                
-                                                {/* 模拟生成的图表 */}
-                                                <div className="flex items-end justify-center gap-16 h-48 mb-6 mt-2 relative">
-                                                    {/* Y轴线与刻度 */}
-                                                    <div className="absolute left-10 top-0 bottom-6 w-px bg-slate-200"></div>
-                                                    <div className="absolute left-6 top-0 text-[10px] text-slate-400">10k</div>
-                                                    <div className="absolute left-6 top-1/2 text-[10px] text-slate-400">5k</div>
-                                                    
-                                                    {/* 柱状组 1 */}
-                                                    <div className="flex flex-col items-center gap-3 z-10">
-                                                        <div className="flex items-end gap-3 h-32">
-                                                            <div className="relative group w-12 bg-blue-300 rounded-t-md border-b-0 border border-blue-400 hover:bg-blue-400 transition-colors" style={{ height: '60%' }}>
-                                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-bold text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">6,200</span>
-                                                            </div>
-                                                            <div className="relative group w-12 bg-emerald-300 rounded-t-md border-b-0 border border-emerald-400 hover:bg-emerald-400 transition-colors" style={{ height: '40%' }}>
-                                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-bold text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">¥2.4m</span>
-                                                            </div>
-                                                        </div>
-                                                        <span className="text-slate-500 font-bold text-[12px]">2025年 Q3</span>
-                                                    </div>
-                                                    
-                                                    {/* 柱状组 2 */}
-                                                    <div className="flex flex-col items-center gap-3 z-10">
-                                                        <div className="flex items-end gap-3 h-32">
-                                                            <div className="relative group w-12 bg-blue-600 rounded-t-md border-b-0 border border-blue-700 shadow-sm hover:bg-blue-500 transition-colors" style={{ height: '85%' }}>
-                                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-bold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">8,950</span>
-                                                            </div>
-                                                            <div className="relative group w-12 bg-emerald-500 rounded-t-md border-b-0 border border-emerald-600 shadow-sm hover:bg-emerald-400 transition-colors" style={{ height: '65%' }}>
-                                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[11px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">¥4.1m</span>
-                                                            </div>
-                                                        </div>
-                                                        <span className="text-slate-800 font-bold text-[12px]">2026年 Q3</span>
-                                                    </div>
-                                                    
-                                                    {/* 底边基线 */}
-                                                    <div className="absolute left-10 right-10 bottom-6 h-px bg-slate-300"></div>
-                                                </div>
-
-                                                <div className="flex justify-center gap-6 text-[12px] font-bold text-slate-600 mb-4">
-                                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-600 rounded-sm"></span> 销量 (台)</span>
-                                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-emerald-500 rounded-sm"></span> 毛利 (万元)</span>
-                                                </div>
-
-                                                <div className="bg-purple-50 border border-purple-100 p-4 rounded-xl text-[13px] text-purple-900 leading-relaxed">
-                                                    <span className="font-bold flex items-center gap-1 mb-1"><Sparkles size={14}/> AI 分析洞察：</span>
-                                                    相比去年同期，今年Q3华东区工业控制器销量增长了 <strong className="text-blue-700">44.3%</strong>，得益于高配版占比提升，综合毛利大幅提升了 <strong className="text-emerald-700">70.8%</strong>。
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-
-                                {isThinking && (
-                                    <div className="self-start max-w-[80%] flex gap-3 animate-in fade-in">
-                                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-white shrink-0"><Bot size={16}/></div>
-                                        <div className="bg-white border border-slate-200 px-5 py-3.5 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-2 text-slate-500 text-[13px] font-bold">
-                                            <RefreshCw size={14} className="animate-spin" />
-                                            正在生成 SQL 并连接 OLAP 数据仓...
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            
-                            <div className="p-4 bg-white border-t border-slate-100 shrink-0">
-                                <div className="relative flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-2 px-4 focus-within:ring-2 focus-within:ring-purple-200 focus-within:border-purple-400 transition-all shadow-sm">
-                                    <input 
-                                        value={queryText}
-                                        onChange={(e) => setQueryText(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleQuery()}
-                                        placeholder="输入业务问题，例如：查询上个月由于缺料导致的停机时长总计..." 
-                                        className="w-full bg-transparent outline-none py-2.5 text-[14px] text-slate-700" 
-                                    />
-                                    <button onClick={handleQuery} className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition-colors active:scale-95"><Send size={16}/></button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 3.3 异常诊断与根因分析 (Root Cause Analysis) */}
-                    {activeTab === 'rootcause' && (
-                        <div className="space-y-6 animate-in fade-in duration-300">
-                            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 shadow-sm flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-rose-600 shadow-sm border border-rose-100"><AlertTriangle size={24}/></div>
-                                    <div>
-                                        <h2 className="text-[18px] font-bold text-rose-700 mb-1">指标异动触发：本月总装车间交付延期率骤升</h2>
-                                        <p className="text-[13px] text-rose-600/80 font-medium">监测时间：2026-06-21 08:30 | 波动幅度：<span className="font-bold">+15%</span></p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-rose-200 shadow-sm">
-                                    <Sparkles size={14} className="text-purple-600"/>
-                                    <span className="text-[12px] font-bold text-purple-700">AI 已完成全链路归因溯源</span>
-                                </div>
-                            </div>
-
-                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm relative flex flex-col">
-                                <div className="p-6 lg:p-8 flex-1">
-                                    <h3 className="font-bold text-slate-800 text-[15px] mb-6">决策树追溯视图 (Decision Tree)</h3>
-                                    
-                                    {/* 增加横向滚动容器以防止小屏幕下被截断 */}
-                                    <div className="w-full overflow-x-auto custom-scrollbar pb-6 pt-3 px-1">
-                                        {/* 归因链路 (自适应弹性排布) */}
-                                        <div className="flex flex-col lg:flex-row items-center lg:items-stretch justify-start lg:justify-between gap-4 lg:gap-6 min-w-max lg:min-w-0 relative z-10">
-                                            
-                                            {/* 节点 1: 表现层 */}
-                                            <div className="w-[260px] lg:w-0 lg:flex-1 lg:min-w-[210px] bg-white border-2 border-rose-200 rounded-xl p-5 shadow-sm relative shrink-0 flex flex-col">
-                                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded border border-rose-200 whitespace-nowrap">表现层指标</div>
-                                                <h4 className="font-bold text-[14px] text-slate-800 mt-2 mb-2">订单延期率攀升</h4>
-                                                <p className="text-[12px] text-slate-500">成品 (FG001) 组装工单大面积超时，偏离标准排程。</p>
-                                            </div>
-                                            
-                                            <div className="flex items-center justify-center shrink-0">
-                                                <ArrowRight size={20} className="text-slate-300 hidden lg:block" />
-                                                <ArrowDownToLine size={20} className="text-slate-300 block lg:hidden" />
-                                            </div>
-
-                                            {/* 节点 2: 生产层 */}
-                                            <div className="w-[260px] lg:w-0 lg:flex-1 lg:min-w-[210px] bg-white border border-amber-200 rounded-xl p-5 shadow-sm relative shrink-0 flex flex-col">
-                                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-50 text-amber-600 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-200 whitespace-nowrap">追溯 1：生产执行层</div>
-                                                <h4 className="font-bold text-[14px] text-slate-800 mt-2 mb-2">SMT-M01 机台故障频发</h4>
-                                                <p className="text-[12px] text-slate-500">前置贴片工序 OEE 下降至 62%，成为产线瓶颈。</p>
-                                            </div>
-
-                                            <div className="flex items-center justify-center shrink-0">
-                                                <ArrowRight size={20} className="text-slate-300 hidden lg:block" />
-                                                <ArrowDownToLine size={20} className="text-slate-300 block lg:hidden" />
-                                            </div>
-
-                                            {/* 节点 3: 质量层 */}
-                                            <div className="w-[260px] lg:w-0 lg:flex-1 lg:min-w-[210px] bg-white border border-amber-200 rounded-xl p-5 shadow-sm relative shrink-0 flex flex-col">
-                                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-50 text-amber-600 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-200 whitespace-nowrap">追溯 2：质量检验层</div>
-                                                <h4 className="font-bold text-[14px] text-slate-800 mt-2 mb-2">RM201 芯片贴片不良</h4>
-                                                <p className="text-[12px] text-slate-500">机台抛料率增高，首件检验 (IPQC) 发现批量引脚虚焊。</p>
-                                            </div>
-
-                                            <div className="flex items-center justify-center shrink-0">
-                                                <ArrowRight size={20} className="text-slate-300 hidden lg:block" />
-                                                <ArrowDownToLine size={20} className="text-slate-300 block lg:hidden" />
-                                            </div>
-
-                                            {/* 节点 4: 供应链根因 */}
-                                            <div className="w-[260px] lg:w-0 lg:flex-1 lg:min-w-[210px] bg-purple-50 border-2 border-purple-400 rounded-xl p-5 shadow-md relative shrink-0 flex flex-col">
-                                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-[10px] font-bold px-3 py-0.5 rounded-full shadow-sm flex items-center gap-1 whitespace-nowrap"><Target size={10}/> 锁定根因</div>
-                                                <h4 className="font-bold text-[14px] text-purple-900 mt-2 mb-2">供应商封装工艺变更</h4>
-                                                <p className="text-[12px] text-purple-700">供应商 [深圳华芯科技] 本批次私自变更了底部焊盘工艺参数，导致与现有 SMT 温度曲线不匹配。</p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-4 border-t border-slate-100 pt-6">
-                                        <h3 className="font-bold text-[14px] text-slate-800 mb-4 flex items-center gap-2"><CheckCircle2 size={16} className="text-emerald-500"/> AI 自动化行动建议</h3>
-                                        <div className="flex flex-wrap gap-4">
-                                            <button className="bg-slate-50 border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-slate-700 px-5 py-3 rounded-xl text-[13px] font-bold transition-all flex items-center gap-2 shadow-sm"><ShoppingCart size={16} className="text-blue-500"/> 派发工单：要求采购部向供应商索赔并退货</button>
-                                            <button className="bg-slate-50 border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 text-slate-700 px-5 py-3 rounded-xl text-[13px] font-bold transition-all flex items-center gap-2 shadow-sm"><MonitorCog size={16} className="text-emerald-500"/> 派发工单：要求工艺部紧急调整 SMT 炉温曲线</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 3.4 预测与推演沙盘 (Predictive Simulation Sandbox) */}
-                    {activeTab === 'sandbox' && (
-                        <div className="flex flex-col lg:flex-row gap-6 animate-in fade-in duration-300">
-                            {/* 左侧：参数调节区 */}
-                            <div className="lg:w-[40%] bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
-                                <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-                                    <h3 className="font-bold text-slate-800 text-[15px] flex items-center"><Settings size={16} className="mr-2 text-blue-600"/> 宏观环境变量模拟设定 (What-If)</h3>
-                                </div>
-                                <div className="p-6 space-y-8 flex-1">
-                                    <div>
-                                        <div className="flex justify-between items-center mb-4">
-                                            <label className="text-[14px] font-bold text-slate-700 flex items-center gap-2"><ShoppingCart size={16} className="text-amber-500"/> 原材料采购成本普涨预测</label>
-                                            <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[12px] font-mono font-bold">+{materialPriceInc}%</span>
-                                        </div>
-                                        <input 
-                                            type="range" min="0" max="30" step="1" 
-                                            value={materialPriceInc} 
-                                            onChange={(e) => setMaterialPriceInc(Number(e.target.value))}
-                                            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                                        />
-                                        <div className="flex justify-between text-[11px] text-slate-400 mt-2"><span>0%</span><span>30%</span></div>
-                                    </div>
-
-                                    <div>
-                                        <div className="flex justify-between items-center mb-4">
-                                            <label className="text-[14px] font-bold text-slate-700 flex items-center gap-2"><TrendingUp size={16} className="text-emerald-500"/> 市场需求激增 / 爆单预测</label>
-                                            <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[12px] font-mono font-bold">+{demandInc}%</span>
-                                        </div>
-                                        <input 
-                                            type="range" min="0" max="50" step="5" 
-                                            value={demandInc} 
-                                            onChange={(e) => setDemandInc(Number(e.target.value))}
-                                            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                                        />
-                                        <div className="flex justify-between text-[11px] text-slate-400 mt-2"><span>0%</span><span>50%</span></div>
-                                    </div>
-                                    
-                                    <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl flex items-start gap-3 mt-4">
-                                        <Info size={16} className="text-blue-500 shrink-0 mt-0.5"/>
-                                        <p className="text-[12px] text-slate-600 leading-relaxed">
-                                            拖动滑块调整未来 3-6 个月的外部假设条件。右侧 AI 模型将联动底层 <strong>MPS(主计划)</strong>、<strong>BOM成本</strong> 及 <strong>产能负荷</strong>，实时测算对企业核心经营指标的连锁影响。
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 右侧：推演结果区 */}
-                            <div className="lg:w-[60%] bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-bl-full pointer-events-none"></div>
-                                <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center z-10">
-                                    <h3 className="font-bold text-slate-800 text-[15px] flex items-center gap-2"><Sparkles size={16} className="text-purple-600"/> AI 动态推演结果 (影响预估)</h3>
-                                </div>
-                                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
-                                    {/* 预测卡片 1: 净利润 */}
-                                    <div className="p-5 border border-slate-200 rounded-2xl shadow-sm bg-[#fafcff]">
-                                        <div className="text-[13px] font-bold text-slate-500 mb-2">预估月度净利润</div>
-                                        <div className="flex items-baseline gap-2 mb-3">
-                                            <span className={`text-[28px] font-bold font-mono ${projectedProfit < baseProfit ? 'text-rose-500' : projectedProfit > baseProfit ? 'text-emerald-500' : 'text-slate-800'}`}>
-                                                ¥{projectedProfit.toLocaleString()}
-                                            </span>
-                                            <span className="text-[12px] text-slate-500">万元</span>
-                                        </div>
-                                        <div className="text-[12px] flex items-center justify-between border-t border-slate-100 pt-3">
-                                            <span className="text-slate-400">当前基线: ¥{baseProfit}万</span>
-                                            {projectedProfit !== baseProfit && (
-                                                <span className={`font-bold flex items-center ${projectedProfit > baseProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                    {projectedProfit > baseProfit ? <ArrowUpFromLine size={12} className="mr-1"/> : <ArrowDownToLine size={12} className="mr-1"/>}
-                                                    {Math.abs(projectedProfit - baseProfit).toLocaleString()}万
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* 预测卡片 2: 交付周期 */}
-                                    <div className="p-5 border border-slate-200 rounded-2xl shadow-sm bg-[#fafcff]">
-                                        <div className="text-[13px] font-bold text-slate-500 mb-2">预估平均订单交付周期</div>
-                                        <div className="flex items-baseline gap-2 mb-3">
-                                            <span className={`text-[28px] font-bold font-mono ${projectedDelivery > baseDelivery ? 'text-rose-500' : 'text-slate-800'}`}>
-                                                {projectedDelivery}
-                                            </span>
-                                            <span className="text-[12px] text-slate-500">天</span>
-                                        </div>
-                                        <div className="text-[12px] flex items-center justify-between border-t border-slate-100 pt-3">
-                                            <span className="text-slate-400">当前基线: {baseDelivery}天</span>
-                                            {projectedDelivery > baseDelivery && (
-                                                <span className="font-bold flex items-center text-rose-500">
-                                                    <ArrowUpFromLine size={12} className="mr-1"/> 延期 {projectedDelivery - baseDelivery} 天
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* 预测卡片 3: 库存资金占用 */}
-                                    <div className="p-5 border border-slate-200 rounded-2xl shadow-sm bg-[#fafcff] md:col-span-2">
-                                        <div className="text-[13px] font-bold text-slate-500 mb-2">预估库存资金占用总额</div>
-                                        <div className="flex items-baseline gap-2 mb-3">
-                                            <span className={`text-[28px] font-bold font-mono ${projectedInventory > baseInventory ? 'text-amber-500' : 'text-slate-800'}`}>
-                                                ¥{projectedInventory.toLocaleString()}
-                                            </span>
-                                            <span className="text-[12px] text-slate-500">万元</span>
-                                        </div>
-                                        {/* 简单的横向条形图 */}
-                                        <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden flex mt-2">
-                                            <div className="bg-slate-400 h-full transition-all" style={{width: `${(baseInventory / 600) * 100}%`}}></div>
-                                            <div className="bg-amber-400 h-full transition-all relative" style={{width: `${((projectedInventory - baseInventory) / 600) * 100}%`}}></div>
-                                        </div>
-                                        <div className="text-[12px] flex items-center justify-between mt-2">
-                                            <span className="text-slate-400">当前基线: ¥{baseInventory}万</span>
-                                            {projectedInventory > baseInventory && (
-                                                <span className="font-bold flex items-center text-amber-500">
-                                                    新增占用 ¥{projectedInventory - baseInventory}万
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                </div>
-            </main>
-        </div>
-    );
-};
-
 // ==========================================
 // 10. 消息管理模块 (MessageManagement)
 // ==========================================
@@ -11193,7 +9244,7 @@ const RuleConfigModal = ({ config, onClose, onSave }: any) => {
     );
 };
 
-const MessageManagement = ({ onNavigateModule, msgs, setMsgs, focusMsgId, focusTick }) => {
+const MessageManagement = ({ onNavigateModule, msgs, onReadMessage, focusMsgId, focusTick }) => {
     const [activeTab, setActiveTab] = useState('inbox');
     const [msgFilter, setMsgFilter] = useState('all'); // all, ai, approval, system
     const [selectedMsgId, setSelectedMsgId] = useState(focusMsgId || msgs[0]?.id);
@@ -11220,23 +9271,11 @@ const MessageManagement = ({ onNavigateModule, msgs, setMsgs, focusMsgId, focusT
     };
 
     const saveRuleConfig = (draft) => {
-        setRules(prev => prev.some(rule => rule.id === draft.id)
-            ? prev.map(rule => rule.id === draft.id ? draft : rule)
-            : [draft, ...prev]);
-        setRuleConfig(null);
-        showToast(`路由规则「${draft.name}」已保存`, 'success');
+        showToast('未保存：消息路由规则接口尚未接入，填写内容已保留', 'warning');
     };
 
     const toggleRuleStatus = (ruleId) => {
-        let nextStatus = false;
-        let nextName = '';
-        setRules(prev => prev.map(rule => {
-            if (rule.id !== ruleId) return rule;
-            nextStatus = !rule.status;
-            nextName = rule.name;
-            return { ...rule, status: nextStatus };
-        }));
-        showToast(`「${nextName}」已${nextStatus ? '启用' : '停用'}`, nextStatus ? 'success' : 'warning');
+        showToast('未更新：消息路由规则接口尚未接入', 'warning');
     };
 
     const handleAction = (msgId, action) => {
@@ -11266,67 +9305,23 @@ const MessageManagement = ({ onNavigateModule, msgs, setMsgs, focusMsgId, focusT
             note: targetModule ? '确认后会携带当前消息上下文进入目标模块，便于继续处理，不再展示无业务含义的步骤序号。' : '确认后会执行当前动作并保留处理记录。'
         };
 
-        if (isFinanceDrill) {
-            setActionModal({
-                ...modalConfig,
-                desc: '确认后将携带资金缺口、影响周期和催收线索进入财务管理看板。',
-                details: [
-                    { label: '消息标题', value: msg?.title || '-' },
-                    { label: '资金缺口', value: '¥41,200.00' },
-                    { label: '风险窗口', value: '未来 15 天' },
-                    { label: '目标界面', value: '财务管理 / 资金看板' }
-                ],
-                matrixHeaders: ['看板区域', '带入内容', '处理价值'],
-                matrix: [
-                    { name: '现金流预测', actions: '应付账款波峰叠加', scope: '定位缺口形成时点' },
-                    { name: '应收催收', actions: 'test01客户催收线索', scope: '优先平滑资金曲线' },
-                    { name: '风险消息', actions: msg?.id || '-', scope: '保留来源与已读状态' }
-                ],
-                checks: ['标记消息已读', '携带风险上下文', '打开财务资金看板'],
-                note: '这个弹窗用于确认跳转时会带入哪些业务上下文，避免进入财务模块后重新查找风险来源。'
-            });
-            return;
-        }
-
-        if (isCollectionNotice) {
-            setActionModal({
-                ...modalConfig,
-                title: '一键生成催款通知',
-                desc: '系统已根据资金流风险生成催款通知草稿，确认后进入财务管理继续发送。',
-                confirmText: '生成并打开财务管理',
-                details: [
-                    { label: '催收对象', value: 'test01客户' },
-                    { label: '资金缺口', value: '¥41,200.00' },
-                    { label: '建议动作', value: '发起应收账款催收' },
-                    { label: '关联消息', value: msg?.id || '-' }
-                ],
-                fields: [
-                    {
-                        label: '催款通知预览',
-                        type: 'textarea',
-                        wide: true,
-                        value: 'test01客户您好，系统识别到当前应收账款回款节奏会影响未来15天资金平衡，请优先确认待回款安排。如已付款，请回复付款凭证以便财务核销。'
-                    }
-                ],
-                checks: ['附带应收账款明细', '标记风险消息已读', '跳转财务管理继续发送'],
-                note: '这里展示的是将要生成的催款草稿内容，用户可以先判断语气和业务对象是否正确，再进入财务模块处理。'
-            });
-            return;
-        }
-
         setActionModal(modalConfig);
     };
 
-    const confirmMessageAction = () => {
+    const confirmMessageAction = async () => {
         if (!actionModal) return;
-        setMsgs(msgs.map(m => m.id === actionModal.msgId ? { ...m, read: true } : m));
+        if (!actionModal.targetModule) {
+            showToast('未执行：尚未接入该消息业务动作', 'warning');
+            return;
+        }
+        await onReadMessage(actionModal.msgId);
         const targetModule = actionModal.targetModule;
         setActionModal(null);
         if (targetModule && onNavigateModule) {
             onNavigateModule(targetModule);
             return;
         }
-        showToast(`已执行操作：${actionModal.title}`, actionModal.tone === 'amber' ? 'warning' : 'success');
+        showToast('未执行：来源页面跳转不可用', 'warning');
     };
 
     const filteredMsgs = msgs.filter(m => msgFilter === 'all' ? true : m.type === msgFilter);
@@ -11391,7 +9386,7 @@ const MessageManagement = ({ onNavigateModule, msgs, setMsgs, focusMsgId, focusT
                                             key={msg.id} 
                                             onClick={() => {
                                                 setSelectedMsgId(msg.id);
-                                                if(!msg.read) setMsgs(msgs.map(m => m.id === msg.id ? { ...m, read: true } : m));
+                                                if(!msg.read) void onReadMessage(msg.id);
                                             }}
                                             className={`p-4 cursor-pointer transition-colors relative group ${selectedMsgId === msg.id ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`}
                                         >
@@ -11436,8 +9431,7 @@ const MessageManagement = ({ onNavigateModule, msgs, setMsgs, focusMsgId, focusT
                                                     <div className="mt-6 pt-5 border-t border-purple-100 bg-purple-50/50 -mx-6 -mb-6 p-6 rounded-b-2xl">
                                                         <h5 className="font-bold text-purple-800 text-[13px] flex items-center gap-1.5 mb-3"><Sparkles size={14}/> AI 智能归因与上下文摘要</h5>
                                                         <ul className="space-y-2 text-[13px] text-purple-900/80">
-                                                            <li className="flex items-start gap-2"><ArrowRight size={14} className="mt-0.5 shrink-0 text-purple-400"/> <span>追溯发现，客户历史逾期订单占比达 35%。</span></li>
-                                                            <li className="flex items-start gap-2"><ArrowRight size={14} className="mt-0.5 shrink-0 text-purple-400"/> <span>当前账户体系中，现金流健康指数降至 62分（阈值 70）。</span></li>
+                                                            <li className="flex items-start gap-2"><ArrowRight size={14} className="mt-0.5 shrink-0 text-purple-400"/> <span>尚未获取该消息的正式归因与上下文摘要。</span></li>
                                                         </ul>
                                                     </div>
                                                 )}
@@ -11608,11 +9602,7 @@ const formatMetricUnit = (value: string, unit: string) => {
 };
 
 const FeedbackManagement = ({ currentTenant, currentUser, onToast }) => {
-  const [issues, setIssues] = useState([
-    { id: 'FB-260721-018', title: '移动端扫码报工后返回状态不明确', module: '生产管理', priority: '高', reporter: '王建国', time: '今天 10:26', status: '处理中' },
-    { id: 'FB-260720-011', title: '采购订单希望增加供应商交期变更记录', module: '采购管理', priority: '中', reporter: '李采购', time: '昨天 16:42', status: '已受理' },
-    { id: 'FB-260718-006', title: '库存批次导出字段与现场模板不一致', module: '库存管理', priority: '低', reporter: '周仓管', time: '7月18日', status: '已解决' },
-  ]);
+  const issues = [];
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [module, setModule] = useState('工作台');
@@ -11624,12 +9614,7 @@ const FeedbackManagement = ({ currentTenant, currentUser, onToast }) => {
       onToast('请填写问题标题和具体表现', 'warning');
       return;
     }
-    const id = `FB-260721-${String(issues.length + 19).padStart(3, '0')}`;
-    setIssues(prev => [{ id, title: title.trim(), module, priority, reporter: currentUser.name, time: '刚刚', status: '待受理' }, ...prev]);
-    setTitle('');
-    setDescription('');
-    setIsCreating(false);
-    onToast(`${id} 已提交，处理进度会同步到消息中心`, 'success');
+    onToast('未提交：反馈服务尚未接入，填写内容已保留', 'warning');
   };
 
   const priorityClass = (value) => value === '高' ? 'bg-rose-50 text-rose-600 border-rose-100' : value === '中' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-slate-50 text-slate-600 border-slate-200';
@@ -11652,9 +9637,9 @@ const FeedbackManagement = ({ currentTenant, currentUser, onToast }) => {
         <section className="grid grid-cols-1 md:grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-2xl overflow-hidden mb-6">
           {[
             ['当前租户', currentTenant.name],
-            ['待受理', `${issues.filter(item => item.status === '待受理').length} 项`],
-            ['处理中', `${issues.filter(item => item.status === '处理中' || item.status === '已受理').length} 项`],
-            ['近30日解决率', '94.6%'],
+            ['待受理', '-'],
+            ['处理中', '-'],
+            ['近30日解决率', '-'],
           ].map(([label, value]) => <div key={label} className="bg-white px-5 py-4"><div className="text-[11px] font-bold text-slate-400">{label}</div><div className="mt-1.5 text-[15px] font-black text-slate-800 truncate">{value}</div></div>)}
         </section>
 
@@ -11674,6 +9659,7 @@ const FeedbackManagement = ({ currentTenant, currentUser, onToast }) => {
         <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-4"><div><h2 className="text-[16px] font-black text-slate-900">反馈记录</h2><p className="text-[12px] text-slate-500 mt-1">状态、回复和解决版本都会持续留痕。</p></div><span className="text-[12px] font-bold text-slate-400">共 {issues.length} 条</span></div>
           <div className="divide-y divide-slate-100">
+            <ApiDataState empty="尚未获取反馈记录" />
             {issues.map(issue => (
               <button key={issue.id} onClick={() => onToast(`${issue.id} 的处理详情已展开`, 'success')} className="w-full text-left px-5 py-4 hover:bg-slate-50 transition-colors grid grid-cols-1 lg:grid-cols-[150px_minmax(0,1fr)_130px_110px_120px] gap-3 lg:items-center">
                 <div className="text-[12px] font-black text-blue-600">{issue.id}</div>
@@ -11748,12 +9734,6 @@ export default function App() {
   const [financeRefreshTick, setFinanceRefreshTick] = useState(0);
   const [flowToast, setFlowToast] = useState({ show: false, msg: '', type: 'success' });
   const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
-  const [globalAssistantWidth, setGlobalAssistantWidth] = useState(520);
-  const [isGlobalAssistantResizing, setIsGlobalAssistantResizing] = useState(false);
-  const [globalAssistantInput, setGlobalAssistantInput] = useState('');
-  const [globalAssistantMessages, setGlobalAssistantMessages] = useState<any[]>([
-    { role: 'assistant', text: '你好，我是工业 AI 助手。你可以直接问经营、销售、生产、库存和采购数据；涉及生成单据或改变 ERP 数据时，我会先给出依据、影响范围和审批要求。', time: '刚刚' }
-  ]);
   const [profileModal, setProfileModal] = useState(null);
   const roleMeta = roleWorkbenchMeta[activeRole] || roleWorkbenchMeta.老板;
   const [workbenchDashboard, setWorkbenchDashboard] = useState<WorkbenchDashboardDto | null>(null);
@@ -12119,108 +10099,33 @@ export default function App() {
       return;
     }
 
-    if (action === 'startProduction') {
-      if (!businessFlow?.mrpDemandId) {
-        showFlowToast('缺少正式生产需求，不能创建工单', 'error');
-        return;
-      }
-      try {
-        const context = { tenantId: currentTenant.id, accessToken: currentUser?.accessToken || '' };
-        const aps = await productionOperationsApi.startPlanningTask(context, 'APS', [businessFlow.mrpDemandId], `${businessFlow.mrpDemandId}:after-purchase:${businessFlow.purchaseReceipt?.id || 'none'}`);
-        const candidate = aps.result?.scheduleCandidates?.[0];
-        if (aps.status !== 'SUCCEEDED' || !candidate) throw new Error('APS 未返回覆盖当前需求的正式候选');
-        const demandList = await productionOperationsApi.listDemands(context);
-        const demand = demandList.items.find((item) => item.id === businessFlow.mrpDemandId);
-        const inventoryWarehouseId = demand?.source?.payloadSnapshot?.warehouseId
-          || demand?.source?.payloadSnapshot?.inventoryWarehouseId
-          || demand?.source?.inventoryWarehouseId;
-        if (!demand || !inventoryWarehouseId) throw new Error('生产需求缺少发货目标仓库');
-        const plannedQty = demand.qty;
-        const workOrder = await productionOperationsApi.createWorkOrder(context, {
-          productId: demand.productId, productName: demand.productName || businessFlow.product, factoryResourceId: demand.factoryResourceId,
-          workCenterResourceId: 'WC-01', plannedQty, inputQty: plannedQty, uom: 'PCS', dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-          bomSnapshotId: crypto.randomUUID(), routingSnapshotId: crypto.randomUUID(), scheduleCandidateId: candidate.id,
-          kittingStatus: 'SHORTAGE', correlationId: businessFlow.correlationId,
-          inventoryWarehouseId,
-          demandLinks: [{ demandId: businessFlow.mrpDemandId, allocatedQty: plannedQty, customerLocked: true }],
-        }, `work-order:${businessFlow.mrpDemandId}:${candidate.id}`);
-        const checked = await productionOperationsApi.checkKitting(context, workOrder);
-        const released = await productionOperationsApi.workOrderCommand(context, checked, 'release');
-        const started = await productionOperationsApi.workOrderCommand(context, released, 'start');
-        setBusinessFlow(prev => ({ ...prev, currentStep: 'production', workOrder: started, completed: Array.from(new Set([...prev.completed, 'materialInbound'])), ledger: [...prev.ledger, { module: '生产管理', text: `物料齐套校验通过，工单 ${started.code} 已下达并开工` }] }));
-        setActiveModule('生产管理', { query: { production: 'orders' } });
-        showFlowToast(`正式工单 ${started.code} 已开工`);
-      } catch (error) {
-        showFlowToast(error instanceof Error ? `生产下达失败：${error.message}` : '生产下达失败', 'error');
-      }
-      return;
-    }
-
-    if (action === 'finishProduction') {
-      if (!businessFlow?.workOrder) {
-        showFlowToast('缺少正式生产工单，不能执行完工入库', 'error');
-        return;
-      }
-      try {
-        const context = { tenantId: currentTenant.id, accessToken: currentUser?.accessToken || '' };
-        const report = await productionOperationsApi.submitReport(context, businessFlow.workOrder, businessFlow.workOrder.plannedQty);
-        const inspection = await productionOperationsApi.createInspection(context, report.workOrder, report.workOrder.plannedQty);
-        const passed = await productionOperationsApi.passInspection(context, inspection);
-        const inventoryWarehouseId = report.workOrder.parameterSnapshot?.inventoryWarehouseId;
-        if (!inventoryWarehouseId) throw new Error('生产工单缺少发货目标仓库');
-        const completion = await productionOperationsApi.createCompletion(context, report.workOrder, passed, inventoryWarehouseId);
-        setBusinessFlow(prev => ({ ...prev, completionId: completion.completionId, workOrder: report.workOrder }));
-        const posted = await productionOperationsApi.waitForCompletion(context, completion.completionId);
-        if (posted.status !== 'POSTED') {
-          showFlowToast('完工入库处理中，请在质量与结案页面查看库存确认结果');
-          return;
-        }
-        setBusinessFlow(prev => ({ ...prev, currentStep: 'finishedInbound', completionId: completion.completionId, completed: Array.from(new Set([...prev.completed, 'production'])), ledger: [...prev.ledger, { module: '库存管理', text: `生产完工 ${completion.completionId} 已入库，原销售发货任务进入重新校验` }] }));
-        setActiveModule('库存管理', { query: { inventory: 'inbound' } });
-        showFlowToast('生产完工已形成成品库存事实，正在重新校验原销售发货任务');
-      } catch (error) {
-        showFlowToast(error instanceof Error ? `生产完工失败：${error.message}` : '生产完工失败', 'error');
-      }
-      return;
-    }
-
     if (action === 'formalSalesShipped') {
       setBusinessFlow(prev => ({ ...prev, currentStep: 'delivery', completed: Array.from(new Set([...prev.completed, 'finishedInbound'])), ledger: [...prev.ledger, { module: '库存管理', text: '原销售出库单已正式过账，销售订单更新为已发货' }] }));
       showFlowToast('销售出库已完成，订单履约闭环');
       return;
     }
 
-    if (action === 'confirmReceipt') {
-      setBusinessFlow(prev => ({ ...prev, currentStep: 'delivery', completed: Array.from(new Set([...prev.completed, 'finishedInbound'])), ledger: [...prev.ledger, { module: '销售管理', text: '客户已确认收货，等待财务完成结算' }] }));
-      return;
-    }
-
     const flowActionConfig = {
-      approveOrder: { next: 'approval', module: '销售管理', query: { tab: 'orders' }, msg: '销售订单已提交审批，保留同一业务单号继续流转' },
-      checkStock: { next: 'stockCheck', module: '库存管理', query: { inventory: 'stock' }, msg: '订单审批通过，已进入库存自动校验' },
-      openProductionDemand: { next: 'productionDemand', module: '生产管理', query: { production: 'mps' }, msg: '已打开持久化生产需求，来源销售订单保持关联' },
-      runMrp: { next: 'mpsMrp', module: '生产管理', query: { production: 'mps' }, msg: '可用库存不足，已生成 MPS/MRP 展算任务', type: 'warning' },
-      createPr: { next: 'purchaseRequest', module: '采购管理', query: { procurement: 'pr' }, msg: 'MRP 缺料已转采购申请' },
-      approvePr: { next: 'purchaseOrder', module: '采购管理', query: { procurement: 'order' }, msg: '采购申请已审批通过，已生成采购订单' },
-      receiveMaterial: { next: 'materialInbound', module: '库存管理', query: { inventory: 'inbound' }, msg: '供应商送货已登记，物料采购入库已接收' },
-      startProduction: { next: 'production', module: '生产管理', query: { production: 'orders' }, msg: '物料齐套，已下达生产工单' },
-      finishProduction: { next: 'finishedInbound', module: '库存管理', query: { inventory: 'inbound' }, msg: '生产质检合格，成品已入库' },
-      shipSales: { next: 'delivery', module: '库存管理', query: { inventory: 'outbound' }, msg: '销售出库并确认发货' },
-      generateFinanceDocs: { next: 'financeDocs', module: '财务管理', query: {}, msg: '已生成应收单与应付单，财务接收对账' },
-      settleFinance: { next: 'settlement', module: '财务管理', query: {}, msg: '收付款、发票、流水与凭证已完成' },
+      approveOrder: { module: '销售管理', query: { tab: 'orders' } },
+      checkStock: { module: '库存管理', query: { inventory: 'stock' } },
+      openProductionDemand: { module: '生产管理', query: { production: 'mps' } },
+      runMrp: { module: '生产管理', query: { production: 'mps' } },
+      createPr: { module: '采购管理', query: { procurement: 'pr' } },
+      approvePr: { module: '采购管理', query: { procurement: 'order' } },
+      receiveMaterial: { module: '库存管理', query: { inventory: 'inbound' } },
+      startProduction: { module: '生产管理', query: { production: 'mps' } },
+      finishProduction: { module: '生产管理', query: { production: 'qc_cost' } },
+      shipSales: { module: '库存管理', query: { inventory: 'outbound' } },
+      generateFinanceDocs: { module: '财务管理', query: {} },
+      settleFinance: { module: '财务管理', query: {} },
     };
 
     const config = flowActionConfig[action];
     if (!config) return;
 
-    setBusinessFlow(prev => ({
-      ...prev,
-      currentStep: config.next,
-      completed: Array.from(new Set([...prev.completed, prev.currentStep])),
-      ledger: [...prev.ledger, { module: config.module, text: config.msg }]
-    }));
+    // Navigation is not a business command; only confirmed API branches above advance facts.
     setActiveModule(config.module, { query: config.query });
-    showFlowToast(config.msg, config.type || 'success');
+    showFlowToast('已进入来源业务页面，请完成正式操作；当前业务状态未变更', 'warning');
   };
 
   const linkedFlowProps = {
@@ -12235,11 +10140,26 @@ export default function App() {
   const unreadMessages = messages.filter(message => !message.read);
   const recentMessages = messages.slice(0, 4);
 
+  const markMessageRead = async (messageId) => {
+    const msg = messages.find((item) => item.id === messageId);
+    if (msg?.read) return;
+    if (!formalContext || !msg?._backend) {
+      showFlowToast('未标记已读：缺少正式消息信息', 'warning');
+      return;
+    }
+    try {
+      const result = await messagesApi.markAsRead(formalContext, msg._backend);
+      if (!result?.message?.isRead) throw new Error('未收到已读确认');
+      setMessages(prev => prev.map(item => item.id === messageId ? mapBackendMessage(result.message) : item));
+    } catch (error) {
+      showFlowToast(error instanceof Error ? error.message : '标记已读失败', 'warning');
+    }
+  };
+
   const openMessageFromBell = (messageId) => {
     setFocusedMessageId(messageId);
     setMessageFocusTick(prev => prev + 1);
-    setMessages(prev => prev.map(message => message.id === messageId ? { ...message, read: true } : message));
-    if (formalContext) { const msg = messages.find((m: any) => m.id === messageId); if (msg?._backend) messagesApi.markAsRead(formalContext, msg._backend).catch(() => {}); }
+    void markMessageRead(messageId);
     setActiveModule('消息管理');
     setIsNotificationsOpen(false);
   };
@@ -12250,70 +10170,18 @@ export default function App() {
     setIsNotificationsOpen(false);
   };
 
-  const markAllMessagesRead = () => {
-    setMessages(prev => prev.map(message => ({ ...message, read: true })));
-    if (formalContext && currentUser) messagesApi.markAllAsRead(formalContext, currentUser.userId || currentUser.username || 'system').catch(() => {});
+  const markAllMessagesRead = async () => {
+    if (!formalContext || !currentUser?.userId) {
+      showFlowToast('未标记已读：缺少正式接收人信息', 'warning');
+      return;
+    }
+    try {
+      await messagesApi.markAllAsRead(formalContext, currentUser.userId);
+      await refreshMessages();
+    } catch (error) {
+      showFlowToast(error instanceof Error ? error.message : '标记已读失败', 'warning');
+    }
   };
-  useEffect(() => {
-    if (!isGlobalAssistantResizing) return;
-    const handleMouseMove = (event) => {
-      const nextWidth = Math.min(Math.max(window.innerWidth - event.clientX, 420), Math.min(920, window.innerWidth - 280));
-      setGlobalAssistantWidth(nextWidth);
-    };
-    const handleMouseUp = () => setIsGlobalAssistantResizing(false);
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isGlobalAssistantResizing]);
-
-  const sendGlobalAssistantMessage = (text = globalAssistantInput) => {
-    const value = text.trim();
-    if (!value) return;
-    const asksForAction = /(生成|创建|执行|排产|补货|下单|提交|审批|调拨)/.test(value);
-    const asksInventory = /(库存|物料|缺料|补货)/.test(value);
-    const assistantReply = asksForAction
-      ? {
-          role: 'assistant',
-          text: asksInventory ? '已完成库存可用量、在途采购和未来 14 天生产需求校验。建议为 3 项短缺物料创建采购申请，预计可把订单延期风险从 38% 降至 12%。' : '我已根据当前业务上下文生成一份可执行方案。提交前请确认影响范围与审批路径。',
-          time: '刚刚',
-          action: {
-            id: `AI-ACT-${Date.now()}`,
-            title: asksInventory ? '生成 3 笔采购申请' : '提交业务执行方案',
-            scope: asksInventory ? 'RM201 / RM202 / RM305 · 合计 ¥186,400' : `${currentTenant.name} · 当前业务单据`,
-            basis: asksInventory ? '现存量 + 已分配量 + 在途量 + MRP 净需求' : '当前页面数据、关联单据与岗位权限',
-            approval: asksInventory ? '采购主管 → 财务经理（金额阈值）' : '按单据类型匹配审批规则',
-            risk: '中风险',
-            status: 'draft',
-          }
-        }
-      : {
-          role: 'assistant',
-          text: asksInventory
-            ? '当前共有 12 项物料低于安全库存，其中 RM201、RM202、RM305 会影响 SO-LINK-20260622-001。数据来自库存台账、在途采购和 MRP 净需求，更新于 2 分钟前。'
-            : `已在 ${currentTenant.name} 的授权范围内完成查询。结论会附带指标口径、来源单据和更新时间；你也可以继续要求我预测、对比或生成处理方案。`,
-          time: '刚刚'
-        };
-    setGlobalAssistantMessages(prev => [
-      ...prev,
-      { role: 'user', text: value, time: '刚刚' },
-      assistantReply
-    ]);
-    setGlobalAssistantInput('');
-  };
-
-  const submitAiAction = (messageIndex) => {
-    setGlobalAssistantMessages(prev => prev.map((message, index) => index === messageIndex && message.action ? { ...message, action: { ...message.action, status: 'submitted' } } : message));
-    setMessages(prev => [{ id: `MSG-AI-${Date.now()}`, title: 'AI 操作等待审批', content: 'AI 生成的采购申请已提交审批，审批通过后才会写入正式业务单据。', time: '刚刚', source: 'AI智能中枢', level: 'warning', read: false }, ...prev]);
-    showFlowToast('AI 操作已提交审批；系统已记录模型、依据、操作者和影响范围', 'success');
-  };
-
   const menuItems = getModulesForRole(activeRole);
   const allowedModules = menuItems.map((item) => item.label);
   const productionAvailable = Boolean(currentUser?.accessToken && currentUser?.tenantIds?.includes(currentTenant.id));
@@ -12355,8 +10223,7 @@ export default function App() {
           apiContext={formalContext}
           permissions={currentUser?.permissions ?? []}
           onActionSubmit={() => {
-            setMessages(prev => [{ id: `MSG-AI-${Date.now()}`, title: 'AI 操作等待审批', content: 'AI 生成的采购申请已提交审批，审批通过后才会写入正式业务单据。', time: '刚刚', source: 'AI智能中枢', level: 'warning', read: false }, ...prev]);
-            showFlowToast('AI 操作已提交审批；系统已记录模型、依据、操作者和影响范围', 'success');
+            showFlowToast('AI 操作方案已提交审批', 'success');
           }}
         />
       )}
@@ -12679,9 +10546,9 @@ export default function App() {
         {activeModule === '财务管理' && <FinancialManagement {...linkedFlowProps} currentUser={currentUser} currentTenant={currentTenant} refreshSignal={financeRefreshTick} />}
         {activeModule === '人员管理' && <PersonnelManagement currentTenant={currentTenant} currentUser={currentUser} />}
         {activeModule === '产业链管理' && <SupplyChainManagement currentTenant={currentTenant} currentUser={currentUser} />}
-        {activeModule === 'AI智能中枢' && <AIHubManagementV2 onOpenAssistant={() => setIsGlobalAssistantOpen(true)} />}
-        {activeModule === 'AI数据分析' && <AIDataAnalysisManagement />}
-        {activeModule === '消息管理' && <MessageManagement onNavigateModule={setActiveModule} msgs={messages} setMsgs={setMessages} focusMsgId={focusedMessageId} focusTick={messageFocusTick} />}
+        {activeModule === 'AI智能中枢' && <AIHubManagementV2 apiContext={formalContext} onOpenAssistant={() => setIsGlobalAssistantOpen(true)} />}
+        {activeModule === 'AI数据分析' && <AIDataAnalysisManagement apiContext={formalContext} />}
+        {activeModule === '消息管理' && <MessageManagement onNavigateModule={setActiveModule} msgs={messages} onReadMessage={markMessageRead} focusMsgId={focusedMessageId} focusTick={messageFocusTick} />}
         {activeModule === '平台管理' && <PlatformManagementV2 currentTenant={currentTenant} currentUser={currentUser} onToast={showFlowToast} />}
         {activeModule === '问题反馈' && <FeedbackManagement currentTenant={currentTenant} currentUser={currentUser} onToast={showFlowToast} />}
         

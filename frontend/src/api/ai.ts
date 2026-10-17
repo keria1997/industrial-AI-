@@ -14,6 +14,7 @@ export type ModelConfigDto = {
   apiKeyMasked: string; baseUrl: string;
   temperature: string; maxTokens: number; timeoutSeconds: number;
   isActive: boolean; isPrimary: boolean;
+  fallbackModelId?: string | null;
   remark: string; version: number; createdAt: string; updatedAt: string;
 };
 

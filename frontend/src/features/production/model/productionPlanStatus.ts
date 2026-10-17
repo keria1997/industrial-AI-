@@ -98,7 +98,7 @@ export const recoverMpsFromPlannedDemand = (demand: PlannedDemandLike, task: Pla
     workOrderId: demand.workOrderId,
     workOrderCode: demand.workOrderCode,
     formalMps: true,
-    priority: "紧急",
+    priority: "-",
     sourceSalesOrder: normalizeProductionDemandTrace(demand)?.salesOrderId || "",
     sourceFactVersion: normalizeProductionDemandTrace(demand)?.inventoryFactVersion,
     sourceCustomer: "业务来源",

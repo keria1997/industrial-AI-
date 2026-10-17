@@ -20,74 +20,6 @@ const formatTime = () => {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 };
 
-// 意图识别：根据用户输入判断意图类型
-const detectIntent = (text: string): 'query' | 'action' | 'prediction' | 'general' => {
-  if (/(生成|创建|执行|排产|补货|下单|提交|审批|调拨|出库|入库|下达)/.test(text)) return 'action';
-  if (/(预测|预计|趋势|未来|下月|下季|风险|预警)/.test(text)) return 'prediction';
-  if (/(库存|物料|缺料|补货|查询|查看|多少|哪些|状态|进度|延期|账龄|呆滞|安全)/.test(text)) return 'query';
-  return 'general';
-};
-
-// 生成AI回复
-const generateReply = (text: string, tenantName: string): { text: string; action?: AIActionPlan } => {
-  const intent = detectIntent(text);
-  const isInventoryRelated = /(库存|物料|缺料|补货|安全)/.test(text);
-  const isSalesRelated = /(订单|销售|发货|客户)/.test(text);
-  const isProductionRelated = /(生产|工单|排产|报工|完工|FQC)/.test(text);
-  const isProcurementRelated = /(采购|PR|PO|供应商|交期|到货)/.test(text);
-
-  // Import capability questions
-  if (/导入|上传|批量|文件|格式/i.test(text) && /(什么|哪些|支持|格式|类型|怎么|如何)/.test(text)) {
-    return {
-      text: '当前系统支持通过 AI 助手上传 CSV 文件（UTF-8 编码）批量导入主数据和 WMS 库存快照。\n\n支持导入的类型：仓库、产品、物料、WMS库存快照。\n点击底部上传按钮选择文件，系统会自动识别列名并建议映射。\n暂不支持 Excel（.xlsx）直接导入，请先另存为 CSV 格式。',
-    };
-  }
-
-  switch (intent) {
-    case 'action':
-      return {
-        text: isInventoryRelated
-          ? '已完成库存可用量、在途采购和未来 14 天生产需求校验。建议为 3 项短缺物料创建采购申请，预计可把订单延期风险从 38% 降至 12%。'
-          : isProductionRelated
-          ? '已根据当前排产计划、齐套状态和工单进度生成执行方案。提交前请确认影响范围与审批路径。'
-          : '我已根据当前业务上下文生成一份可执行方案。提交前请确认影响范围与审批路径。',
-        action: {
-          id: `AI-ACT-${Date.now()}`,
-          title: isInventoryRelated ? '生成 3 笔采购申请' : isProductionRelated ? '提交生产执行方案' : '提交业务执行方案',
-          scope: isInventoryRelated ? 'RM201 / RM202 / RM305 · 合计 ¥186,400' : `${tenantName} · 当前业务单据`,
-          basis: isInventoryRelated ? '现存量 + 已分配量 + 在途量 + MRP 净需求' : '当前页面数据、关联单据与岗位权限',
-          approval: isInventoryRelated ? '采购主管 → 财务经理（金额阈值）' : '按单据类型匹配审批规则',
-          risk: 'medium',
-          status: 'draft',
-        },
-      };
-    case 'prediction':
-      return {
-        text: isInventoryRelated
-          ? '基于 BOM 展开、MRP 净需求、在途交期和安全库存水位，未来 7 天有 3 项物料存在短缺风险：RM201（缺口 230kg）、RM202（缺口 180kg）、RM305（缺口 95kg）。建议提前启动补货流程。'
-          : isSalesRelated
-          ? '基于近 12 个月销售数据、季节性指数和当前订单储备，预测下月销量为 ¥2,340,000，环比增长 8.2%。主要驱动因素：工业控制器顶配版订单增加（+15%）、季节性需求高峰。置信区间 ±5%。'
-          : '基于历史数据和当前业务上下文，已完成趋势分析。你可以继续追问具体指标或要求生成操作建议。',
-      };
-    case 'query':
-      return {
-        text: isInventoryRelated
-          ? '当前共有 12 项物料低于安全库存，其中 RM201、RM202、RM305 会影响 SO-LINK-20260622-001。数据来自库存台账、在途采购和 MRP 净需求，更新于 2 分钟前。'
-          : isSalesRelated
-          ? `已在 ${tenantName} 的授权范围内完成查询。当前有 8 笔待确认订单、3 笔已确认待发货、2 笔部分发货。结论会附带指标口径、来源单据和更新时间。`
-          : isProductionRelated
-          ? '当前有 5 个在制工单，其中 WO-2026-003 因缺料暂停，预计今日 16:00 齐套后可恢复。FQC 检验通过率 96.2%。'
-          : isProcurementRelated
-          ? '当前有 4 笔 PO 即将到货（3 天内），其中 PO-2026-012 供应商确认延迟 2 天，建议关注。'
-          : `已在 ${tenantName} 的授权范围内完成查询。结论会附带指标口径、来源单据和更新时间；你也可以继续要求我预测、对比或生成处理方案。`,
-      };
-    default:
-      return {
-        text: `我已理解你的问题。基于 ${tenantName} 的业务数据，我可以帮你查询经营、销售、生产、库存和采购数据，也可以生成分析报告和操作建议。请告诉我你想了解哪个方面的信息。`,
-      };
-  }
-};
-
 const importEntityPermissionMap: Record<string, string> = {
   warehouse: 'inventory.warehouse.create',
   product: 'inventory.product.create',
@@ -117,10 +49,28 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [activeDomain, setActiveDomain] = useState<DomainId>('inventory');
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [requestError, setRequestError] = useState<{ message: string; retryText?: string } | null>(null);
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const scope = `${apiContext?.tenantId || ''}:${apiContext?.accessToken || ''}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const chatPending = useRef(false);
+  const actionPending = useRef(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMessages([]);
+    setConversationId(undefined);
+    setRequestError(null);
+    setInput('');
+    setIsTyping(false);
+    setSubmittingId(null);
+    chatPending.current = false;
+    actionPending.current = false;
+  }, [scope]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -138,7 +88,9 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
 
   const sendMessage = useCallback(async (text?: string) => {
     const value = (text ?? input).trim();
-    if (!value || isTyping) return;
+    if (!value || chatPending.current) return;
+    const requestScope = scope;
+    chatPending.current = true;
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -150,87 +102,81 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsTyping(true);
+    setRequestError(null);
 
-    // 尝试调用后端 AI API，失败时降级到本地规则引擎
-    if (apiContext) {
-      try {
+    // UI -> business API -> AI service. Failed requests never manufacture business answers.
+    try {
+        if (!apiContext) throw new Error('请登录后使用 AI 助手');
         const response = await aiApi.chat(apiContext, {
           conversationId,
           message: value,
           domain: activeDomain,
         });
+        if (scopeRef.current !== requestScope) return;
+        if (!response?.conversation?.id || !response.assistantMessage?.id
+          || typeof response.assistantMessage.content !== 'string' || !response.assistantMessage.content.trim()) {
+          throw new Error('AI 服务未返回有效回答');
+        }
+        const actionData = response.actionPlan ?? response.assistantMessage.actionPlan;
         setConversationId(response.conversation.id);
         const assistantMessage: ChatMessage = {
           id: response.assistantMessage.id,
           role: 'assistant',
           text: response.assistantMessage.content,
           time: formatTime(),
-          action: response.actionPlan ? {
+          actionData,
+          action: actionData ? {
             id: response.assistantMessage.id,
-            title: response.actionPlan.title,
-            scope: response.actionPlan.impactScope,
-            basis: response.actionPlan.dataEvidence.map(e => `${e.label}: ${e.value}`).join(' / '),
-            approval: response.actionPlan.approvalPath,
-            risk: response.actionPlan.riskLevel === 'critical' ? 'high' : response.actionPlan.riskLevel,
+            title: actionData.title,
+            scope: actionData.impactScope,
+            basis: (actionData.dataEvidence ?? []).map(e => `${e.label}: ${e.value}`).join(' / '),
+            approval: actionData.approvalPath,
+            risk: actionData.riskLevel === 'critical' ? 'high' : actionData.riskLevel,
             status: 'draft',
           } : undefined,
         };
         setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      if (scopeRef.current === requestScope) {
+        setRequestError({ message: error instanceof Error ? error.message : 'AI 服务暂不可用', retryText: value });
+      }
+    } finally {
+      if (scopeRef.current === requestScope) {
+        chatPending.current = false;
         setIsTyping(false);
-        return;
-      } catch {
-        // 降级到本地规则引擎
       }
     }
-
-    // 本地规则引擎降级
-    setTimeout(() => {
-      const reply = generateReply(value, tenantCode);
-      const assistantMessage: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        text: reply.text,
-        time: formatTime(),
-        action: reply.action,
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-      setIsTyping(false);
-    }, 700);
-  }, [input, tenantCode, isTyping, apiContext, conversationId, activeDomain]);
+  }, [input, scope, apiContext, conversationId, activeDomain]);
 
   const handleSubmitAction = useCallback(async (messageId: string) => {
-    if (apiContext && conversationId) {
-      try {
+    if (actionPending.current) return;
+    const requestScope = scope;
+    actionPending.current = true;
+    setSubmittingId(messageId);
+    setRequestError(null);
+    try {
         const msg = messages.find(m => m.id === messageId);
-        if (msg?.action) {
-          await aiApi.submitActionPlan(apiContext, {
+        if (!apiContext || !conversationId || !msg?.action || !msg.actionData) throw new Error('缺少正式行动方案，未提交');
+        if (msg.action.status === 'submitted') return;
+        const response = await aiApi.submitActionPlan(apiContext, {
             messageId,
             conversationId,
-            actionPlan: {
-              title: msg.action.title,
-              description: msg.action.scope,
-              targetModule: 'general',
-              targetEntity: 'general',
-              targetAction: 'create',
-              parameters: {},
-              impactScope: msg.action.scope,
-              riskLevel: msg.action.risk === 'high' ? 'high' : msg.action.risk,
-              dataEvidence: [{ label: '审批路径', value: msg.action.approval }],
-              approvalPath: msg.action.approval,
-            },
+            actionPlan: msg.actionData,
           });
-        }
-      } catch { /* 降级到本地状态更新 */ }
-    }
-    setMessages(prev => prev.map(msg => {
-      if (msg.id === messageId && msg.action) {
+        if (scopeRef.current !== requestScope) return;
+        if (!response?.actionPlan?.id || response.actionPlan.status !== 'submitted') throw new Error('未收到审批提交确认');
         const updatedAction = { ...msg.action, status: 'submitted' as const };
-        if (onActionSubmit) onActionSubmit(updatedAction);
-        return { ...msg, action: updatedAction };
+        setMessages(prev => prev.map(item => item.id === messageId ? { ...item, action: updatedAction } : item));
+        onActionSubmit?.(updatedAction);
+    } catch (error) {
+      if (scopeRef.current === requestScope) setRequestError({ message: error instanceof Error ? error.message : '审批提交失败，草稿已保留' });
+    } finally {
+      if (scopeRef.current === requestScope) {
+        actionPending.current = false;
+        setSubmittingId(null);
       }
-      return msg;
-    }));
-  }, [onActionSubmit, apiContext, conversationId, messages]);
+    }
+  }, [onActionSubmit, scope, apiContext, conversationId, messages]);
 
   const toggleBasis = useCallback((messageId: string) => {
     setExpandedBasis(prev => prev === messageId ? null : messageId);
@@ -260,7 +206,7 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
 
   return (
     <div className="fixed inset-y-0 right-0 z-[130] flex justify-end pointer-events-none">
-      <div className="relative h-full bg-white border-l-4 border-blue-600 shadow-2xl pointer-events-auto flex flex-col animate-in slide-in-from-right duration-200 w-[520px] max-w-[min(920px,calc(100vw-280px))]">
+      <div className="relative h-full bg-white border-l-4 border-blue-600 shadow-2xl pointer-events-auto flex flex-col animate-in slide-in-from-right duration-200 w-[520px] max-w-[100vw] md:max-w-[min(920px,calc(100vw-280px))]">
         {/* 顶部标题栏 */}
         <div className="h-[72px] bg-blue-600 text-white px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -287,6 +233,10 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
 
         {/* 对话内容区 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar bg-[#FBFCFF] p-5">
+          {requestError && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-[13px] text-rose-700">
+            {requestError.message}
+            {requestError.retryText && <button onClick={() => sendMessage(requestError.retryText)} disabled={isTyping} className="ml-3 font-bold underline">重试</button>}
+          </div>}
           <div className="space-y-5">
             {messages.map((message) => {
               const isUser = message.role === 'user';
@@ -379,9 +329,10 @@ export const AIAssistantDrawer = ({ isOpen, onClose, tenantCode, roleName, onAct
                               </button>
                               <button
                                 onClick={() => handleSubmitAction(message.id)}
-                                className="h-9 flex-1 rounded-lg bg-amber-300 hover:bg-amber-200 text-[#10263f] text-[11px] font-black transition-colors"
+                                disabled={Boolean(submittingId)}
+                                className="h-9 flex-1 rounded-lg bg-amber-300 hover:bg-amber-200 text-[#10263f] text-[11px] font-black transition-colors disabled:opacity-50"
                               >
-                                提交审批
+                                {submittingId === message.id ? '提交中...' : '提交审批'}
                               </button>
                             </>
                           )}

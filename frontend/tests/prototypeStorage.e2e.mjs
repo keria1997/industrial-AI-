@@ -8,6 +8,10 @@ const legacyKeys = [
   'industrial-ai-inventory-master-data:v1:TENANT-A', 'industrial-ai-inventory-workflow:v1:TENANT-B',
   'industrial-ai-production-legacy:TENANT-A', 'industrial-ai-production-v2:TENANT-B',
   'industrial-ai-platform-v2:TENANT-A',
+  'industrial-ai-personnel:v2:TENANT-A', 'industrial-ai-supply-chain:v1:TENANT-A',
+  'industrial-ai-ai-hub:v2:TENANT-A', 'industrial-ai-analytics:v1:TENANT-A',
+  'industrial-ai-finance:v1:TENANT-A', 'industrial-ai-procurement:v1:TENANT-A',
+  'industrial-ai-messages:v1:TENANT-A', 'industrial-ai-feedback:v1:TENANT-A',
 ];
 const queries = [
   'module=sales', 'module=sales&tab=basic-data', 'module=sales&tab=orders',
@@ -72,7 +76,7 @@ try {
         }
         const keys = await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }));
         assert.deepEqual([...keys.local, ...keys.session].filter(key =>
-          /^industrial-ai-(sales|inventory|platform|production-(legacy|v\d))/.test(key)), [], `${query}: prototype recreated`);
+          /^industrial-ai-(sales|inventory|platform|personnel|supply-chain|ai-hub|analytics|finance|procurement|messages|feedback|production-(legacy|v\d))/.test(key)), [], `${query}: prototype recreated`);
         assert(keys.session.includes('industrial-ai-session:v2'));
         assert(keys.local.includes('industrial-ai-runtime:tenant:v1:storage-audit'));
         assert(keys.session.includes('industrial-ai:outbound-command:v1:TENANT-SHWS:OUT-1:1'));
@@ -82,6 +86,10 @@ try {
         catch (error) { return error.message; }
       });
       assert(rejectedWrite.length > 0, 'A retired business write was accepted');
+      assert.equal(await page.evaluate(() => {
+        localStorage.setItem('industrial-ai-runtime:tenant:v1:storage-audit', 'TENANT-SHWS');
+        return localStorage.getItem('industrial-ai-runtime:tenant:v1:storage-audit');
+      }), 'TENANT-SHWS', 'Tenant preference must remain writable in dev and production');
       assert.deepEqual(errors, []);
       console.log(`PASS ${mode}: ${queries.length} pages; historical caches removed, no re-creation, session retained`);
     } finally {

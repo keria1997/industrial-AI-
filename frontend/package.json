@@ -15,6 +15,7 @@
     "test:routes:java": "node scripts/verify-java-routes.mjs",
     "test:frontend": "vitest run src/app/tests src/shared/*.test.ts",
     "test:prototype-storage": "node tests/prototypeStorage.e2e.mjs",
+    "test:business-facts": "node tests/businessFacts.e2e.mjs",
     "test:java": "mvn -f server-java/pom.xml -o test",
     "test": "npm run test:routes:java && npm run test:frontend && npm run test:java"
   },

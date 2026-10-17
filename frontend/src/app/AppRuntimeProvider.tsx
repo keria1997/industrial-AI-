@@ -41,19 +41,11 @@ export type TenantOption = {
   scope: string;
 };
 
-export const tenantOptions: readonly TenantOption[] = [
-  { id: 'TENANT-SHWS', name: '上海万申工业集团', code: 'SHWS', plan: '工业旗舰版', scope: '2 工厂 · 4 仓库' },
-  { id: 'TENANT-HDJG', name: '华东精工制造', code: 'HDJG', plan: '工业专业版', scope: '1 工厂 · 2 仓库' },
-];
-
 const tenantPreferenceKey = (account?: string) =>
   `industrial-ai-runtime:tenant:v1:${account || 'anonymous'}`;
 
 const allowedTenantIds = (user: AppUser | null) => {
-  const authorized = user?.tenantIds?.filter((tenantId) => tenantOptions.some((tenant) => tenant.id === tenantId));
-  if (authorized?.length) return authorized;
-  if (user?.tenantIds?.length) return user.tenantIds;
-  return tenantOptions.map((tenant) => tenant.id);
+  return [...new Set(user?.tenantIds?.filter(Boolean) ?? [])];
 };
 
 export const resolvePreferredTenantId = (
@@ -67,7 +59,7 @@ export const resolvePreferredTenantId = (
   } catch {
     // Fall back to the first tenant authorized by the current session.
   }
-  return allowed[0] || tenantOptions[0].id;
+  return allowed[0] || '';
 };
 
 export const savePreferredTenantId = (
@@ -120,14 +112,12 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
   const [currentTenantId, setCurrentTenantId] = useState(() => resolvePreferredTenantId(currentUser));
   const [activeRole, setActiveRole] = useState<RoleName>(() => resolveSessionRole(currentUser));
 
-  const sessionTenant: TenantOption | undefined = useMemo(() => {
-    const tenantId = currentUser?.tenantIds?.[0];
-    if (!tenantId || tenantOptions.some((item) => item.id === tenantId)) return undefined;
-    const tenantName = currentUser?.tenantName || '我的租户';
-    return { id: tenantId, name: tenantName, code: tenantId.replace('TENANT-', ''), plan: '标准版', scope: currentUser?.tenantName ?? '新注册租户' };
-  }, [currentUser?.tenantIds, currentUser?.tenantName]);
-  const allTenantOptions = useMemo(() => (sessionTenant ? [...tenantOptions, sessionTenant] : tenantOptions), [sessionTenant]);
-  const currentTenant = allTenantOptions.find((item) => item.id === currentTenantId) ?? allTenantOptions[0];
+  const allTenantOptions = useMemo(() => allowedTenantIds(currentUser).map((id, index) => ({
+    id, name: index === 0 && currentUser?.tenantName ? String(currentUser.tenantName) : id,
+    code: id, plan: '尚未获取套餐', scope: '以服务端授权范围为准',
+  })), [currentUser?.tenantIds, currentUser?.tenantName]);
+  const currentTenant = allTenantOptions.find((item) => item.id === currentTenantId)
+    ?? allTenantOptions[0] ?? { id: '', name: '未获取授权租户', code: '', plan: '-', scope: '-' };
 
   const navigateModule = useCallback((requestedModule: string, options: NavigateOptions = {}) => {
     const module = findModuleByLabel(requestedModule) ?? findModuleByLabel('工作台')!;
@@ -173,7 +163,7 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     setCurrentTenantId(resolvePreferredTenantId(currentUser));
-  }, [currentUser?.account]);
+  }, [currentUser?.account, currentUser?.tenantIds]);
 
   useEffect(() => {
     savePreferredTenantId(currentUser, currentTenantId);

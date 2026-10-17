@@ -9,8 +9,8 @@ export function formalProductionOrder(order: WorkOrderDto) {
   return {
     id: order.code, apiId: order.id, formalOrder: order, source: "生产需求",
     product: `${order.productId} - ${order.productName || order.productId}`,
-    quantity: Number(order.plannedQty), startDate: order.dueDate, endDate: order.dueDate,
-    status: status[order.status] || order.status, kitting: order.kittingStatus === "READY" ? "100%" : "0%",
+    quantity: Number(order.plannedQty), dueDate: order.dueDate, startDate: undefined, endDate: undefined,
+    status: status[order.status] || order.status, kitting: order.kittingStatus === "READY" ? "100%" : "-",
     completedQty: Number(order.reportedGoodQty),
   };
 }

@@ -25,6 +25,12 @@ const user: AppUser = {
 };
 
 describe('runtime tenant preference', () => {
+  it('does not grant demonstration tenants when the signed session has no tenant', () => {
+    const storage = new MemoryStorage();
+    expect(resolvePreferredTenantId({ name: '无租户账号', tenantIds: [] }, storage)).toBe('');
+    expect(savePreferredTenantId(null, 'TENANT-SHWS', storage)).toBe(false);
+  });
+
   it('restores the last tenant selected by the current account', () => {
     const storage = new MemoryStorage();
     expect(resolvePreferredTenantId(user, storage)).toBe('TENANT-SHWS');

@@ -1,6 +1,7 @@
 // Retired business snapshots must never override facts returned by the backend.
 export const isPrototypeBusinessKey = (key: string): boolean =>
-  /^industrial-ai-(?:sales(?=[:_-]|$)|inventory(?=[:_-]|$)|production-(?:legacy(?=[:_-]|$)|v\d+(?=:|$))|platform(?:-v\d+)?(?=:|$))/.test(key);
+  /^industrial-ai-(?:sales|inventory|platform|procurement|purchase|finance|financial|personnel|hr|supply-chain|supplychain|ai-hub|analytics|ai-analysis|messages?|feedback)(?=[:_-]|$)/.test(key)
+  || /^industrial-ai-production-(?:legacy(?=[:_-]|$)|v\d+(?=:|$))/.test(key);
 
 type StorageHost = Pick<Window, 'localStorage' | 'sessionStorage'>;
 const guardedPrototypes = new WeakSet<object>();
