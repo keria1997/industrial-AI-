@@ -180,6 +180,37 @@
 | 状态标签 | `rounded-full px-2.5 py-0.5 text-[11px] font-semibold` |
 | 操作按钮 | `h-8 px-3 rounded-lg text-[12px] font-medium` |
 
+### 3.6 字典驱动下拉
+
+下拉选项从平台字典 API 动态加载，不硬编码在代码中。用户在平台管理 → 字典中自行维护条目。
+
+#### 数据流
+
+```
+平台管理 → 字典 → 新增条目（分类: equipment_type）
+                  新增条目（分类: equipment_health_status）
+    ↓
+设备注册弹窗打开
+    → GET /api/v1/platform/dictionaries?category=equipment_type
+    → GET /api/v1/platform/dictionaries?category=equipment_health_status
+    → 动态渲染 <option>
+```
+
+#### 规范
+
+| 属性 | 说明 |
+| --- | --- |
+| 分类命名 | 小写蛇形（如 `equipment_type`、`equipment_health_status`） |
+| 条目结构 | `{ category, code, name, status }` |
+| 下拉为空时 | 显示"请先在平台管理 → 字典中配置"，允许保存时值为空 |
+| 预置数据 | 不预置，由用户自行添加 |
+
+#### 适用场景
+
+- 生产管理 → 设备机台 → 硬件种类（分类 `equipment_type`）
+- 生产管理 → 设备机台 → 健康状态（分类 `equipment_health_status`）
+- 其他需要可配置下拉选项的场景
+
 ## 4. 模块页面详细设计
 
 ### 4.1 工作台首页
