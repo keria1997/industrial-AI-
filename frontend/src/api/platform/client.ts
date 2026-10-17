@@ -27,7 +27,7 @@ export type FieldMode = "visible" | "hidden" | "masked" | "readonly" | "export_d
 
 export type AdapterStatus = "draft" | "pending_sync" | "synced" | "conflict" | "failed" | "disabled" | "NOT_CONFIGURED";
 
-export type ApprovalResolver = "by_role" | "by_position" | "by_org_manager";
+export type ApprovalResolver = "by_role" | "by_org_manager";
 
 export type ApprovalFallback = "block" | "tenant_admin" | "unassigned_pool";
 
@@ -95,25 +95,11 @@ export type EnterpriseResourceDto = {
   updatedAt: string;
 };
 
-export type PositionDto = {
-  id: string;
-  code: string;
-  name: string;
-  orgId: string;
-  defaultRoleIds: string[];
-  resourceIds: string[];
-  status: PlatformStatus;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type EmployeeDto = {
   id: string;
   employeeNo: string;
   name: string;
   primaryOrgId: string;
-  primaryPositionId: string;
   mobile: string;
   email: string;
   status: EmployeeStatus;
@@ -128,7 +114,8 @@ export type AccountDto = {
   employeeId: string;
   authType: AccountAuthType;
   status: AccountStatus;
-  directRoleIds: string[];
+  roleId: string;
+  roleIssue?: string;
   lastLoginAt: string;
   version: number;
   createdAt: string;
@@ -234,7 +221,6 @@ export type PlatformSnapshotDto = {
   capabilities: CapabilityDto[];
   orgUnits: OrgUnitDto[];
   resources: EnterpriseResourceDto[];
-  positions: PositionDto[];
   employees: EmployeeDto[];
   accounts: AccountDto[];
   roles: RoleDto[];
@@ -392,25 +378,6 @@ export const platformApi = {
       idempotencyKey: operationKey(`resource-delete:${context.tenantId}:${id}`),
     }),
 
-  // ---- 岗位 ----
-  listPositions: (context: ApiContext) =>
-    apiRequest<PositionDto[]>("/api/v1/platform/positions", context),
-
-  savePosition: (context: ApiContext, data: PositionDto) =>
-    apiRequest<PositionDto>(`/api/v1/platform/positions${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
-      method: data.id ? "PUT" : "POST",
-      body: JSON.stringify(data),
-      ...(data.id ? { expectedVersion: data.version } : {}),
-      idempotencyKey: operationKey(`position-save:${context.tenantId}:${data.id || data.code}`),
-    }),
-
-  deletePosition: (context: ApiContext, id: string, version: number) =>
-    apiRequest<void>(`/api/v1/platform/positions/${encodeURIComponent(id)}`, context, {
-      method: "DELETE",
-      expectedVersion: version,
-      idempotencyKey: operationKey(`position-delete:${context.tenantId}:${id}`),
-    }),
-
   // ---- 员工 ----
   listEmployees: (context: ApiContext) =>
     apiRequest<EmployeeDto[]>("/api/v1/platform/employees", context),
@@ -437,7 +404,7 @@ export const platformApi = {
   saveAccount: (context: ApiContext, data: AccountDto) =>
     apiRequest<AccountDto>(`/api/v1/platform/accounts${data.id ? `/${encodeURIComponent(data.id)}` : ""}`, context, {
       method: data.id ? "PUT" : "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify(Object.fromEntries(Object.entries(data).filter(([key]) => !["roleIssue", "directRoleIds"].includes(key)))),
       ...(data.id ? { expectedVersion: data.version } : {}),
       idempotencyKey: operationKey(`account-save:${context.tenantId}:${data.id || data.loginName}`),
     }),

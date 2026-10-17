@@ -1,9 +1,10 @@
 import { apiRequest, type ApiContext } from '../api/client';
 import type { PlatformState } from './platformSeed';
 import { platformApi } from '../api/platform/client';
+import { validateEmployeeAccount } from './accountRole';
 
 const paths = {
-  orgUnits: 'org-units', resources: 'resources', positions: 'positions', employees: 'employees',
+  orgUnits: 'org-units', resources: 'resources', employees: 'employees',
   accounts: 'accounts', roles: 'roles', approvalRules: 'approval-rules',
   dictionaries: 'dictionaries', parameters: 'parameters', adapters: 'adapters',
 } as const;
@@ -39,6 +40,12 @@ export async function persistPlatformChange(context: ApiContext, previous: Platf
     for (const item of after) {
       const current = before.find(old => old.id === item.id);
       if (JSON.stringify(current) === JSON.stringify(item)) continue;
+      if (collection === 'accounts') {
+        const error = validateEmployeeAccount(next.employees.find(employee => employee.id === item.employeeId),
+          typeof item.roleId === 'string' ? item.roleId : '', next.accounts, next.roles, item.id);
+        if (error) throw new Error(error);
+        if (item.roleIssue) throw new Error('请先为历史账号明确选择一个角色');
+      }
       if (collection === 'adapters' && item.status === 'synced') {
         if (!current?.version) throw new Error('服务端版本未加载，请刷新后重试');
         const syncFields = ['status', 'lastSyncAt', 'errorMessage'];
@@ -60,7 +67,9 @@ export async function persistPlatformChange(context: ApiContext, previous: Platf
       if (current && !current.version) throw new Error('服务端版本未加载，请刷新后重试');
       commands.push(() => apiRequest(`/api/v1/platform/${path}${current ? `/${encodeURIComponent(current.id)}` : ''}`, context, {
         method: current ? 'PUT' : 'POST', expectedVersion: current?.version,
-        idempotencyKey: `${path}:${crypto.randomUUID()}`, body: JSON.stringify(item),
+        idempotencyKey: `${path}:${crypto.randomUUID()}`,
+        body: JSON.stringify(Object.fromEntries(Object.entries(item).filter(([key]) =>
+          !['roleIssue', 'directRoleIds', 'primaryPositionId'].includes(key)))),
       }));
     }
     for (const current of before.filter(item => !after.some(row => row.id === item.id))) {

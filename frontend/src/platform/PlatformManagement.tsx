@@ -49,6 +49,7 @@ import { platformApi } from '../api/platform/client';
 import { ApiError } from '../api/client';
 import { persistPlatformChange } from './persistPlatformChange';
 import { PLATFORM_STATE_CHANGED_EVENT } from './platformSeed';
+import { accountRoleLabel, normalizeAccountRole, validateEmployeeAccount } from './accountRole';
 
 type Props = {
   currentTenant?: { id?: string; code?: string; name?: string };
@@ -107,7 +108,7 @@ const NAV_GROUPS = [
     icon: Building2,
     items: [
       { id: 'tenant' as NavId, label: '企业与应用', icon: Building2 },
-      { id: 'org' as NavId, label: '组织与岗位', icon: Network },
+      { id: 'org' as NavId, label: '组织与员工', icon: Network },
       { id: 'resource' as NavId, label: '企业资源', icon: Factory },
     ],
   },
@@ -191,13 +192,22 @@ const validateParameterValue = (code: string, valueType: string, value: string):
 };
 
 const migratePlatformState = (value: PlatformState): PlatformState => {
-  const aliases: Record<string, string> = { 销售主管: 'ROLE-SALE', 采购组织负责人: 'ORG-SCM' };
-  const resolveReference = (items: Array<{ id: string; code: string; name: string }>, reference: string) => aliases[reference] || items.find((item) => [item.id, item.code, item.name].includes(reference))?.id || reference;
+  const resolveReference = (items: Array<{ id: string; code: string; name: string }>, reference: string) => items.find((item) => [item.id, item.code, item.name].includes(reference))?.id || reference;
+  const { positions: _legacyPositions, ...snapshot } = value as PlatformState & { positions?: unknown };
   return {
-    ...value,
+    ...snapshot,
+    employees: value.employees.map(employee => {
+      const { primaryPositionId: _legacyPosition, ...record } = employee as typeof employee & { primaryPositionId?: unknown };
+      return record;
+    }),
+    accounts: value.accounts.map(account => {
+      const { directRoleIds: _legacyRoles, roleIssue: _oldIssue, ...record } = account as typeof account & { directRoleIds?: unknown };
+      return { ...record, ...normalizeAccountRole(account) };
+    }),
     approvalRules: value.approvalRules.map((rule) => ({
       ...rule,
-      resolverValue: rule.resolver === 'by_role' ? resolveReference(value.roles, rule.resolverValue) : rule.resolver === 'by_position' ? resolveReference(value.positions, rule.resolverValue) : resolveReference(value.orgUnits, rule.resolverValue),
+      // Unsupported legacy resolvers stay visibly invalid until explicitly migrated.
+      resolverValue: rule.resolver === 'by_role' ? resolveReference(value.roles, rule.resolverValue) : rule.resolver === 'by_org_manager' ? resolveReference(value.orgUnits, rule.resolverValue) : rule.resolverValue,
     })),
     parameters: value.parameters.map((parameter) => ({ ...parameter, valueType: inferParameterValueType(parameter) })),
   };
@@ -324,7 +334,7 @@ function SearchableSelect({ id, value, options, placeholder = '请选择', searc
         <div className="custom-scrollbar max-h-64 overflow-y-auto p-2">
           {value && <button type="button" role="option" aria-selected={false} onClick={() => { onChange(''); setOpen(false); setSearchText(''); }} className="mb-1 flex min-h-11 w-full items-center rounded-lg px-3 text-left text-[12px] font-bold text-slate-500 hover:bg-slate-50">清除当前选择</button>}
           {filtered.slice(0, 100).map((option, optionIndex) => <button id={`${id}-option-${optionIndex}`} key={option.value} type="button" role="option" aria-selected={option.value === value} onMouseEnter={() => setHighlightedIndex(optionIndex)} onClick={() => { onChange(option.value); setOpen(false); setSearchText(''); }} className={`mb-1 flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left last:mb-0 ${option.value === value ? 'bg-blue-50 text-blue-700' : highlightedIndex === optionIndex ? 'bg-slate-100 text-slate-900' : 'text-slate-700 hover:bg-slate-50'}`}><span className="min-w-0 flex-1"><span className="block truncate text-[12px] font-black">{option.label}</span>{option.description && <span className="mt-1 block truncate text-[10px] text-slate-400">{option.description}</span>}</span>{option.value === value && <Check size={15} className="shrink-0" />}</button>)}
-          {filtered.length === 0 && <div className="px-3 py-8 text-center"><div className="text-[12px] font-black text-slate-700">没有匹配结果</div><div className="mt-1 text-[11px] text-slate-400">请尝试姓名、编号、组织或岗位</div></div>}
+          {filtered.length === 0 && <div className="px-3 py-8 text-center"><div className="text-[12px] font-black text-slate-700">没有匹配结果</div><div className="mt-1 text-[11px] text-slate-400">请尝试姓名、编号或组织</div></div>}
         </div>
       </div>}
     </div>
@@ -611,10 +621,16 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     const submittedIdentity = identityRef.current;
     let submitted = false;
     try {
-      const notice = await persistPlatformChange({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, state, updater(state));
+      const next = updater(state);
+      const accountRoleChanged = next.accounts.some(account => account.loginName === currentUser.account
+        && account.roleId !== state.accounts.find(previous => previous.id === account.id)?.roleId);
+      const notice = await persistPlatformChange({ tenantId: tenantIdentity.id, accessToken: currentUser.accessToken }, state, next);
       submitted = true;
       if (identityRef.current !== submittedIdentity) return true;
       await reloadSnapshot();
+      window.dispatchEvent(new CustomEvent('industrial-ai-permissions-changed', {
+        detail: { tenantId: tenantIdentity.id, accessToken: currentUser.accessToken, accountRoleChanged },
+      }));
       toast(notice?.message || message, notice?.type || type);
       return true;
     } catch (reason) {
@@ -630,12 +646,15 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
 
   const orgById = useMemo(() => Object.fromEntries(state.orgUnits.map((item) => [item.id, item])), [state.orgUnits]);
   const employeeById = useMemo(() => Object.fromEntries(state.employees.map((item) => [item.id, item])), [state.employees]);
-  const positionById = useMemo(() => Object.fromEntries(state.positions.map((item) => [item.id, item])), [state.positions]);
   const roleById = useMemo(() => Object.fromEntries(state.roles.map((item) => [item.id, item])), [state.roles]);
-  const accountByEmployee = useMemo(() => Object.fromEntries(state.accounts.map((item) => [item.employeeId, item])), [state.accounts]);
+  const accountsByEmployee = useMemo(() => state.accounts.reduce<Record<string, PlatformState['accounts']>>((groups, account) => {
+    (groups[account.employeeId] ||= []).push(account);
+    return groups;
+  }, {}), [state.accounts]);
+  const accountByEmployee = useMemo(() => Object.fromEntries((Object.entries(accountsByEmployee) as Array<[string, PlatformState['accounts']]>)
+    .filter(([, accounts]) => accounts.length === 1).map(([employeeId, accounts]) => [employeeId, accounts[0]])), [accountsByEmployee]);
   const orgOptions: FormOption[] = state.orgUnits.filter((item) => item.status === 'enabled').map((item) => ({ value: item.id, label: item.name, description: `${orgTypeLabel[item.type]} · ${item.code}`, searchText: `${item.name}${item.code}${orgTypeLabel[item.type]}` }));
-  const employeeOptions: FormOption[] = state.employees.filter((item) => item.status === 'active').map((item) => ({ value: item.id, label: `${item.name} · ${item.employeeNo}`, description: `${orgById[item.primaryOrgId]?.name || '未归属组织'} · ${positionById[item.primaryPositionId]?.name || '未设置岗位'}`, searchText: `${item.name}${item.employeeNo}${item.mobile}${item.email}${orgById[item.primaryOrgId]?.name || ''}${positionById[item.primaryPositionId]?.name || ''}` }));
-  const positionOptions: FormOption[] = state.positions.filter((item) => item.status === 'enabled').map((item) => ({ value: item.id, label: item.name, description: `${orgById[item.orgId]?.name || '-'} · ${item.code}`, searchText: `${item.name}${item.code}${orgById[item.orgId]?.name || ''}` }));
+  const employeeOptions: FormOption[] = state.employees.filter((item) => item.status === 'active').map((item) => ({ value: item.id, label: `${item.name} · ${item.employeeNo}`, description: orgById[item.primaryOrgId]?.name || '未归属组织', searchText: `${item.name}${item.employeeNo}${item.mobile}${item.email}${orgById[item.primaryOrgId]?.name || ''}` }));
   const roleOptions: FormOption[] = state.roles.filter((item) => item.status === 'enabled').map((item) => ({ value: item.id, label: item.name, description: item.code, searchText: `${item.name}${item.code}${item.description}` }));
   const selectedOrg = orgById[selectedOrgId] || state.orgUnits[0];
   const selectedEmployee = employeeById[selectedEmployeeId] || state.employees[0];
@@ -645,14 +664,6 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     const visit = (parentId: string) => state.orgUnits.filter((item) => item.parentId === parentId).forEach((item) => { if (!found.has(item.id)) { found.add(item.id); visit(item.id); } });
     visit(orgId);
     return found;
-  };
-  const isSameOrAncestorOrg = (ancestorId: string, orgId: string) => {
-    let current: string | null = orgId;
-    while (current) {
-      if (current === ancestorId) return true;
-      current = orgById[current]?.parentId || null;
-    }
-    return false;
   };
 
   useEffect(() => {
@@ -754,7 +765,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
         { key: 'code', label: '组织编码', required: true, disabled: Boolean(editing), normalize: (value) => value.toUpperCase(), maxLength: 40, help: '自动转为大写；仅支持字母、数字、下划线和短横线，创建后不可修改。' },
         { key: 'type', label: '组织类型', type: 'select', required: true, disabled: Boolean(editing), options: Object.entries(orgTypeLabel).map(([value, label]) => ({ value, label })) },
         { key: 'parentId', label: '上级组织', type: 'combobox', required: true, wide: true, options: parentOptions, placeholder: '搜索组织名称或编码', visibleWhen: () => editing?.id !== 'ORG-ROOT' },
-        { key: 'managerEmployeeId', label: '负责人（员工）', type: 'combobox', wide: true, options: employeeOptions, placeholder: '搜索姓名、员工编号、组织或岗位' },
+        { key: 'managerEmployeeId', label: '负责人（员工）', type: 'combobox', wide: true, options: employeeOptions, placeholder: '搜索姓名、员工编号或组织' },
       ],
       initial: editing ? { name: editing.name, code: editing.code, type: editing.type, parentId: editing.parentId || '', managerEmployeeId: editing.managerEmployeeId || '' } : { name: '', code: '', type: selectedOrg?.type === 'factory' ? 'workshop' : 'department', parentId: parentId || selectedOrgId, managerEmployeeId: '' },
       validate: (draft) => {
@@ -783,35 +794,15 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     });
   };
 
-  const openPositionEditor = () => setDrawer({
-    title: '新增岗位',
-    description: `岗位将归属“${selectedOrg?.name}”，编码在企业内必须唯一。`,
-    submitLabel: '创建岗位',
-    fields: [
-      { key: 'name', label: '岗位名称', required: true, maxLength: 60, help: '2–60 个字符，建议使用职责名称。' },
-      { key: 'code', label: '岗位编码', required: true, normalize: (value) => value.toUpperCase(), maxLength: 40, help: '自动转为大写；仅支持字母、数字、下划线和短横线。' },
-      { key: 'roleId', label: '默认角色', type: 'select', wide: true, options: roleOptions },
-    ],
-    initial: { name: '', code: '', roleId: '' },
-    validate: (draft) => {
-      const nameError = validateDisplayName(draft.name, '岗位名称');
-      if (nameError) return { key: 'name', message: nameError };
-      if (!BUSINESS_CODE_PATTERN.test(draft.code)) return { key: 'code', message: '岗位编码须以字母开头，仅使用大写字母、数字、下划线或短横线，共 2–40 位。' };
-      if (state.positions.some((position) => position.code.toLowerCase() === draft.code.toLowerCase())) return { key: 'code', message: '岗位编码已存在，请使用唯一编码。' };
-      return null;
-    },
-    onSubmit: (draft) => commit((prev) => ({ ...prev, positions: [...prev.positions, { id: makeId('POS'), name: draft.name, code: draft.code, orgId: selectedOrg.id, defaultRoleIds: draft.roleId ? [draft.roleId] : [], resourceIds: [], status: 'enabled' }] }), '岗位已创建', '创建岗位', draft.name),
-  });
-
   const renderOrg = () => {
+    if (!selectedOrg) return <EmptyState title="暂无组织数据" description="请先加载或建立企业组织。" action={<Button icon={RefreshCw} onClick={() => void reloadSnapshot().catch(error => toast(error.message, 'error'))}>重新加载</Button>} />;
     const manager = selectedOrg ? employeeById[selectedOrg.managerEmployeeId || ''] : null;
     const children = state.orgUnits.filter((item) => item.parentId === selectedOrg?.id);
-    const positions = state.positions.filter((item) => item.orgId === selectedOrg?.id);
     const employees = state.employees.filter((item) => item.primaryOrgId === selectedOrg?.id);
     const resources = state.resources.filter((item) => item.ownerOrgId === selectedOrg?.id);
     return (
       <div data-testid="platform-view-org">
-        <PageHeader eyebrow="企业基础" title="组织与岗位" description="公司、部门、工厂和车间在这里维护；产线、仓库与工作中心作为企业资源单独管理。" actions={<Button variant="primary" icon={Plus} onClick={() => openOrgEditor('add')}>新增下级组织</Button>} />
+        <PageHeader eyebrow="企业基础" title="组织与员工" description="公司、部门、工厂和车间管理员工归属；账号直接绑定一个角色。" actions={<Button variant="primary" icon={Plus} onClick={() => openOrgEditor('add')}>新增下级组织</Button>} />
         <div className="platform-org-layout grid min-h-[650px] gap-5">
           <Panel title="组织架构" actions={<span className="text-[11px] font-bold text-slate-400">{state.orgUnits.length} 个组织</span>}>
             <div className="border-b border-slate-100 p-3"><div className="relative"><Search size={14} className="absolute left-3 top-3 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索组织" placeholder="搜索组织名称或编码" className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-[12px] outline-none focus:border-[#1e5fbf]" /></div></div>
@@ -819,11 +810,31 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
           </Panel>
           <Panel className="min-w-0">
             <div className="border-b border-slate-100 px-5 pb-0 pt-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h2 className="text-[19px] font-black text-slate-950">{selectedOrg?.name}</h2><StatusPill value={selectedOrg?.status || 'enabled'} label={selectedOrg?.status === 'enabled' ? '启用' : '已停用'} /></div><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-slate-400"><span>{orgTypeLabel[selectedOrg?.type]}</span><span>{selectedOrg?.code}</span><span>负责人：{manager?.name || '未设置'}</span></div></div><div className="flex gap-2"><Button icon={Pencil} onClick={() => openOrgEditor('edit')}>编辑组织</Button>{selectedOrg?.id === 'ORG-ROOT' ? <Button disabled title="根组织是企业权限与业务范围的基础，不可停用">根组织不可停用</Button> : <Button variant="danger" icon={MoreHorizontal} onClick={() => setImpact({ eyebrow: '停用前检查', title: `停用“${selectedOrg?.name}”？`, description: '系统会保留历史数据，但必须先处理所有在用关系。', impacts: [`${children.length} 个下级组织`, `${employees.length} 名在职员工`, `${positions.length} 个岗位`, `${resources.length} 项企业资源`], blockers: [...(children.length ? [`请先迁移或停用 ${children.length} 个下级组织`] : []), ...(employees.length ? [`请先调整 ${employees.length} 名员工的所属组织`] : []), ...(positions.length ? [`请先停用或迁移 ${positions.length} 个岗位`] : []), ...(resources.length ? [`请先迁移或停用 ${resources.length} 项企业资源`] : [])], confirmLabel: '停用组织', tone: 'danger', onConfirm: () => commit((prev) => ({ ...prev, orgUnits: prev.orgUnits.map((item) => item.id === selectedOrg?.id ? { ...item, status: 'disabled' } : item) }), '组织已停用', '停用组织', selectedOrg?.name || '') })}>停用组织</Button>}</div></div>
-              <div className="mt-5 flex gap-1 overflow-x-auto" role="tablist" aria-label="组织详情">{[{ value: 'overview', label: '概况' }, { value: 'positions', label: '岗位与人员' }, { value: 'resources', label: '关联资源' }, { value: 'changes', label: '变更记录' }].map((tab) => <button key={tab.value} role="tab" aria-selected={orgTab === tab.value} tabIndex={orgTab === tab.value ? 0 : -1} onClick={() => setOrgTab(tab.value)} className={`min-h-11 shrink-0 border-b-2 px-3 text-[12px] font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset ${orgTab === tab.value ? 'border-[#1e5fbf] text-[#174f9f]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{tab.label}</button>)}</div>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div><div className="flex items-center gap-2"><h2 className="text-[19px] font-black text-slate-950">{selectedOrg.name}</h2><StatusPill value={selectedOrg.status} label={selectedOrg.status === 'enabled' ? '启用' : '已停用'} /></div><div className="mt-2 text-[11px] text-slate-500">{orgTypeLabel[selectedOrg.type]} · {selectedOrg.code} · 负责人：{manager?.name || '未设置'}</div></div>
+                <div className="flex gap-2"><Button icon={Pencil} onClick={() => openOrgEditor('edit')}>编辑组织</Button>{!selectedOrg.parentId ? <Button disabled title="根组织不可停用">根组织不可停用</Button> : <Button variant="danger" icon={MoreHorizontal} onClick={() => setImpact({
+                  eyebrow: '停用前检查', title: `停用“${selectedOrg.name}”？`, description: '系统会保留历史数据，但必须先处理所有在用关系。',
+                  impacts: [`${children.length} 个下级组织`, `${employees.length} 名员工`, `${resources.length} 项企业资源`],
+                  blockers: [...(children.length ? ['请先迁移或停用下级组织'] : []), ...(employees.length ? ['请先调整员工所属组织'] : []), ...(resources.length ? ['请先迁移或停用企业资源'] : [])],
+                  confirmLabel: '停用组织', tone: 'danger', onConfirm: () => commit((prev) => ({ ...prev, orgUnits: prev.orgUnits.map(item => item.id === selectedOrg.id ? { ...item, status: 'disabled' } : item) }), '组织已停用', '停用组织', selectedOrg.name),
+                })}>停用组织</Button>}</div>
+              </div>
+              <div className="mt-5 flex gap-1 overflow-x-auto" role="tablist" aria-label="组织详情">{[{ value: 'overview', label: '概况' }, { value: 'employees', label: '组织员工' }, { value: 'resources', label: '关联资源' }, { value: 'changes', label: '变更记录' }].map((tab) => <button key={tab.value} role="tab" aria-selected={orgTab === tab.value} tabIndex={orgTab === tab.value ? 0 : -1} onClick={() => setOrgTab(tab.value)} className={`min-h-11 shrink-0 border-b-2 px-3 text-[12px] font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset ${orgTab === tab.value ? 'border-[#1e5fbf] text-[#174f9f]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{tab.label}</button>)}</div>
             </div>
             {orgTab === 'overview' && <div className="grid gap-6 p-5 lg:grid-cols-2"><div><h3 className="text-[12px] font-black text-slate-800">基础信息</h3><dl className="mt-3 divide-y divide-slate-100 border-y border-slate-100">{[['完整路径', `${selectedOrg?.parentId ? `${orgById[selectedOrg.parentId]?.name} / ` : ''}${selectedOrg?.name}`], ['组织类型', orgTypeLabel[selectedOrg?.type]], ['负责人', manager?.name || '未设置'], ['下级组织', `${children.length} 个`]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 py-3"><dt className="text-[12px] text-slate-400">{label}</dt><dd className="text-right text-[12px] font-bold text-slate-700">{value}</dd></div>)}</dl></div><div><h3 className="text-[12px] font-black text-slate-800">下级组织</h3><div className="mt-3 divide-y divide-slate-100 border-y border-slate-100">{children.length ? children.map((item) => <button key={item.id} onClick={() => setSelectedOrgId(item.id)} className="flex min-h-12 w-full items-center gap-3 text-left"><Network size={14} className="text-slate-400" /><span className="flex-1 text-[12px] font-bold text-slate-700">{item.name}</span><span className="text-[11px] text-slate-400">{orgTypeLabel[item.type]}</span><ChevronRight size={14} className="text-slate-300" /></button>) : <EmptyState title="没有下级组织" description="可按实际管理层级新增部门、工厂或车间。" action={<Button icon={Plus} onClick={() => openOrgEditor('add')}>新增下级组织</Button>} />}</div></div></div>}
-            {orgTab === 'positions' && <div className="p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-[12px] font-black text-slate-800">岗位与当前任职</h3><Button icon={Plus} onClick={openPositionEditor}>新增岗位</Button></div><div className="overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[620px] text-left"><thead className="bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-4 py-3">岗位</th><th className="px-4 py-3">默认角色</th><th className="px-4 py-3">在岗人数</th><th className="px-4 py-3">状态</th></tr></thead><tbody className="divide-y divide-slate-100">{positions.map((position) => <tr key={position.id} className="text-[12px]"><td className="px-4 py-3.5"><div className="font-black text-slate-800">{position.name}</div><div className="mt-0.5 text-[10px] text-slate-400">{position.code}</div></td><td className="px-4 py-3.5 text-slate-600">{position.defaultRoleIds.map((id) => roleById[id]?.name).filter(Boolean).join('、') || '未配置'}</td><td className="px-4 py-3.5 font-bold text-slate-700">{state.employees.filter((item) => item.primaryPositionId === position.id).length}</td><td className="px-4 py-3.5"><StatusPill value={position.status} label={position.status === 'enabled' ? '启用' : '停用'} /></td></tr>)}</tbody></table>{positions.length === 0 && <EmptyState title="还没有岗位" description="创建岗位后，可为其设置默认角色和资源范围。" />}</div></div>}
+            {orgTab === 'employees' && <div className="p-5">
+              <h3 className="mb-3 text-[12px] font-black text-slate-800">当前组织员工</h3>
+              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-[12px]"><thead className="bg-slate-50"><tr>{['员工', '登录账号', '账号角色', '状态', '操作'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+                <tbody>{employees.map(employee => { const account = accountByEmployee[employee.id]; return <tr key={employee.id} className="border-b border-slate-100">
+                  <td className="p-3">{employee.name} · {employee.employeeNo}</td>
+                  <td className="p-3">{(accountsByEmployee[employee.id]?.length || 0) > 1 ? '重复账号绑定待修正' : account?.loginName || '未开通账号'}</td>
+                  <td className="p-3">{account ? accountRoleLabel(account, state.roles) : '-'}</td>
+                  <td className="p-3">{employeeStatusLabel[employee.status]}</td>
+                  <td className="p-3"><Button icon={UserCog} onClick={() => { setSelectedEmployeeId(employee.id); setIdentityMode('employee'); navigateToView('identity'); }}>查看员工</Button></td>
+                </tr>; })}</tbody>
+              </table></div>
+              {!employees.length && <EmptyState title="暂无组织员工" description="在员工与账号中维护员工的所属组织。" />}
+            </div>}
             {orgTab === 'resources' && <div className="p-5"><div className="grid gap-3 sm:grid-cols-2">{resources.map((item) => <div key={item.id} className="flex items-center gap-3 border-b border-slate-100 py-3"><div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">{item.type === 'line' ? <Factory size={16} /> : item.type === 'warehouse' ? <Warehouse size={16} /> : <Settings2 size={16} />}</div><div className="min-w-0 flex-1"><div className="truncate text-[12px] font-black text-slate-800">{item.name}</div><div className="mt-1 text-[10px] text-slate-400">{resourceTypeLabel[item.type]} · {item.code}</div></div><StatusPill value={item.status} label={item.status === 'enabled' ? '启用' : '停用'} /></div>)}</div>{resources.length === 0 && <EmptyState title="暂无关联资源" description="产线、仓库和工作中心请在企业资源中创建。" />}</div>}
             {orgTab === 'changes' && <div className="p-5"><div className="divide-y divide-slate-100">{state.audits.filter((item) => item.target.includes(selectedOrg?.name || '')).slice(0, 8).map((item) => <div key={item.id} className="flex gap-4 py-3"><Clock3 size={14} className="mt-0.5 text-slate-400" /><div className="flex-1"><div className="text-[12px] font-bold text-slate-700">{item.action}</div><div className="mt-1 text-[11px] text-slate-400">{item.operator} · {item.time}</div></div></div>)}</div>{state.audits.filter((item) => item.target.includes(selectedOrg?.name || '')).length === 0 && <EmptyState title="没有变更记录" description="此组织的迁移、停用和负责人调整会记录在这里。" />}</div>}
           </Panel>
@@ -843,7 +854,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
         { key: 'ownerOrgId', label: '归属组织', type: 'combobox', requiredWhen: (draft) => draft.type === 'warehouse', visibleWhen: (draft) => draft.type === 'warehouse', wide: true, options: orgOptions, placeholder: '搜索组织名称或编码', help: '产线和工作中心将自动归属所选车间。' },
         { key: 'factoryOrgId', label: '所属工厂', type: 'combobox', options: factoryOptions, requiredWhen: (draft) => ['line', 'work_center'].includes(draft.type), clearOnChange: ['workshopOrgId'], placeholder: '搜索工厂名称或编码' },
         { key: 'workshopOrgId', label: '所属车间', type: 'combobox', optionsFor: (draft) => workshopOptions.filter((option) => !draft.factoryOrgId || orgById[option.value]?.parentId === draft.factoryOrgId), requiredWhen: (draft) => ['line', 'work_center'].includes(draft.type), placeholder: '搜索车间名称或编码' },
-        { key: 'managerEmployeeId', label: '负责人（员工）', type: 'combobox', wide: true, options: employeeOptions, placeholder: '搜索姓名、员工编号、组织或岗位' },
+        { key: 'managerEmployeeId', label: '负责人（员工）', type: 'combobox', wide: true, options: employeeOptions, placeholder: '搜索姓名、员工编号或组织' },
         { key: 'specification', label: '用途或说明', type: 'textarea', wide: true, placeholder: '例如：成品仓、SMT 贴片与回流焊' },
       ],
       initial: item ? { name: item.name, code: item.code, type: item.type, ownerOrgId: item.ownerOrgId, factoryOrgId: item.factoryOrgId || '', workshopOrgId: item.workshopOrgId || '', managerEmployeeId: item.managerEmployeeId || '', specification: item.specification } : { name: '', code: '', type: 'line', ownerOrgId: '', factoryOrgId: '', workshopOrgId: '', managerEmployeeId: '', specification: '' },
@@ -882,12 +893,11 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     fields: [
       { key: 'name', label: '姓名', required: true, maxLength: 40, help: '2–40 个字符，与员工正式档案保持一致。' },
       { key: 'employeeNo', label: '员工编号', required: true, disabled: Boolean(employee), normalize: (value) => value.toUpperCase(), maxLength: 40, help: '自动转为大写；企业内必须唯一，创建后不可修改。' },
-      { key: 'primaryOrgId', label: '所属组织', type: 'combobox', required: true, options: orgOptions, clearOnChange: ['primaryPositionId'], placeholder: '搜索组织名称或编码' },
-      { key: 'primaryPositionId', label: '主岗位', type: 'combobox', required: true, optionsFor: (draft) => positionOptions.filter((option) => !draft.primaryOrgId || isSameOrAncestorOrg(positionById[option.value]?.orgId, draft.primaryOrgId)), placeholder: '搜索岗位名称或编码' },
+      { key: 'primaryOrgId', label: '所属组织', type: 'combobox', required: true, options: orgOptions, placeholder: '搜索组织名称或编码' },
       { key: 'mobile', label: '手机号', required: true, inputMode: 'tel', maxLength: 11, help: '填写 11 位中国大陆手机号。' },
       { key: 'email', label: '工作邮箱', required: true, inputMode: 'email', maxLength: 100, help: '例如 name@company.com。' },
     ],
-    initial: employee ? { name: employee.name, employeeNo: employee.employeeNo, primaryOrgId: employee.primaryOrgId, primaryPositionId: employee.primaryPositionId, mobile: employee.mobile, email: employee.email } : { name: '', employeeNo: '', primaryOrgId: '', primaryPositionId: '', mobile: '', email: '' },
+    initial: employee ? { name: employee.name, employeeNo: employee.employeeNo, primaryOrgId: employee.primaryOrgId, mobile: employee.mobile, email: employee.email } : { name: '', employeeNo: '', primaryOrgId: '', mobile: '', email: '' },
     validate: (draft) => {
       const nameError = validateDisplayName(draft.name, '姓名');
       if (nameError) return { key: 'name', message: nameError };
@@ -897,7 +907,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       if (!MOBILE_PATTERN.test(draft.mobile)) return { key: 'mobile', message: '手机号格式不正确，请填写 11 位中国大陆手机号。' };
       if (!draft.email?.trim()) return { key: 'email', message: '工作邮箱为必填项，请填写有效邮箱地址。' };
       if (!/^\S+@\S+\.\S+$/.test(draft.email)) return { key: 'email', message: '工作邮箱格式不正确，例如 name@company.com。' };
-      if (draft.primaryPositionId && !isSameOrAncestorOrg(positionById[draft.primaryPositionId]?.orgId, draft.primaryOrgId)) return { key: 'primaryPositionId', message: '所选岗位不属于该组织或其上级组织。' };
+      if (!orgOptions.some(option => option.value === draft.primaryOrgId)) return { key: 'primaryOrgId', message: '请选择有效的启用组织。' };
       return null;
     },
     onSubmit: async (draft) => {
@@ -909,17 +919,27 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     },
   });
 
-  const openAccountFor = (employee: any) => setDrawer({
-    title: '开通登录账号', description: `为 ${employee.name} 创建登录身份。一个员工同一时间只能有一个启用账号。`, submitLabel: '开通账号',
-    fields: [{ key: 'loginName', label: '登录账号', required: true, wide: true, normalize: (value) => value.toLowerCase(), maxLength: 32, help: '自动转为小写；3–32 位，以字母开头，可使用数字、点、下划线和短横线。' }, { key: 'authType', label: '认证方式', type: 'select', required: true, wide: true, options: [{ value: 'password', label: '密码登录' }, { value: 'sso', label: '统一身份登录' }, { value: 'legacy_erp', label: '旧 ERP 账号' }] }],
-    initial: { loginName: '', authType: 'password' },
+  const openAccountFor = (employee: PlatformState['employees'][number], account?: PlatformState['accounts'][number]) => setDrawer({
+    title: account ? '修改账号角色' : '开通登录账号', description: `${employee.name} 只能绑定一个账号，停用账号仍保留绑定；每个账号必须选择一个启用角色。`, submitLabel: account ? '保存账号角色' : '开通账号',
+    fields: [
+      { key: 'loginName', label: '登录账号', required: true, disabled: Boolean(account), wide: true, normalize: value => value.toLowerCase(), maxLength: 32, help: '3–32 位，以字母开头，可使用数字、点、下划线和短横线。' },
+      { key: 'authType', label: '认证方式', type: 'select', required: true, disabled: Boolean(account), options: [{ value: 'password', label: '密码登录' }, { value: 'sso', label: '统一身份登录' }, { value: 'legacy_erp', label: '旧 ERP 账号' }] },
+      { key: 'roleId', label: '账号角色', type: 'select', required: true, options: roleOptions, help: '账号直接绑定一个角色，权限和数据范围由服务端计算。' },
+    ],
+    initial: { loginName: account?.loginName || '', authType: account?.authType || 'password', roleId: account?.roleIssue ? '' : account?.roleId || '' },
     validate: (draft) => {
-      if (!LOGIN_NAME_PATTERN.test(draft.loginName)) return { key: 'loginName', message: '登录账号须以字母开头，共 3–32 位，仅支持字母、数字、点、下划线和短横线。' };
-      if (state.accounts.some((account) => account.loginName.trim().toLowerCase() === draft.loginName.trim().toLowerCase())) return { key: 'loginName', message: '登录账号已存在，请使用其他账号。' };
-      if (state.accounts.some((account) => account.employeeId === employee.id && ['enabled', 'pending_activation', 'locked'].includes(account.status))) return { key: 'loginName', message: '该员工已有可用或待激活账号，不能重复开通。' };
+      const validation = validateEmployeeAccount(employee, draft.roleId, state.accounts, state.roles, account?.id);
+      if (validation) return { key: 'roleId', message: validation };
+      if (!account && !LOGIN_NAME_PATTERN.test(draft.loginName)) return { key: 'loginName', message: '登录账号须以字母开头，共 3–32 位，仅支持字母、数字、点、下划线和短横线。' };
+      if (state.accounts.some(item => item.id !== account?.id && item.loginName.trim().toLowerCase() === draft.loginName.trim().toLowerCase())) return { key: 'loginName', message: '登录账号已存在，请使用其他账号。' };
       return null;
     },
-    onSubmit: (draft) => commit((prev) => ({ ...prev, accounts: [...prev.accounts, { id: makeId('ACC'), loginName: draft.loginName, employeeId: employee.id, authType: draft.authType as any, status: 'pending_activation', directRoleIds: [], lastLoginAt: '-' }] }), '账号已创建，等待员工激活', '开通登录账号', draft.loginName),
+    onSubmit: draft => commit(prev => ({
+      ...prev,
+      accounts: account
+        ? prev.accounts.map(item => item.id === account.id ? { ...item, roleId: draft.roleId, roleIssue: undefined } : item)
+        : [...prev.accounts, { id: makeId('ACC'), loginName: draft.loginName, employeeId: employee.id, authType: draft.authType as 'password' | 'sso' | 'legacy_erp', status: 'pending_activation', roleId: draft.roleId, lastLoginAt: '-' }],
+    }), account ? '账号角色已保存' : '账号已创建，等待员工激活', account ? '修改账号角色' : '开通登录账号', draft.loginName),
   });
 
   const renderIdentity = () => {
@@ -931,7 +951,55 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
         <PageHeader eyebrow="人员与权限" title="员工与账号" description="员工是人员档案，账号是登录身份；未开通账号的员工不会被误标为停用。" actions={<Button variant="primary" icon={UserPlus} onClick={() => openEmployeeEditor()}>新建员工档案</Button>} />
         <Panel>
           <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between"><Segmented value={identityMode} onChange={setIdentityMode} items={[{ value: 'employee', label: '员工档案', count: state.employees.length }, { value: 'account', label: '登录账号', count: state.accounts.length }]} /><div className="relative w-full sm:w-72"><Search size={14} className="absolute left-3 top-3 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索员工或账号" placeholder="搜索姓名、工号或账号" className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-[12px] outline-none focus:border-[#1e5fbf]" /></div></div>
-          {identityMode === 'employee' ? <div className="platform-identity-layout grid min-h-[570px]"><div className="overflow-x-auto border-b border-slate-200 lg:border-b-0 lg:border-r"><table className="w-full min-w-[620px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">员工</th><th className="px-4 py-3.5">组织 / 主岗</th><th className="px-4 py-3.5">账号</th><th className="px-4 py-3.5">状态</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredEmployees.map((item) => { const itemAccount = accountByEmployee[item.id]; return <tr key={item.id} onClick={() => setSelectedEmployeeId(item.id)} className={`cursor-pointer text-[12px] ${selectedEmployeeId === item.id ? 'bg-blue-50/70' : 'hover:bg-slate-50'}`}><td className="px-5 py-4"><div className="font-black text-slate-900">{item.name}</div><div className="mt-1 text-[10px] text-slate-400">{item.employeeNo}</div></td><td className="px-4 py-4"><div className="font-bold text-slate-700">{orgById[item.primaryOrgId]?.name}</div><div className="mt-1 text-[10px] text-slate-400">{positionById[item.primaryPositionId]?.name}</div></td><td className="px-4 py-4">{itemAccount ? <span className="font-bold text-slate-600">{itemAccount.loginName}</span> : <span className="text-amber-700">未开通账号</span>}</td><td className="px-4 py-4"><StatusPill value={item.status} label={employeeStatusLabel[item.status]} /></td></tr>; })}</tbody></table></div><aside className="bg-[#fbfcfe] p-5"><div className="flex items-start justify-between"><div><h2 className="text-[17px] font-black text-slate-950">{selectedEmployee?.name}</h2><p className="mt-1 text-[11px] font-bold text-slate-400">{selectedEmployee?.employeeNo}</p></div><Button variant="quiet" icon={Pencil} onClick={() => openEmployeeEditor(selectedEmployee)}>编辑</Button></div><div className="mt-5 border-y border-slate-200 py-1">{[['所属组织', orgById[selectedEmployee?.primaryOrgId]?.name || '-'], ['主岗位', positionById[selectedEmployee?.primaryPositionId]?.name || '-'], ['工作邮箱', selectedEmployee?.email || '-'], ['手机号', selectedEmployee?.mobile || '-']].map(([label, value]) => <div key={label} className="flex justify-between gap-4 py-3"><span className="text-[11px] text-slate-400">{label}</span><span className="text-right text-[11px] font-bold text-slate-700">{value}</span></div>)}</div><div className="mt-5"><div className="mb-3 text-[11px] font-black text-slate-800">登录账号</div>{account ? <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><div><div className="text-[12px] font-black text-slate-800">{account.loginName}</div><div className="mt-1 text-[10px] text-slate-400">{authTypeLabel[account.authType]}</div></div><StatusPill value={account.status} label={accountStatusLabel[account.status]} /></div><div className="mt-3 text-[10px] text-slate-400">最近登录：{account.lastLoginAt}</div>{account.status === 'locked' && <div className="mt-3"><Button icon={LockKeyhole} onClick={() => commit((prev) => ({ ...prev, accounts: prev.accounts.map((item) => item.id === account.id ? { ...item, status: 'enabled' } : item) }), '账号已解锁', '解锁账号', account.loginName)}>解锁账号</Button></div>}</div> : <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4"><div className="text-[12px] font-bold text-slate-700">尚未开通账号</div><p className="mt-1 text-[11px] leading-5 text-slate-500">员工档案可正常参与组织和任职管理，需要登录平台时再开通。</p><div className="mt-3"><Button variant="primary" icon={KeyRound} onClick={() => openAccountFor(selectedEmployee)}>开通账号</Button></div></div>}</div></aside></div> : <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">登录账号</th><th className="px-4 py-3.5">绑定员工</th><th className="px-4 py-3.5">认证方式</th><th className="px-4 py-3.5">最近登录</th><th className="px-4 py-3.5">状态</th><th className="px-5 py-3.5 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredAccounts.map((item) => <tr key={item.id} className="text-[12px] hover:bg-slate-50"><td className="px-5 py-4 font-black text-slate-900">{item.loginName}</td><td className="px-4 py-4"><div className="font-bold text-slate-700">{employeeById[item.employeeId]?.name}</div><div className="mt-1 text-[10px] text-slate-400">{employeeById[item.employeeId]?.employeeNo}</div></td><td className="px-4 py-4 text-slate-600">{authTypeLabel[item.authType]}</td><td className="px-4 py-4 text-slate-500">{item.lastLoginAt}</td><td className="px-4 py-4"><StatusPill value={item.status} label={accountStatusLabel[item.status]} /></td><td className="px-5 py-4 text-right">{item.status === 'locked' ? <Button variant="quiet" onClick={() => commit((prev) => ({ ...prev, accounts: prev.accounts.map((accountItem) => accountItem.id === item.id ? { ...accountItem, status: 'enabled' } : accountItem) }), '账号已解锁', '解锁账号', item.loginName)}>解锁</Button> : <Button variant="quiet" onClick={() => toast('未撤销：当前接口需要指定登录会话标识，尚不支持撤销该账号的全部会话', 'error')}>撤销会话</Button>}</td></tr>)}</tbody></table></div>}
+          {identityMode === 'employee' ? <div className="platform-identity-layout grid min-h-[570px]">
+            <div className="overflow-x-auto border-r border-slate-200">
+              <table className="w-full min-w-[560px] text-left text-[12px]">
+                <thead className="bg-slate-50"><tr>{['员工', '所属组织', '账号 / 角色', '状态'].map(label => <th key={label} className="p-4">{label}</th>)}</tr></thead>
+                <tbody>{filteredEmployees.map(item => {
+                  const itemAccount = accountByEmployee[item.id];
+                  const duplicate = (accountsByEmployee[item.id]?.length || 0) > 1;
+                  return <tr key={item.id} className={`border-b border-slate-100 ${selectedEmployee?.id === item.id ? 'bg-blue-50' : ''}`}>
+                    <td className="p-4"><button className="text-left font-bold text-blue-700" onClick={() => setSelectedEmployeeId(item.id)}>{item.name}<span className="mt-1 block text-[11px] text-slate-500">{item.employeeNo}</span></button></td>
+                    <td className="p-4">{orgById[item.primaryOrgId]?.name || '未归属组织'}</td>
+                    <td className="p-4">{duplicate ? <span className="text-rose-700">重复账号绑定待修正</span> : itemAccount ? <>{itemAccount.loginName}<div className="mt-1 text-slate-500">{accountRoleLabel(itemAccount, state.roles)}</div></> : '未开通账号'}</td>
+                    <td className="p-4"><StatusPill value={item.status} label={employeeStatusLabel[item.status]} /></td>
+                  </tr>;
+                })}</tbody>
+              </table>
+              {!filteredEmployees.length && <EmptyState title="没有匹配的员工" description="请调整搜索条件或建立员工档案。" />}
+            </div>
+            <aside className="min-w-0 bg-[#fbfcfe] p-5">
+              {selectedEmployee ? <>
+                <div className="flex items-center justify-between gap-2"><h2 className="text-[17px] font-black">{selectedEmployee.name}</h2><Button icon={Pencil} onClick={() => openEmployeeEditor(selectedEmployee)}>编辑员工</Button></div>
+                <dl className="my-4 divide-y divide-slate-100">{[['员工编号', selectedEmployee.employeeNo], ['所属组织', orgById[selectedEmployee.primaryOrgId]?.name || '-'], ['工作邮箱', selectedEmployee.email || '-'], ['手机号', selectedEmployee.mobile || '-']].map(([label, value]) => <div key={label} className="flex justify-between gap-3 py-3 text-[12px]"><dt className="shrink-0 text-slate-500">{label}</dt><dd className="break-all text-right">{value}</dd></div>)}</dl>
+                {(accountsByEmployee[selectedEmployee.id]?.length || 0) > 1 ? <p role="alert" className="text-sm text-rose-700">该员工绑定了多个账号，请先修正历史绑定，不能重复开户。</p> : account ? <div className="space-y-3">
+                  <h3 className="text-[12px] font-bold">登录账号</h3><div className="break-all text-[13px]">{account.loginName}</div>
+                  <StatusPill value={account.status} label={accountStatusLabel[account.status]} />
+                  <div className="text-[12px]">账号角色：{accountRoleLabel(account, state.roles)}</div>
+                  <div className="text-[11px] text-slate-500">{authTypeLabel[account.authType]} · 最近登录：{account.lastLoginAt}</div>
+                  <Button icon={Pencil} disabled={selectedEmployee.status !== 'active'} onClick={() => openAccountFor(selectedEmployee, account)}>修改账号角色</Button>
+                  {account.status === 'locked' && <Button icon={LockKeyhole} onClick={() => commit(prev => ({ ...prev, accounts: prev.accounts.map(item => item.id === account.id ? { ...item, status: 'enabled' } : item) }), '账号已解锁', '解锁账号', account.loginName)}>解锁账号</Button>}
+                </div> : <div className="space-y-3">
+                  <p className="text-[12px] text-slate-500">尚未开通账号，员工档案可独立维护。</p>
+                  <Button variant="primary" icon={KeyRound} disabled={selectedEmployee.status !== 'active'} onClick={() => openAccountFor(selectedEmployee)}>开通账号</Button>
+                </div>}
+              </> : <EmptyState title="未选择员工" description="选择一名员工后查看档案与登录账号。" />}
+            </aside>
+          </div> : <div className="overflow-x-auto">
+            <table className="w-full min-w-[880px] text-left text-[12px]">
+              <thead className="bg-slate-50"><tr>{['登录账号', '绑定员工', '账号角色', '认证方式', '最近登录', '状态', '操作'].map(label => <th key={label} className="p-4">{label}</th>)}</tr></thead>
+              <tbody>{filteredAccounts.map(item => <tr key={item.id} className="border-b border-slate-100">
+                <td className="p-4 font-bold">{item.loginName}</td><td className="p-4">{employeeById[item.employeeId]?.name || '员工信息未提供'}</td>
+                <td className="p-4">{accountRoleLabel(item, state.roles)}{(accountsByEmployee[item.employeeId]?.length || 0) > 1 && <div className="text-rose-700">重复账号绑定待修正</div>}</td>
+                <td className="p-4">{authTypeLabel[item.authType]}</td><td className="p-4">{item.lastLoginAt}</td>
+                <td className="p-4"><StatusPill value={item.status} label={accountStatusLabel[item.status]} /></td>
+                <td className="p-4"><Button icon={Pencil} disabled={employeeById[item.employeeId]?.status !== 'active' || accountsByEmployee[item.employeeId]?.length !== 1} onClick={() => openAccountFor(employeeById[item.employeeId], item)}>修改角色</Button>
+                  {item.status === 'locked' ? <Button variant="quiet" onClick={() => commit(prev => ({ ...prev, accounts: prev.accounts.map(row => row.id === item.id ? { ...row, status: 'enabled' } : row) }), '账号已解锁', '解锁账号', item.loginName)}>解锁</Button> : <Button variant="quiet" onClick={() => toast('未撤销：当前接口需要指定登录会话标识，尚不支持撤销该账号的全部会话', 'error')}>撤销会话</Button>}
+                </td>
+              </tr>)}</tbody>
+            </table>
+            {!filteredAccounts.length && <EmptyState title="没有匹配的账号" description="员工建档后可按需开通账号。" />}
+          </div>}
         </Panel>
       </div>
     );
@@ -954,7 +1022,7 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
 
   const openRoleEditor = () => setDrawer({
     title: '新建角色',
-    description: '角色描述账号可以执行哪些操作，不等同于员工岗位；名称与编码在企业内必须唯一。',
+    description: '角色直接绑定账号，定义可执行的操作与数据范围；名称与编码在企业内必须唯一。',
     submitLabel: '创建角色',
     fields: [
       { key: 'name', label: '角色名称', required: true, wide: true, maxLength: 60, help: '2–60 个字符，建议体现职责或权限边界。' },
@@ -1080,41 +1148,41 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
     );
   };
 
-  const resolverLabel: Record<string, string> = { by_role: '按角色', by_position: '按岗位', by_org_manager: '按组织负责人' };
+  const resolverLabel: Record<string, string> = { by_role: '按角色', by_org_manager: '按组织负责人' };
   const fallbackLabel: Record<string, string> = { block: '无审批人时阻断', tenant_admin: '转企业管理员', unassigned_pool: '进入待分配池' };
-  const approvalTargetOptions = (resolver: string): FormOption[] => resolver === 'by_role' ? roleOptions : resolver === 'by_position' ? positionOptions : orgOptions;
-  const approvalTargetLabel = (rule: PlatformState['approvalRules'][number]) => rule.resolver === 'by_role' ? roleById[rule.resolverValue]?.name || rule.resolverValue : rule.resolver === 'by_position' ? positionById[rule.resolverValue]?.name || rule.resolverValue : orgById[rule.resolverValue]?.name || rule.resolverValue;
+  const approvalTargetOptions = (resolver: string): FormOption[] => resolver === 'by_role' ? roleOptions : resolver === 'by_org_manager' ? orgOptions : [];
+  const approvalTargetLabel = (rule: PlatformState['approvalRules'][number]) => rule.resolver === 'by_role' ? roleById[rule.resolverValue]?.name || rule.resolverValue : rule.resolver === 'by_org_manager' ? orgById[rule.resolverValue]?.name || rule.resolverValue : '历史审批规则待迁移';
   const resolveApprovalCandidates = (rule: PlatformState['approvalRules'][number]) => {
     const employeeIds = new Set<string>();
     if (rule.resolver === 'by_role') {
       const role = state.roles.find((item) => [item.id, item.code, item.name].includes(rule.resolverValue));
-      if (role) {
-        state.accounts.filter((account) => account.status === 'enabled' && account.directRoleIds.includes(role.id)).forEach((account) => employeeIds.add(account.employeeId));
-        state.employees.filter((employee) => positionById[employee.primaryPositionId]?.defaultRoleIds.includes(role.id)).forEach((employee) => employeeIds.add(employee.id));
+      if (role?.status === 'enabled') {
+        state.accounts.filter(account => account.status === 'enabled' && !account.roleIssue && account.roleId === role.id).forEach(account => employeeIds.add(account.employeeId));
       }
-    } else if (rule.resolver === 'by_position') {
-      const position = state.positions.find((item) => [item.id, item.code, item.name].includes(rule.resolverValue));
-      state.employees.filter((employee) => employee.primaryPositionId === position?.id).forEach((employee) => employeeIds.add(employee.id));
-    } else {
+    } else if (rule.resolver === 'by_org_manager') {
       const org = state.orgUnits.find((item) => [item.id, item.code, item.name].includes(rule.resolverValue));
-      if (org?.managerEmployeeId) employeeIds.add(org.managerEmployeeId);
+      if (org?.status === 'enabled' && org.managerEmployeeId) employeeIds.add(org.managerEmployeeId);
     }
-    return [...employeeIds].map((id) => employeeById[id]).filter((employee) => employee?.status === 'active' && state.accounts.some((account) => account.employeeId === employee.id && account.status === 'enabled'));
+    return [...employeeIds].map(id => employeeById[id]).filter(employee => {
+      const account = accountByEmployee[employee?.id];
+      return employee?.status === 'active' && account?.status === 'enabled' && !account.roleIssue && roleById[account.roleId]?.status === 'enabled';
+    });
   };
   const openApprovalRuleEditor = (rule?: PlatformState['approvalRules'][number]) => setDrawer({
-    title: rule ? '编辑审批规则' : '新建审批规则', description: '审批对象必须从有效角色、岗位或组织中选择，系统会解析到具体在职账号。', submitLabel: rule ? '保存规则' : '创建规则',
+    title: rule ? '编辑审批规则' : '新建审批规则', description: '审批对象从启用角色或组织负责人中选择，解析到具有有效单角色账号的在职员工。', submitLabel: rule ? '保存规则' : '创建规则',
     fields: [
       { key: 'module', label: '业务模块', type: 'select', required: true, clearOnChange: ['documentType'], options: approvalModuleOptions },
       { key: 'documentType', label: '单据类型', type: 'select', required: true, optionsFor: (draft) => (approvalDocumentsByModule[draft.module] || []).map((label) => ({ value: label, label })) },
       { key: 'resolver', label: '审批人来源', type: 'select', required: true, clearOnChange: ['resolverValue'], options: Object.entries(resolverLabel).map(([value, label]) => ({ value, label })) },
-      { key: 'resolverValue', label: '匹配对象', type: 'combobox', required: true, wide: true, optionsFor: (draft) => approvalTargetOptions(draft.resolver), placeholder: '搜索角色、岗位或组织' },
+      { key: 'resolverValue', label: '匹配对象', type: 'combobox', required: true, wide: true, optionsFor: (draft) => approvalTargetOptions(draft.resolver), placeholder: '搜索角色或组织' },
       { key: 'fallback', label: '无人可审批时', type: 'select', required: true, wide: true, options: Object.entries(fallbackLabel).map(([value, label]) => ({ value, label })) },
     ],
     initial: rule ? { module: rule.module, documentType: rule.documentType, resolver: rule.resolver, resolverValue: rule.resolverValue, fallback: rule.fallback } : { module: '', documentType: '', resolver: 'by_role', resolverValue: '', fallback: 'block' },
     validate: (draft) => {
       if (!approvalDocumentsByModule[draft.module]?.includes(draft.documentType)) return { key: 'documentType', message: '请选择当前业务模块下的有效单据类型。' };
       if (state.approvalRules.some((item) => item.module === draft.module && item.documentType === draft.documentType && item.id !== rule?.id)) return { key: 'documentType', message: '该业务模块和单据类型已有审批规则，请直接编辑原规则。' };
-      if (!approvalTargetOptions(draft.resolver).some((option) => option.value === draft.resolverValue)) return { key: 'resolverValue', message: '请选择列表中的有效角色、岗位或组织。' };
+      if (!resolverLabel[draft.resolver]) return { key: 'resolver', message: '历史审批规则待迁移，请重新选择审批人来源。' };
+      if (!approvalTargetOptions(draft.resolver).some((option) => option.value === draft.resolverValue)) return { key: 'resolverValue', message: '请选择列表中的有效角色或组织。' };
       return null;
     },
     onSubmit: (draft) => {
@@ -1124,9 +1192,34 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
   });
   const renderGovernance = () => (
     <div data-testid="platform-view-governance">
-      <PageHeader eyebrow="规则与治理" title="审批与待办" description="按业务单据设置审批人来源；调岗或离职时，待办会按规则移交。" actions={<Button variant="primary" icon={Plus} onClick={() => openApprovalRuleEditor()}>新建规则</Button>} />
+      <PageHeader eyebrow="规则与治理" title="审批与待办" description="按业务单据设置账号角色或组织负责人作为审批人来源。" actions={<Button variant="primary" icon={Plus} onClick={() => openApprovalRuleEditor()}>新建规则</Button>} />
+      {state.approvalRules.some(rule => !resolverLabel[rule.resolver]) && <p role="alert" className="mb-4 text-sm text-amber-800">历史审批规则待迁移，请编辑并明确选择角色或组织负责人；迁移前不参与候选人解析。</p>}
       <Panel>
-        <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500"><tr><th className="px-5 py-3.5">适用单据</th><th className="px-4 py-3.5">审批人来源</th><th className="px-4 py-3.5">匹配对象</th><th className="px-4 py-3.5">无人可审批时</th><th className="px-4 py-3.5">状态</th><th className="px-5 py-3.5 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{state.approvalRules.map((rule) => { const candidates = resolveApprovalCandidates(rule); return <tr key={rule.id} className="text-[12px] hover:bg-slate-50"><td className="px-5 py-4"><div className="font-black text-slate-800">{rule.documentType}</div><div className="mt-1 text-[10px] text-slate-400">{rule.module}</div></td><td className="px-4 py-4 font-bold text-slate-700">{resolverLabel[rule.resolver]}</td><td className="px-4 py-4 text-slate-600"><div>{approvalTargetLabel(rule)}</div><div className={`mt-1 text-[10px] ${candidates.length ? 'text-emerald-600' : 'text-rose-600'}`}>{candidates.length ? `可解析 ${candidates.length} 人` : '当前无法解析有效账号'}</div></td><td className="px-4 py-4 text-slate-500">{fallbackLabel[rule.fallback]}</td><td className="px-4 py-4"><StatusPill value={rule.status} label={rule.status === 'enabled' ? '使用中' : '已停用'} /></td><td className="px-5 py-4 text-right"><div className="inline-flex gap-1"><Button variant="quiet" icon={Pencil} onClick={() => openApprovalRuleEditor(rule)}>编辑</Button><Button variant="quiet" icon={CheckCircle2} onClick={() => setImpact({ eyebrow: '规则测试结果', title: candidates.length ? '已找到有效审批人' : '未找到有效审批人', description: candidates.length ? `“${rule.module} / ${rule.documentType}”可以正常生成审批待办。` : `“${rule.module} / ${rule.documentType}”当前无法生成审批待办。`, impacts: candidates.length ? candidates.map((employee) => `${employee.name} · ${orgById[employee.primaryOrgId]?.name || '未归属组织'} · ${accountByEmployee[employee.id]?.loginName || '无可用账号'}`) : [`匹配对象：${approvalTargetLabel(rule)}`, `系统将按规则${fallbackLabel[rule.fallback]}`], confirmLabel: '关闭结果', hideSecondary: true, tone: candidates.length ? 'default' : 'danger', onConfirm: () => {} })}>测试规则</Button></div></td></tr>;})}</tbody></table></div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left text-[12px]">
+            <thead className="bg-slate-50"><tr>{['适用单据', '审批人来源', '匹配对象', '无人可审批时', '状态', '操作'].map(label => <th key={label} className="p-4">{label}</th>)}</tr></thead>
+            <tbody>{state.approvalRules.map(rule => {
+              const candidates = resolveApprovalCandidates(rule);
+              const legacy = !resolverLabel[rule.resolver];
+              return <tr key={rule.id} className="border-b border-slate-100">
+                <td className="p-4">{rule.documentType}<div className="text-[11px] text-slate-500">{rule.module}</div></td>
+                <td className="p-4">{resolverLabel[rule.resolver] || '历史审批规则待迁移'}</td>
+                <td className="p-4">{approvalTargetLabel(rule)}<div className={candidates.length ? 'text-emerald-700' : 'text-rose-700'}>{candidates.length ? `预览匹配 ${candidates.length} 人` : '当前无法解析有效账号'}</div></td>
+                <td className="p-4">{fallbackLabel[rule.fallback]}</td>
+                <td className="p-4"><StatusPill value={rule.status} label={rule.status === 'enabled' ? '使用中' : '已停用'} /></td>
+                <td className="p-4"><div className="inline-flex gap-1">
+                  <Button variant="quiet" icon={Pencil} onClick={() => openApprovalRuleEditor(rule)}>编辑</Button>
+                  <Button variant="quiet" icon={CheckCircle2} onClick={() => setImpact({
+                    eyebrow: '审批配置预览', title: legacy ? '历史审批规则待迁移' : candidates.length ? '已找到候选审批人' : '未找到候选审批人',
+                    description: legacy ? '请明确选择角色或组织负责人，旧解析方式不会自动转为其他规则。' : '仅预览当前配置可匹配的账号，实际审批待办以服务端校验和执行结果为准。',
+                    impacts: candidates.length ? candidates.map(employee => `${employee.name} · ${orgById[employee.primaryOrgId]?.name || '未归属组织'} · ${accountByEmployee[employee.id]?.loginName}`) : [`匹配对象：${approvalTargetLabel(rule)}`],
+                    confirmLabel: '关闭结果', hideSecondary: true, tone: candidates.length ? 'default' : 'danger', onConfirm: () => {},
+                  })}>测试规则</Button>
+                </div></td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
       </Panel>
     </div>
   );
@@ -1203,7 +1296,12 @@ export default function PlatformManagement({ currentTenant, currentUser, onToast
       <div className="p-4">
         <EmployeeAccountManagement key={`${tenantIdentity.id}:${currentUser?.accessToken}`}
           apiContext={{ tenantId: tenantIdentity.id, accessToken: currentUser?.accessToken ?? '' }}
-          orgUnits={state.orgUnits} positions={state.positions}
+          orgUnits={state.orgUnits} roles={state.roles} employees={state.employees} platformAccounts={state.accounts}
+          onChanged={reloadSnapshot}
+          onEditRole={account => {
+            const employee = employeeById[account.employeeId];
+            if (employee) openAccountFor(employee, account);
+          }}
           onToast={(msg, type) => toast(msg, type ?? 'success')} />
       </div>
     </div>

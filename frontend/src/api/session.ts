@@ -4,8 +4,6 @@ export type AuthenticatedUser = {
   account: string;
   name: string;
   role: string;
-  /** Business backend -> frontend: employee primary position, independent of role/permissions. */
-  displayPosition?: string | null;
   tenantIds: string[];
   tenantName?: string;
   permissions: string[];
@@ -70,7 +68,8 @@ export type EmployeeAccount = {
   phone: string;
   email: string;
   department?: string;
-  position?: string;
+  employeeId?: string;
+  roleId?: string;
   employeeNo?: string;
   role: string;
   isTenantAdmin: boolean;
@@ -87,9 +86,9 @@ export async function listEmployeeAccounts(context: ApiContext): Promise<Employe
 }
 
 export async function createEmployeeAccount(context: ApiContext, input: {
-  name: string; phone: string; email: string; account: string; department: string; position: string; employeeNo?: string;
-}): Promise<{ id: string; account: string; temporaryPassword: string }> {
-  return apiRequest<{ id: string; account: string; temporaryPassword: string }>("/api/v1/platform/employee-accounts", context, {
+  name: string; phone: string; email: string; account: string; department: string; roleId: string; employeeNo: string;
+}): Promise<{ id: string; account: string; temporaryPassword: string; roleId?: string }> {
+  return apiRequest<{ id: string; account: string; temporaryPassword: string; roleId?: string }>("/api/v1/platform/employee-accounts", context, {
     method: "POST",
     body: JSON.stringify(input),
   });

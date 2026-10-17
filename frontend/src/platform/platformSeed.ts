@@ -23,22 +23,11 @@ export type EnterpriseResource = {
   status: PlatformStatus;
 };
 
-export type Position = {
-  id: string;
-  code: string;
-  name: string;
-  orgId: string;
-  defaultRoleIds: string[];
-  resourceIds: string[];
-  status: PlatformStatus;
-};
-
 export type Employee = {
   id: string;
   employeeNo: string;
   name: string;
   primaryOrgId: string;
-  primaryPositionId: string;
   mobile: string;
   email: string;
   status: 'active' | 'transferring' | 'leave' | 'resigned';
@@ -50,7 +39,8 @@ export type Account = {
   employeeId: string;
   authType: 'password' | 'sso' | 'legacy_erp';
   status: 'pending_activation' | 'enabled' | 'locked' | 'disabled';
-  directRoleIds: string[];
+  roleId: string;
+  roleIssue?: string;
   lastLoginAt: string;
 };
 
@@ -104,7 +94,7 @@ export type ApprovalRule = {
   id: string;
   module: string;
   documentType: string;
-  resolver: 'by_role' | 'by_position' | 'by_org_manager';
+  resolver: 'by_role' | 'by_org_manager';
   resolverValue: string;
   fallback: 'block' | 'tenant_admin' | 'unassigned_pool';
   status: PlatformStatus;
@@ -136,7 +126,6 @@ export type PlatformState = {
   capabilities: Capability[];
   orgUnits: OrgUnit[];
   resources: EnterpriseResource[];
-  positions: Position[];
   employees: Employee[];
   accounts: Account[];
   roles: Role[];
@@ -158,30 +147,13 @@ export type PlatformActor = {
 export const PLATFORM_STATE_CHANGED_EVENT = 'industrial-ai-platform-state-changed';
 export const platformStorageKey = (tenantId = 'TENANT-SHWS') => `industrial-ai-platform-v2:${tenantId}`;
 
-const workbenchRoleCodeMap: Record<string, string> = {
-  '超级管理员': 'TENANT_ADMIN',
-  '系统管理员': 'TENANT_ADMIN',
-  '管理员': 'TENANT_ADMIN',
-  '老板': 'TENANT_ADMIN',
-  '人事': 'HR_SPECIALIST',
-  '计划员': 'PRODUCTION_DIRECTOR',
-  '车间': 'PRODUCTION_WORKSHOP',
-  '仓管': 'WAREHOUSE_ADMIN',
-  '采购': 'PURCHASE_STAFF',
-  '销售': 'SALE_STAFF',
-  '财务': 'FINANCE_STAFF',
-};
-
-export const getPlatformActorRoleIds = (state: PlatformState, actor?: PlatformActor, activeRole?: string) => {
-  const mappedRoleCode = workbenchRoleCodeMap[activeRole || actor?.role || ''];
-  const mappedRole = mappedRoleCode ? state.roles.find((item) => item.code === mappedRoleCode && item.status === 'enabled') : undefined;
-  if (mappedRole) return [mappedRole.id];
-
+export const getPlatformActorRoleIds = (state: PlatformState, actor?: PlatformActor, _activeRole?: string) => {
   const account = state.accounts.find((item) => item.loginName === actor?.account && item.status === 'enabled');
   const employee = account ? state.employees.find((item) => item.id === account.employeeId && item.status === 'active') : undefined;
-  const position = employee ? state.positions.find((item) => item.id === employee.primaryPositionId && item.status === 'enabled') : undefined;
-  return Array.from(new Set([...(account?.directRoleIds || []), ...(position?.defaultRoleIds || [])]))
-    .filter((roleId) => state.roles.some((item) => item.id === roleId && item.status === 'enabled'));
+  return employee && account && !account.roleIssue
+    && state.accounts.filter(item => item.employeeId === employee.id).length === 1
+    && state.roles.some(item => item.id === account.roleId && item.status === 'enabled')
+    ? [account.roleId] : [];
 };
 
 export const isPlatformActorEnabled = (state: PlatformState, actor?: PlatformActor) => {
@@ -273,7 +245,7 @@ export const loadPlatformState = (tenant?: { id?: string; code?: string; name?: 
       edition: '', status: 'init_created', bootstrapOwnerAccountId: '',
       formalAdminAccountId: '', expireAt: '',
     },
-    capabilities: [], orgUnits: [], resources: [], positions: [], employees: [],
+    capabilities: [], orgUnits: [], resources: [], employees: [],
     accounts: [], roles: [], permissions: [], roleGrants: [], adapters: [],
     approvalRules: [], dictionaries: [], parameters: [], audits: [],
   };

@@ -9,7 +9,7 @@ export type SkillStatus = '有效' | '即将到期' | '已过期' | '已撤销';
 
 export type EmployeeDto = {
   id: string; employeeNo: string; name: string;
-  department: string; position: string; phone: string; email: string;
+  department: string; phone: string; email: string;
   status: EmployeeStatus; hireDate?: string; leaveDate?: string;
   metadata: Record<string, unknown>; remark: string;
   version: number; createdAt: string; updatedAt: string; createdBy: string;
@@ -51,9 +51,9 @@ export const personnelApi = {
   },
   getEmployee: (context: ApiContext, id: string) =>
     apiRequest<EmployeeDto>(`/api/v1/personnel/employees/${id}`, context),
-  createEmployee: (context: ApiContext, input: { employeeNo: string; name: string; department?: string; position?: string; phone?: string; email?: string; status?: string; hireDate?: string; remark?: string }) =>
+  createEmployee: (context: ApiContext, input: { employeeNo: string; name: string; department?: string; phone?: string; email?: string; status?: string; hireDate?: string; remark?: string }) =>
     apiRequest<{ employee: EmployeeDto }>('/api/v1/personnel/employees', context, { method: 'POST', idempotencyKey: key(`hr-emp-create:${input.employeeNo}`), body: JSON.stringify(input) }),
-  updateEmployee: (context: ApiContext, employee: EmployeeDto, input: Partial<{ name: string; department: string; position: string; phone: string; email: string; status: string; remark: string }>) =>
+  updateEmployee: (context: ApiContext, employee: EmployeeDto, input: Partial<{ name: string; department: string; phone: string; email: string; status: string; remark: string }>) =>
     apiRequest<{ employee: EmployeeDto }>(`/api/v1/personnel/employees/${employee.id}`, context, { method: 'PATCH', expectedVersion: employee.version, idempotencyKey: key(`hr-emp-update:${employee.id}`), body: JSON.stringify(input) }),
   deleteEmployee: (context: ApiContext, employee: EmployeeDto) =>
     apiRequest<{ deleted: boolean }>(`/api/v1/personnel/employees/${employee.id}`, context, { method: 'DELETE', expectedVersion: employee.version, idempotencyKey: key(`hr-emp-delete:${employee.id}`) }),

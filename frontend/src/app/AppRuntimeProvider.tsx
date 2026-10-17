@@ -11,14 +11,13 @@ import React, {
   type SetStateAction,
 } from 'react';
 import {
-  defaultRole,
   findModuleByLabel,
   isRoleName,
   type ModuleLabel,
   type RoleName,
 } from './moduleRegistry';
 import { createModuleUrl, resolveModuleFromLocation } from './routing';
-import { clearAuthenticatedSession, loadAuthenticatedSession, saveAuthenticatedSession, type AuthenticatedUser } from '../api/session';
+import { clearAuthenticatedSession, loadAuthenticatedSession, refreshSession, saveAuthenticatedSession, type AuthenticatedUser } from '../api/session';
 import { apiRequest } from '../api/client';
 
 export type AppUser = {
@@ -32,7 +31,6 @@ export type AppUser = {
   permissionSource?: string;
   permissions?: string[];
   role?: string;
-  displayPosition?: string | null;
   [key: string]: unknown;
 };
 
@@ -83,10 +81,10 @@ const loadSession = (): AppUser | null => {
   return loadAuthenticatedSession();
 };
 
-// Workbench presentation group only; never use this fallback as an employee's position.
-export const resolveSessionRole = (user: AppUser | null): RoleName =>
+// Unknown account roles need a backend workbench mapping, never an owner fallback.
+export const resolveSessionRole = (user: AppUser | null): RoleName | null =>
   user?.role === '管理员' || user?.role === '系统管理员' ? '超级管理员' :
-    isRoleName(user?.role) ? user.role : defaultRole;
+    isRoleName(user?.role) ? user.role : null;
 
 type NavigateOptions = {
   replace?: boolean;
@@ -96,13 +94,12 @@ type NavigateOptions = {
 type AppRuntimeContextValue = {
   activeModule: ModuleLabel;
   moduleNavigationRevision: number;
-  activeRole: RoleName;
+  activeRole: RoleName | null;
   allTenantOptions: readonly TenantOption[];
   currentTenant: TenantOption;
   currentTenantId: string;
   currentUser: AppUser | null;
   navigateModule: (module: string, options?: NavigateOptions) => void;
-  setActiveRole: Dispatch<SetStateAction<RoleName>>;
   setCurrentTenantId: Dispatch<SetStateAction<string>>;
   setCurrentUser: Dispatch<SetStateAction<AppUser | null>>;
   permissionsReady: boolean;
@@ -118,12 +115,13 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
   const [activeModule, setActiveModule] = useState<ModuleLabel>(() => resolveModuleFromLocation(window.location));
   const [moduleNavigationRevision, setModuleNavigationRevision] = useState(0);
   const [currentTenantId, setCurrentTenantId] = useState(() => resolvePreferredTenantId(currentUser));
-  const [activeRole, setActiveRole] = useState<RoleName>(() => resolveSessionRole(currentUser));
+  const activeRole = resolveSessionRole(currentUser);
   const scope = `${currentTenantId}:${currentUser?.accessToken || ''}`;
   const [permissionScope, setPermissionScope] = useState(scope);
   const [permissionError, setPermissionError] = useState('');
   const [permissionRefreshing, setPermissionRefreshing] = useState(false);
   const requestGeneration = useRef(0);
+  const sessionRenewing = useRef(false);
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const refreshPermissions = useCallback(async () => {
@@ -165,6 +163,25 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
     const invalidate = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail && (detail.tenantId !== currentTenantId || detail.accessToken !== currentUser?.accessToken)) return;
+      if (detail?.accountRoleChanged && currentUser?.accessToken) {
+        if (sessionRenewing.current) return;
+        sessionRenewing.current = true;
+        const requestedScope = scopeRef.current;
+        setPermissionScope('');
+        setPermissionRefreshing(true);
+        // Role changes must come back through the signed session, never a local role label.
+        void refreshSession({ accessToken: currentUser.accessToken }).then(session => {
+          if (requestedScope !== scopeRef.current) return;
+          saveAuthenticatedSession(session);
+          setCurrentUser(session);
+        }).catch(cause => {
+          if (requestedScope === scopeRef.current) setPermissionError(cause instanceof Error ? cause.message : '账号角色已保存，会话刷新失败，请重新登录');
+        }).finally(() => {
+          sessionRenewing.current = false;
+          if (requestedScope === scopeRef.current) setPermissionRefreshing(false);
+        });
+        return;
+      }
       void refreshPermissions();
     };
     window.addEventListener('industrial-ai-permissions-invalid', invalidate);
@@ -223,10 +240,6 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
   }, [currentUser?.accessToken, currentTenantId]);
 
   useEffect(() => {
-    setActiveRole(resolveSessionRole(currentUser));
-  }, [currentUser?.role]);
-
-  useEffect(() => {
     setCurrentTenantId(resolvePreferredTenantId(currentUser));
   }, [currentUser?.account, currentUser?.tenantIds]);
 
@@ -243,7 +256,6 @@ export const AppRuntimeProvider = ({ children }: { children: ReactNode }) => {
     currentTenantId,
     currentUser,
     navigateModule,
-    setActiveRole,
     setCurrentTenantId,
     setCurrentUser,
     permissionsReady: permissionScope === scope,

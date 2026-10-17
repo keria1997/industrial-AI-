@@ -43,7 +43,7 @@ export function ManualInboundModal({ onClose, onViewStock, onProcurement, onProd
             className="rounded p-1.5 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
         </header>
         <div className="space-y-4 p-5 text-[13px] leading-6 text-slate-600">
-          <p id="manual-inbound-description">手工入库暂不可用，请通过采购收货或生产完工入库办理。实际过账成功后，库存台账才会更新。</p>
+          <p id="manual-inbound-description">请通过采购收货或生产完工入库办理入库。实际过账成功后，库存台账才会更新。</p>
           <p>若实物已入库但仍未查询到库存记录，请核对来源单据的过账状态，并重新查询库存。</p>
           <div className="flex flex-col gap-2">
             {actions.map(({ label, icon: Icon, onClick }) => (

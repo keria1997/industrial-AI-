@@ -7,9 +7,9 @@ import {
   saveAuthenticatedSession,
 } from '../../api/session';
 
-describe('position field throughout authentication', () => {
+describe('account role throughout authentication', () => {
   const user = {
-    account: 'position-test', name: '岗位验证', role: '老板', tenantIds: ['tenant-1'],
+    account: 'role-test', name: '角色验证', role: '销售', tenantIds: ['tenant-1'],
     permissions: ['workbench.dashboard.read'], permissionVersion: 'v1',
   };
   let stored: Map<string, string>;
@@ -34,15 +34,14 @@ describe('position field throughout authentication', () => {
   };
 
   for (const [method, request] of Object.entries(authenticate)) {
-    it.each(['租户管理员', null, undefined])(`${method} preserves position %j without rewriting role`, async displayPosition => {
+    it.each(['超级管理员', '自定义角色', '']) (`${method} preserves the backend role %j`, async role => {
       const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
         accessToken: 'new-test-token', expiresAt: '2099-01-01T00:00:00Z', tokenType: 'Bearer',
-        user: { ...user, ...(displayPosition === undefined ? {} : { displayPosition }) },
+        user: { ...user, role },
       }), { headers: { 'Content-Type': 'application/json' } }));
       vi.stubGlobal('fetch', fetchMock);
       const session = await request();
-      expect(session.displayPosition).toBe(displayPosition);
-      expect(session.role).toBe('老板');
+      expect(session.role).toBe(role);
       saveAuthenticatedSession(session);
       expect(loadAuthenticatedSession()).toEqual(session);
       expect(fetchMock).toHaveBeenCalledOnce();
@@ -50,15 +49,15 @@ describe('position field throughout authentication', () => {
     });
   }
 
-  it('replaces the former account position when a refreshed session omits it', async () => {
+  it('replaces the former account role from a refreshed signed session', async () => {
     saveAuthenticatedSession({
-      ...user, displayPosition: '原岗位', accessToken: 'old-test-token', expiresAt: '2099-01-01T00:00:00Z',
+      ...user, role: '原角色', accessToken: 'old-test-token', expiresAt: '2099-01-01T00:00:00Z',
       loginAt: new Date().toISOString(), loginType: 'account', permissionSource: 'test',
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       accessToken: 'new-test-token', expiresAt: '2099-01-01T00:00:00Z', tokenType: 'Bearer', user,
     }), { headers: { 'Content-Type': 'application/json' } })));
     saveAuthenticatedSession(await refreshSession({ accessToken: 'old-test-token' }));
-    expect(loadAuthenticatedSession()?.displayPosition).toBeUndefined();
+    expect(loadAuthenticatedSession()?.role).toBe('销售');
   });
 });

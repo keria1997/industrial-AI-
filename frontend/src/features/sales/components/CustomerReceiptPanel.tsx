@@ -57,7 +57,7 @@ export function CustomerReceiptPanel({ apiContext, permissions, onOpenOrder }: {
   if (!allowed) return <ApiDataState error="无客户签收查看权限，请联系管理员" />;
   return <section aria-label="客户签收记录" className="space-y-4">
     <div className="flex justify-end"><button type="button" title="刷新客户签收记录" disabled={records.loading} onClick={() => page === 1 ? records.reload() : setPage(1)} className="rounded-md border bg-white p-2 disabled:opacity-40"><RefreshCw size={16} /><span className="sr-only">刷新客户签收记录</span></button></div>
-    <div role="status" className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">可查询客户签收记录。签收登记暂不可用，发货行、数量和重复登记校验待完善。签收、应收结清及退货争议全部闭合后才可完成订单。</div>
+    <div role="status" className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">客户签收功能即将上线。</div>
     {records.loading || records.error
       ? <ApiDataState loading={records.loading} error={records.error} onRetry={records.reload} />
         : <><div className="[&_table]:min-w-[1000px] [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap"><DataTable columns={cols} data={records.data?.items ?? []} emptyText="暂无客户签收记录" /></div>

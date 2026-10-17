@@ -9,7 +9,7 @@ describe('runtime session and navigation accessibility', () => {
     const session = { name: '系统管理员', role: '超级管理员' };
     expect(resolveSessionRole(session)).toBe('超级管理员');
     expect(resolveSessionRole(JSON.parse(JSON.stringify(session)))).toBe('超级管理员');
-    expect(resolveSessionRole({ name: '未知账号', role: '不存在的角色' })).toBe('老板');
+    expect(resolveSessionRole({ name: '未知账号', role: '不存在的角色' })).toBeNull();
   });
 
   it('renders sidebar navigation as a keyboard-operable semantic button', () => {
