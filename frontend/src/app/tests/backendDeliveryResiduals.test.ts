@@ -89,7 +89,7 @@ describe('backend delivery contract boundaries', () => {
     expect(projected.todos[0]).toMatchObject({ dueDate: '2026-10-17', urgent: true });
     expect(projected.alerts[0].severity).toBe('low');
     expect(projected.activities[0]).toMatchObject({ id: 'event1', detail: '事件详情' });
-    expect(projected.sourceWarnings).toEqual(['RevenueRecognition：UNAVAILABLE (SOURCE_MISSING)', 'SalesOrder：来源状态未提供', 'ShipmentRecognition：SOURCE_PENDING (SOURCE_MISSING)']);
+    expect(projected.sourceWarnings).toEqual(['RevenueRecognition：UNAVAILABLE (SOURCE_MISSING)', 'SalesOrder：来源状态未提供']);
   });
   it('sends identical canonical and legacy keys, including legacy client headers', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => json({}));

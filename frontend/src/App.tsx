@@ -10105,6 +10105,7 @@ export default function App() {
   const workbenchDashboard = workbench.dashboard;
   const workbenchError = workbench.error;
   const workbenchLoading = workbench.loading;
+  const workbenchOutdated = workbench.expired || workbench.stale || workbench.businessStale;
   const openSource = (item) => {
     const destination = sourceDestination(item);
     if (!destination) { showFlowToast('尚未提供可定位的来源单据类型和ID', 'warning'); return; }
@@ -10700,8 +10701,8 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-black shadow-sm">{todayLabel}</span>
                     <span className="px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">{activeRole} · {roleMeta.title}</span>
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${workbenchError ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`}></span>
+                  <span role="status" aria-label="工作台数据状态" className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : workbenchOutdated ? 'bg-amber-50 text-amber-700 border-amber-200' : workbenchLoading ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${workbenchError ? 'bg-rose-500' : workbenchOutdated ? 'bg-amber-500' : workbenchLoading ? 'bg-slate-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                     {workbenchError ? '数据读取异常' : workbench.expired ? '数据已失效' : workbench.stale || workbench.businessStale ? '数据已过期' : workbenchLoading ? '实时取数中' : '数据已更新'}
                   </span>
                   <button type="button" aria-label="刷新工作台" title="刷新工作台" disabled={workbenchLoading} onClick={workbench.refresh} className="rounded-md border p-2 text-blue-600 disabled:opacity-50"><RefreshCw size={15} /></button>

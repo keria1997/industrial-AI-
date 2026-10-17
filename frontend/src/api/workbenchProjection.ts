@@ -4,6 +4,20 @@ const moduleLabels: Record<string, string> = { SALES: '销售管理', PRODUCTION
 const moduleLabel = (value: string) => moduleLabels[value?.toUpperCase()] || value;
 const unavailable = (value: unknown) => value === null || value === undefined ? '-' : String(value);
 
+function sourceWarnings(sources: any): string[] {
+  if (sources == null) return [];
+  if (!Array.isArray(sources)) throw new Error('工作台来源状态响应与契约不一致');
+  return sources.flatMap(source => {
+    // Pending integration is an expected empty state; partial/stale/failed sources remain visible.
+    const status = source?.status ?? source?.availability;
+    if (status === 'AVAILABLE' || status === 'SOURCE_PENDING') return [];
+    const name = typeof source?.source === 'string' && source.source.trim() ? moduleLabel(source.source) : '未知来源';
+    const label = typeof status === 'string' && status.trim() ? status : '来源状态未提供';
+    const reason = source?.errorCode || source?.unavailableReason;
+    return [`${name}：${label}${reason ? ` (${reason})` : ''}`];
+  });
+}
+
 // Adapt the frozen PRD 1.1 projection without inventing facts or combining currencies/units.
 // Only the delivered 1.1 envelope is accepted; missing sections fail visibly.
 export function workbenchProjection(response: any, query: WorkbenchQuery): WorkbenchDashboardDto {
@@ -54,7 +68,8 @@ export function workbenchProjection(response: any, query: WorkbenchQuery): Workb
   if (query.sections === 'metrics' && !data.metrics) throw new Error('响应缺少请求的指标分区');
   if (query.sections === 'todos,alerts,activities' && ![data.todos?.items, data.alerts?.items, data.activities?.items].every(Array.isArray)) throw new Error('响应缺少请求的业务分区');
   return {
-    role: data.role, generatedAt: data.dataAsOf || data.generatedAt,
+    // Refresh freshness uses the server projection time, not the last business change.
+    role: data.role, generatedAt: data.generatedAt || data.dataAsOf,
     dataScope: { tenantId: data.scope?.tenantId },
     metrics,
     todos: (data.todos?.items || []).map(item => ({
@@ -75,7 +90,6 @@ export function workbenchProjection(response: any, query: WorkbenchQuery): Workb
     alertTotal: Number.isInteger(data.alerts?.total) ? data.alerts.total : null,
     nextCursor: data.activities?.nextCursor,
     activitiesHasMore: data.activities?.hasMore,
-    sourceWarnings: (data.sources || []).filter(source => (source.status ?? source.availability) !== 'AVAILABLE')
-      .map(source => `${moduleLabel(source.source)}：${source.status ?? source.availability ?? '来源状态未提供'}${source.errorCode || source.unavailableReason ? ` (${source.errorCode || source.unavailableReason})` : ''}`),
+    sourceWarnings: sourceWarnings(data.sources),
   };
 }

@@ -4,7 +4,7 @@
 - 模块：工作台
 - 层级：L4 基础层
 - 影响范围：前端, 后端
-- 状态：🔴 待修复
+- 状态：⏭️ 前端已修复、本地验证通过；部署页面待更新复测
 
 ## 问题
 
@@ -20,35 +20,45 @@
 
 ### 子问题 1：来源警告 undefined（关联 ISSUE-020 回归）
 
-后端 `WorkbenchController` 返回的 `data.sources` 数组中，每个来源条目缺少 `status` 字段。前端 `workbenchProjection.ts` 过滤条件 `source.status !== 'AVAILABLE'` 对 `undefined` 值全部命中，拼接后输出 `undefined`。
+历史响应缺少 `status` 时，旧前端直接拼接该字段，造成 `undefined`。本轮开始时仓库已经有 `status/availability` 兼容和“来源状态未提供”兜底，因此不能把历史现象认定为当前代码尚无防护。
 
-ISSUE-020 已修复此问题（后端添加 `status` 字段），但当前部署环境仍返回 `undefined`，说明修复代码未部署或被覆盖。
+2026-10-17 真实复测：本地与部署接口均返回四个来源的 `status`；部署页面没有再出现 `undefined`，但仍展示 `SOURCE_PENDING` 警告。本轮补齐来源名称缺失、空状态及 null 条目的防护，并区分待接入与真正异常；不能根据历史截图断言后端修复被覆盖。
 
 ### 子问题 2：数据已失效（关联 ISSUE-021 未修复）
 
 后端返回 `dataAsOf`（业务数据最后变更时间）和 `generatedAt`（API 响应时间）。前端 `workbenchProjection.ts` 优先使用 `dataAsOf` 计算新鲜度。数据库无业务数据变更时 `dataAsOf` 不变，刷新后 `age` 仍 > 1800 秒，"数据已失效"持续显示。
 
-ISSUE-021 已定位根因并给出修复方案（`workbenchProjection.ts` 将 `data.dataAsOf || data.generatedAt` 改为 `data.generatedAt || data.dataAsOf`），但尚未实施。
+本轮已将 `workbenchProjection.ts` 改为优先 `generatedAt`，仅在缺失时兼容回退 `dataAsOf`；两者都缺失或时间非法时保留现有读取错误，不生成当前时间掩盖契约问题。来源显式 `STALE` 仍作为异常提示，不以新响应时间覆盖来源状态。
 
 ### 子问题 3：暂无岗位指标
 
-后端返回 `data.metrics` 中 `revenue` 为 undefined（无出库数据导致收入指标被跳过），前端正确显示"暂无指标"。这是正确行为（缺失不伪造），但来源警告的 undefined 加剧了用户困惑。
+指标事实缺失时继续显示“暂无岗位指标”或对应指标的 `-`，不按来源状态伪造数值。当前接口还支持 `orderAmount/confirmedRevenueAmount/shippedRecognizedAmount` 和 `legacy`，不能只检查 `revenue` 字段来断言所有指标都缺失。金额只有具备币种、税口径及可用状态时才按原值展示。
 
 ## 方案
 
 | 修改层面 | 文件 | 具体改动 |
 |---|---|---|
-| 后端 | backend/src/main/java/com/wanshen/platform/WorkbenchController.java | 确保 `sources` 数组每个条目包含 `status` 字段（`AVAILABLE` 或 `SOURCE_PENDING`） |
-| 前端 | frontend/src/api/workbenchProjection.ts | 第 22 行：`generatedAt: data.generatedAt \|\| data.dataAsOf`（优先 API 响应时间） |
-| 前端 | frontend/src/api/workbenchProjection.ts | `sourceWarnings` 过滤条件改为 `status === 'UNAVAILABLE'`（SOURCE_PENDING 不进警告） |
+| 后端（仅核查） | backend/src/main/java/com/wanshen/platform/WorkbenchController.java | 本地与部署已有状态字段；本轮未修改后端代码 |
+| 前端 | frontend/src/api/workbenchProjection.ts | `generatedAt: data.generatedAt \|\| data.dataAsOf`，使用服务端响应生成时间判断投影缓存时效 |
+| 前端 | frontend/src/api/workbenchProjection.ts | AVAILABLE/SOURCE_PENDING 不进警告；按既有契约保留 UNAVAILABLE/PARTIAL/STALE 及未知状态提示，兼容旧字段并兜底缺失名称、状态 |
+| 前端 | frontend/src/App.tsx | 已更新绿色、过期/失效橙色、读取异常红色、加载中灰色；增加状态区域的可访问名称 |
+| 前端测试 | frontend/src/app/tests/workbenchFreshness.test.ts、backendDeliveryResiduals.test.ts、frontend/tests/workbenchFreshness*.e2e.mjs | 单测、受控浏览器与真实只读联调分别记录，不混淆模拟与真实证据 |
 
 ## 验收标准
 
-1. 刷新工作台后"数据已失效"消失
-2. 来源警告不再包含 `undefined`
-3. SOURCE_PENDING 状态的来源不显示为警告（可改为提示或隐藏）
-4. 有业务数据后指标卡片正常显示数值
+1. 服务端返回有效且新鲜的 `generatedAt` 时，即使 `dataAsOf` 超过 30 分钟，刷新后不误报“数据已失效”。
+2. 来源名称或状态缺失不展示 `undefined`，使用明确兜底；保留 canonical 字段优先及兼容别名。
+3. SOURCE_PENDING 不显示为警告；UNAVAILABLE/PARTIAL/STALE 和未知状态仍可见，不能隐藏真正失败。
+4. 正常指标保留原值、币种和税口径；无事实保留空态或 `-`，不补零。
+5. 真实快照超过 5 分钟标过期，超过 30 分钟隐藏指标值；刷新失败不重置最后成功时间；恢复后显示新快照。
+6. 状态颜色与文字一致；分别验证桌面、移动和真实部署，部署失败不能标记整体验收完成。
 
 ## 进展
 
-🔴 待修复
+2026-10-17，用户确认方案后完成前端修复。
+
+- ✅ 前端代码与本地验证完成：类型检查、37 个测试文件/230 条单测、构建通过；按技能要求运行后端 `mvn compile -q` 也通过，未改后端代码。
+- ✅ 7 组受控 Playwright 验证通过：新响应/旧事实、来源缺失、局部异常、空态、真实过期、手动刷新、失败后的时效和恢复。
+- ✅ 本地真实登录→工作台两个分区→手动刷新通过；API 返回 `dataAsOf=2026-10-16T00:57:54Z`，新 `generatedAt` 下页面正常显示已更新，不再把业务无变更当作投影失效。
+- ⏭️ 部署站点 `https://erp.wanshen.top/`：真实登录及刷新成功、两个分区均 HTTP 200，接口已有来源状态；页面仍有 SOURCE_PENDING 警告，当前部署未通过本轮前端验收。需要更新前端产物后复测，不能宣称线上修复完成。
+- 所有真实探查只执行认证和只读查询，无业务写入、无数据库改动；截图及完整结果见[验收报告](reports/2026-10-17-issue-029-frontend-verification.md)。

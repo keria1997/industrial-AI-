@@ -35,7 +35,7 @@
 | ISSUE-026 | 数字输入框无法清空 | P1 | 全局 | L4 基础层 | 前端 | ✅ 已修复 | [ISSUE-026](ISSUE-026-数字输入框无法清空.md) |
 | ISSUE-027 | 销售履约接口更新 | P1 | 销售 | L1 业务域层 | 前端, 后端 | 📋 待排期 | [ISSUE-027](ISSUE-027-销售履约接口更新.md) |
 | ISSUE-028 | 交付联调阻断（BD-12~15） | P0 | 多模块 | L1 业务域层 | 后端 | 🔴 待修复 | [ISSUE-028](ISSUE-028-交付联调阻断.md) |
-| ISSUE-029 | 工作台数据失效与来源 undefined | P1 | 工作台 | L4 基础层 | 前端, 后端 | 🔴 待修复 | [ISSUE-029](ISSUE-029-工作台数据失效与来源undefined.md) |
+| ISSUE-029 | 工作台数据失效与来源 undefined | P1 | 工作台 | L4 基础层 | 前端, 后端 | ⏭️ 前端已修复、本地通过，部署待更新复测 | [ISSUE-029](ISSUE-029-工作台数据失效与来源undefined.md) |
 | ISSUE-030 | 工作台 Logo 图标 403 | P1 | 工作台 | L4 基础层 | 前端 | 🔴 待修复 | [ISSUE-030](ISSUE-030-工作台Logo图标403.md) |
 
 ## 统计
@@ -43,8 +43,8 @@
 | 状态 | 数量 |
 |---|---|
 | ✅ 已修复/已解锁 | 12 |
-| 🔴 待修复 | 11 |
-| ⏭️ 待复测 | 7 |
+| 🔴 待修复 | 9 |
+| ⏭️ 待复测 | 8 |
 | 📋 已确认待排期 | 1 |
 
 ### 按层级统计
@@ -54,14 +54,14 @@
 | L1 业务域层 | 17 |
 | L2 协同层 | 1 |
 | L3 智能层 | 1 |
-| L4 基础层 | 10 |
+| L4 基础层 | 11 |
 
 ### 按影响范围统计
 
 | 影响范围 | 数量 |
 |---|---|
-| 前端 | 16 |
-| 后端 | 17 |
+| 前端 | 24 |
+| 后端 | 21 |
 | PRD | 0 |
 | 设计文档 | 0 |
 
@@ -209,4 +209,5 @@
 | 最终回归 | [reports/regression-report-final.md](reports/regression-report-final.md) |
 | E2E 执行 | [reports/e2e-execution-report.md](reports/e2e-execution-report.md) |
 | 前端数据审计 | [reports/frontend-test-data-audit.md](reports/frontend-test-data-audit.md) |
+| ISSUE-029 前端验收 | [reports/2026-10-17-issue-029-frontend-verification.md](reports/2026-10-17-issue-029-frontend-verification.md) |
 
