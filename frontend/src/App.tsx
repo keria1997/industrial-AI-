@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
 import { SidebarItem } from './app/SidebarItem';
 import { useAppRuntime } from './app/AppRuntimeProvider';
+import { resolveDisplayPosition } from './app/userIdentityPresentation';
 import { ApiError, apiContextScope } from './api/client';
 import { isRoleName } from './app/moduleRegistry';
 import { getAuthorizedModules, hasPermission } from './app/permissions';
@@ -10126,6 +10127,7 @@ export default function App() {
   const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
   const [profileModal, setProfileModal] = useState(null);
   const roleMeta = roleWorkbenchMeta[activeRole] || roleWorkbenchMeta.老板;
+  const displayPosition = resolveDisplayPosition(currentUser, currentTenant.id);
   const [workbenchSearchInput, setWorkbenchSearchInput] = useState('');
   const [workbenchSearch, setWorkbenchSearch] = useState('');
   const [workbenchEventScope, setWorkbenchEventScope] = useState<'KEY' | 'ALL'>('KEY');
@@ -10212,7 +10214,8 @@ export default function App() {
       confirmText: '知道了',
       details: [
         { label: '用户名称', value: currentUser.name },
-        { label: '当前工作角色', value: activeRole },
+        { label: '主岗位', value: displayPosition },
+        { label: '工作台视图', value: roleMeta.title },
         { label: '当前租户', value: currentTenant.name },
         { label: '登录账号', value: currentUser.account || '-' },
 	        { label: '登录方式', value: currentUser.loginType === 'phone' ? '手机号登录' : '账号登录' },
@@ -10221,7 +10224,7 @@ export default function App() {
 	        { label: '登录时间', value: currentUser.loginAt ? new Date(currentUser.loginAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
         { label: '会话状态', value: '已登录' },
       ],
-      note: '个人信息来自本次前端登录会话；正式接入后可同步企业账号中心、角色权限和安全审计记录。'
+      note: '岗位信息以账号关联的员工档案为准。'
     });
   };
 
@@ -10636,7 +10639,8 @@ export default function App() {
               </div>
               <div className="ml-3 min-w-0 flex-1">
                 <div className="text-[13px] font-bold text-slate-800 group-hover:text-blue-700 truncate">{currentUser.name}</div>
-                <div className="text-[11px] font-medium text-slate-500 truncate">{activeRole} · {roleMeta.title}</div>
+                <div aria-label="当前用户主岗位" title={displayPosition} className="text-[11px] font-medium text-slate-500 break-words">主岗位：{displayPosition}</div>
+                <div className="text-[11px] font-medium text-slate-500">工作台视图：{roleMeta.title}</div>
               </div>
               <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
             </button>
@@ -10733,7 +10737,8 @@ export default function App() {
                 <div className="relative">
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-black shadow-sm">{todayLabel}</span>
-                    <span className="px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">{activeRole} · {roleMeta.title}</span>
+                    <span aria-label="工作台用户主岗位" className="min-w-0 max-w-full break-words px-3 py-1 rounded-full bg-slate-900 text-slate-50 text-[12px] font-black">主岗位：{displayPosition}</span>
+                    <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[12px] font-black">工作台视图：{roleMeta.title}</span>
                   <span role="status" aria-label="工作台数据状态" className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[12px] font-black shadow-sm ${workbenchError ? 'bg-rose-50 text-rose-700 border-rose-200' : workbenchOutdated ? 'bg-amber-50 text-amber-700 border-amber-200' : workbenchLoading ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${workbenchError ? 'bg-rose-500' : workbenchOutdated ? 'bg-amber-500' : workbenchLoading ? 'bg-slate-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                     {workbenchError ? '数据读取异常' : workbench.expired ? '数据已失效' : workbench.stale || workbench.businessStale ? '数据已过期' : workbenchLoading ? '实时取数中' : '数据已更新'}

@@ -38,7 +38,7 @@
 | ISSUE-033 | 一号工厂数据来源为后端种子 | P1 | 平台管理 | L4 基础层 | 后端 | ✅ 后端已修复，待页面回归 | [ISSUE-033](ISSUE-033-一号工厂数据来源为后端种子非数据库.md) |
 | ISSUE-029 | 工作台数据失效与来源 undefined | P1 | 工作台 | L4 基础层 | 前端, 后端 | ✅ 已修复（部署环境验证通过） | [ISSUE-029](ISSUE-029-工作台数据失效与来源undefined.md) |
 | ISSUE-030 | 工作台 Logo 图标 403 | P1 | 工作台 | L4 基础层 | 前端 | ✅ 已修复 | [ISSUE-030](ISSUE-030-工作台Logo图标403.md) |
-| ISSUE-031 | 用户角色显示为老板 | P1 | 工作台 | L4 基础层 | 前端, 后端 | 🔴 待修复 | [ISSUE-031](ISSUE-031-用户角色显示为老板.md) |
+| ISSUE-031 | 用户角色显示为老板 | P1 | 工作台 | L4 基础层 | 前端, 后端 | ⏭️ 前端已修复，后端岗位字段待联调 | [ISSUE-031](ISSUE-031-用户角色显示为老板.md) |
 | ISSUE-032 | 报价单持久化接口未接入 | P1 | 销售管理 | L1 业务域层 | 前端, 后端 | 🔴 待修复 | [ISSUE-032](ISSUE-032-报价单持久化接口未接入.md) |
 | ISSUE-034 | 权限角色与展示岗位概念混用 | P1 | 工作台 | L4 基础层 | 前端, 后端 | 🔴 待修复 | [ISSUE-034](ISSUE-034-权限角色与展示岗位概念混用.md) |
 | ISSUE-035 | 需求澄清移除岗位概念角色直接挂账号 | P0 | 平台管理 | L4 基础层 | 前端, 后端, PRD, 设计文档 | 🔴 待修复 | [ISSUE-035](ISSUE-035-需求澄清移除岗位概念角色直接挂账号.md) |
@@ -48,8 +48,8 @@
 | 状态 | 数量 |
 |---|---|
 | ✅ 已修复/已解锁/后端已修复 | 16 |
-| 🔴 待修复 | 9 |
-| ⏭️ 待复测 | 8 |
+| 🔴 待修复 | 8 |
+| ⏭️ 待复测 | 9 |
 | 📋 已确认待排期 | 1 |
 
 ### 按层级统计
@@ -216,4 +216,5 @@
 | 前端数据审计 | [reports/frontend-test-data-audit.md](reports/frontend-test-data-audit.md) |
 | ISSUE-029 前端验收 | [reports/2026-10-17-issue-029-frontend-verification.md](reports/2026-10-17-issue-029-frontend-verification.md) |
 | ISSUE-023 前端验收 | [reports/2026-10-17-issue-023-frontend-verification.md](reports/2026-10-17-issue-023-frontend-verification.md) |
+| ISSUE-031 前端验收 | [reports/2026-10-17-issue-031-frontend-verification.md](reports/2026-10-17-issue-031-frontend-verification.md) |
 

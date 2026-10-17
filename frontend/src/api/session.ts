@@ -4,6 +4,8 @@ export type AuthenticatedUser = {
   account: string;
   name: string;
   role: string;
+  /** Business backend -> frontend: employee primary position, independent of role/permissions. */
+  displayPosition?: string | null;
   tenantIds: string[];
   tenantName?: string;
   permissions: string[];

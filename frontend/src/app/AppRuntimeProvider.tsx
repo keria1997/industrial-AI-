@@ -32,6 +32,7 @@ export type AppUser = {
   permissionSource?: string;
   permissions?: string[];
   role?: string;
+  displayPosition?: string | null;
   [key: string]: unknown;
 };
 
@@ -82,6 +83,7 @@ const loadSession = (): AppUser | null => {
   return loadAuthenticatedSession();
 };
 
+// Workbench presentation group only; never use this fallback as an employee's position.
 export const resolveSessionRole = (user: AppUser | null): RoleName =>
   user?.role === '管理员' || user?.role === '系统管理员' ? '超级管理员' :
     isRoleName(user?.role) ? user.role : defaultRole;
