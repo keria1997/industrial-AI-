@@ -1,0 +1,130 @@
+{
+  "generatedAt": "2026-10-17T12:40:55.387Z",
+  "sourceCommit": "be7390f5fe1e5c76f491e6ed6e8b3bb22ab03f2e",
+  "mocked": false,
+  "businessWrites": false,
+  "checks": [
+    {
+      "name": "real UI login",
+      "passed": true,
+      "evidence": {
+        "status": 200
+      }
+    },
+    {
+      "name": "current source migration ledger",
+      "passed": true,
+      "evidence": {
+        "missing": [],
+        "mismatched": []
+      }
+    },
+    {
+      "name": "workbench 老板 1.1 contract",
+      "passed": true,
+      "evidence": {
+        "status": 200,
+        "schemaVersion": "1.1",
+        "nestedMetrics": true
+      }
+    },
+    {
+      "name": "workbench 销售 1.1 contract",
+      "passed": false,
+      "evidence": {
+        "status": 500,
+        "schemaVersion": null,
+        "nestedMetrics": false
+      }
+    },
+    {
+      "name": "workbench 仓管 1.1 contract",
+      "passed": false,
+      "evidence": {
+        "status": 500,
+        "schemaVersion": null,
+        "nestedMetrics": false
+      }
+    },
+    {
+      "name": "audit exact paging contract",
+      "passed": true,
+      "evidence": {
+        "status": 200,
+        "total": 0,
+        "hasMore": false,
+        "page": 1
+      }
+    },
+    {
+      "name": "permission resource route",
+      "passed": true,
+      "evidence": {
+        "status": 200,
+        "array": true
+      }
+    },
+    {
+      "name": "warehouses API/database facts",
+      "passed": true,
+      "evidence": {
+        "apiCount": 4,
+        "total": 4,
+        "databaseCount": 4,
+        "mismatches": []
+      }
+    },
+    {
+      "name": "warehouses API/page facts",
+      "passed": true,
+      "evidence": {
+        "candidates": 4,
+        "visible": true
+      }
+    },
+    {
+      "name": "products API/database facts",
+      "passed": true,
+      "evidence": {
+        "apiCount": 8,
+        "total": 8,
+        "databaseCount": 8,
+        "mismatches": []
+      }
+    },
+    {
+      "name": "products API/page facts",
+      "passed": true,
+      "evidence": {
+        "candidates": 8,
+        "visible": true
+      }
+    },
+    {
+      "name": "purchase requests API/database facts",
+      "passed": true,
+      "evidence": {
+        "apiCount": 2,
+        "total": 2,
+        "databaseCount": 2,
+        "mismatches": []
+      }
+    },
+    {
+      "name": "purchase requests API/page facts",
+      "passed": true,
+      "evidence": {
+        "candidates": 2,
+        "visible": true
+      }
+    },
+    {
+      "name": "browser runtime",
+      "passed": true,
+      "evidence": {
+        "pageErrors": []
+      }
+    }
+  ],
+  "pageErrors": []
+}

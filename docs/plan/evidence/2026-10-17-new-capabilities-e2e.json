@@ -1,0 +1,511 @@
+{
+  "generatedAt": "2026-10-17T12:32:58.738Z",
+  "baseUrl": "http://127.0.0.1:5183",
+  "sourceCommit": "eb7660cde7f3c69d4a7f7a438e861e784649ace4",
+  "mocked": false,
+  "sqlWrites": false,
+  "isolatedTenant": "TENANT-C561AA20",
+  "checks": [
+    {
+      "name": "注册独立企业并落库",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "status": 201,
+        "automaticLogin": false
+      }
+    },
+    {
+      "name": "真实验证码登录、企业及管理员基线",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "tenant": "TENANT-C561AA20",
+        "tenantRows": 1,
+        "adminAccountRows": 1
+      }
+    },
+    {
+      "name": "工作台 老板 1.1",
+      "layer": "API/DB",
+      "passed": true,
+      "evidence": {
+        "status": 200,
+        "metricKeys": [
+          "orderAmount",
+          "confirmedRevenueAmount",
+          "shippedRecognizedAmount",
+          "legacy"
+        ],
+        "orderRows": 0
+      }
+    },
+    {
+      "name": "工作台 销售 1.1",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "{\"error\":{\"suggestion\":\"请稍后重试；若持续失败，请提供页面上的追踪 ID\",\"message\":\"服务暂时不可用\",\"traceId\":\"59d\",\"code\":\"INTERNAL_ERROR\",\"retryable\":true}}\n\n500 !== 200\n"
+      }
+    },
+    {
+      "name": "工作台 计划员 1.1",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "{\"error\":{\"suggestion\":\"请稍后重试；若持续失败，请提供页面上的追踪 ID\",\"message\":\"服务暂时不可用\",\"traceId\":\"59e\",\"code\":\"INTERNAL_ERROR\",\"retryable\":true}}\n\n500 !== 200\n"
+      }
+    },
+    {
+      "name": "工作台 仓管 1.1",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "{\"error\":{\"suggestion\":\"请稍后重试；若持续失败，请提供页面上的追踪 ID\",\"message\":\"服务暂时不可用\",\"traceId\":\"59f\",\"code\":\"INTERNAL_ERROR\",\"retryable\":true}}\n\n500 !== 200\n"
+      }
+    },
+    {
+      "name": "工作台 采购 1.1",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "{\"error\":{\"suggestion\":\"请稍后重试；若持续失败，请提供页面上的追踪 ID\",\"message\":\"服务暂时不可用\",\"traceId\":\"5a0\",\"code\":\"INTERNAL_ERROR\",\"retryable\":true}}\n\n500 !== 200\n"
+      }
+    },
+    {
+      "name": "工作台 财务 1.1",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "{\"error\":{\"suggestion\":\"请稍后重试；若持续失败，请提供页面上的追踪 ID\",\"message\":\"服务暂时不可用\",\"traceId\":\"5a1\",\"code\":\"INTERNAL_ERROR\",\"retryable\":true}}\n\n500 !== 200\n"
+      }
+    },
+    {
+      "name": "工作台页面和不可用金额",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "confirmedRevenue": {
+          "unavailableReason": "SOURCE_MISSING",
+          "availability": "UNAVAILABLE"
+        },
+        "sources": [
+          {
+            "source": "SalesOrder",
+            "metric": "orderAmount",
+            "status": "SOURCE_PENDING",
+            "factVersion": null,
+            "lastSuccessAt": null,
+            "errorCode": null,
+            "retriable": false,
+            "availability": "SOURCE_PENDING",
+            "unavailableReason": null
+          },
+          {
+            "source": "RevenueRecognition",
+            "metric": "confirmedRevenueAmount",
+            "status": "SOURCE_PENDING",
+            "factVersion": null,
+            "lastSuccessAt": null,
+            "errorCode": "SOURCE_MISSING",
+            "retriable": false,
+            "availability": "SOURCE_PENDING",
+            "unavailableReason": "SOURCE_MISSING"
+          },
+          {
+            "source": "ShipmentRecognition",
+            "metric": "shippedRecognizedAmount",
+            "status": "SOURCE_PENDING",
+            "factVersion": null,
+            "lastSuccessAt": null,
+            "errorCode": "SOURCE_MISSING",
+            "retriable": false,
+            "availability": "SOURCE_PENDING",
+            "unavailableReason": "SOURCE_MISSING"
+          },
+          {
+            "source": "Message",
+            "metric": "activities",
+            "status": "AVAILABLE",
+            "factVersion": "WB-EVENT-CATALOG-20261015-v1",
+            "lastSuccessAt": "2026-10-17T12:33:00.998368Z",
+            "errorCode": null,
+            "retriable": false,
+            "availability": "AVAILABLE"
+          }
+        ]
+      }
+    },
+    {
+      "name": "权限目录、资源及审计准确分页",
+      "layer": "API/DB",
+      "passed": true,
+      "evidence": {
+        "permissions": 72,
+        "resources": 0,
+        "total": 0,
+        "databaseCount": 0,
+        "hasMore": false
+      }
+    },
+    {
+      "name": "仓库页面新建、数字输入、刷新回读",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "id": "3cba267f-2f5c-45c5-b3de-50930acafaea",
+        "code": "WH-MVCDNASY1F4494",
+        "capacity": "100",
+        "version": 1
+      }
+    },
+    {
+      "name": "产品页面不关联仓库创建、编辑关联及缺库存显示",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "id": "0598f258-3da8-4cce-bd58-49785c980862",
+        "uom": "PCS",
+        "defaultWarehouseId": "3cba267f-2f5c-45c5-b3de-50930acafaea",
+        "version": 2,
+        "stockFactRows": 0
+      }
+    },
+    {
+      "name": "WMS库存CSV显式事实导入与数据库回读",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "id": null,
+        "productId": "0598f258-3da8-4cce-bd58-49785c980862",
+        "qualifiedOnHandQty": "100",
+        "fulfillableQty": "100",
+        "uom": "PCS",
+        "factVersion": 1,
+        "duplicate": {
+          "projectionResult": "DUPLICATE",
+          "duplicate": true
+        }
+      }
+    },
+    {
+      "name": "平台employees新增契约",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "status": 500,
+        "error": {
+          "suggestion": "请稍后重试；若持续失败，请提供页面上的追踪 ID",
+          "message": "服务暂时不可用",
+          "traceId": "61d",
+          "code": "INTERNAL_ERROR",
+          "retryable": true
+        },
+        "requestFields": [
+          "employeeNo",
+          "name",
+          "primaryOrgId",
+          "primaryPositionId",
+          "mobile",
+          "email",
+          "status"
+        ],
+        "note": "正常契约请求失败。以下诊断夹具额外提交type=status，仅用于继续探查，不代表该接口通过。"
+      }
+    },
+    {
+      "name": "平台accounts新增契约",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "status": 500,
+        "error": {
+          "suggestion": "请稍后重试；若持续失败，请提供页面上的追踪 ID",
+          "message": "服务暂时不可用",
+          "traceId": "61f",
+          "code": "INTERNAL_ERROR",
+          "retryable": true
+        },
+        "requestFields": [
+          "loginName",
+          "employeeId",
+          "authType",
+          "status",
+          "directRoleIds"
+        ],
+        "note": "正常契约请求失败。以下诊断夹具额外提交type=status，仅用于继续探查，不代表该接口通过。"
+      }
+    },
+    {
+      "name": "IAM目录可配置财务、销售、采购与质检权限",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "role": "TENANT_ADMIN",
+        "effectivePermissionCount": 75,
+        "missing": [
+          "finance.payment.read",
+          "finance.payment.confirm",
+          "sales.order.review.decide",
+          "sales.rma.approve",
+          "procurement.request.approve",
+          "production.quality.inspect"
+        ]
+      }
+    },
+    {
+      "name": "独立复核账号、首次改密、真实IAM授权",
+      "layer": "API/DB/UI",
+      "passed": true,
+      "evidence": {
+        "accountId": "a236e434-fb89-4486-8138-81b82090d729",
+        "employeeId": "bece5e98-b4dd-4fa4-9a2a-01ed212cdb7a",
+        "permissions": 75,
+        "note": "复核员使用真实租户管理员角色；不代表低权限验收通过"
+      }
+    },
+    {
+      "name": "来源销售单、审批、确认及发货申请持久化",
+      "layer": "API/DB",
+      "passed": true,
+      "evidence": {
+        "orderId": "784db1ba-d23b-4cc9-a531-f275b395dcf5",
+        "orderNo": "SO-20261017-784DB1BA",
+        "version": 4,
+        "totalAmount": "1000",
+        "requestId": "85632d76-7cff-49e0-bb8d-6091c38d886e",
+        "reviewMode": "注册管理员真实self-approve权限例外；非独立销售审批验收"
+      }
+    },
+    {
+      "name": "库存预留、出库过账、订单和库存事实一致",
+      "layer": "API/DB",
+      "passed": true,
+      "evidence": {
+        "outboundId": "4320498b-f890-4684-905e-3c5ba429cfc7",
+        "orderStatus": "SHIPPED",
+        "shippedQty": "10",
+        "qualifiedOnHandQty": "90",
+        "transactionCountAfterReplay": 1
+      }
+    },
+    {
+      "name": "客户签收数量守卫、争议及补签回读",
+      "layer": "API/DB/UI-read",
+      "passed": true,
+      "evidence": {
+        "receiptId": "addc8f6f-20c0-4379-b8b2-4c1f3ff15d2c",
+        "receiptStatus": "SIGNED",
+        "signedQty": "10",
+        "version": 2,
+        "note": "通过API创建和补签，页面只读；不计UI写入验收"
+      }
+    },
+    {
+      "name": "客户已签收不能冒充销售订单已完成",
+      "layer": "API/DB",
+      "passed": true,
+      "evidence": {
+        "receiptStatus": "SIGNED",
+        "orderStatus": "SHIPPED",
+        "missingConditions": [
+          "AR结算完成"
+        ],
+        "completeStatus": 409
+      }
+    },
+    {
+      "name": "RMA独立驳回、原因持久化及可退额度释放",
+      "layer": "API/DB/UI-read",
+      "passed": false,
+      "evidence": {
+        "message": "{\"error\":{\"code\":\"PRODUCTION_403_PERMISSION_DENIED\",\"message\":\"无权执行该操作，所需权限: sales.rma.approve\",\"suggestion\":\"联系租户管理员授权\",\"retryable\":false,\"fieldErrors\":[],\"details\":null,\"traceId\":\"650\"}}\n\n403 !== 200\n"
+      }
+    },
+    {
+      "name": "销售出库生成正式AR、登记及核销链前置",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "销售订单784db1ba-d23b-4cc9-a531-f275b395dcf5已过账出库，但数据库同源AR=0、接口条数=0；不能补造AR继续验收"
+      }
+    },
+    {
+      "name": "独立真实收款登记、复核人页面确认、幂等及刷新",
+      "layer": "API-create/UI-confirm/DB",
+      "passed": false,
+      "evidence": {
+        "message": "真实IAM目录缺finance.payment.confirm，不能伪造复核员权限继续页面确认"
+      }
+    },
+    {
+      "name": "生产正式BOM、需求校验审批、MRP缺口",
+      "layer": "API/DB",
+      "passed": true,
+      "evidence": {
+        "demandId": "be5b3a67-2a9f-43df-b87a-4f2536f6cad7",
+        "taskId": "e879b9a1-fbbf-4124-bda6-52b2bed75678",
+        "shortageQty": "20",
+        "bomId": "492c5402-14eb-481d-a7d4-592fdc643c55"
+      }
+    },
+    {
+      "name": "MRP页面创建PR、刷新恢复关联且禁止重复申请",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "requestId": "90f5b74e-f3f6-4bab-ab25-ecafb4ec8019",
+        "requiredQty": "20",
+        "status": "PENDING_APPROVAL",
+        "countAfterReplay": 1,
+        "uiCreatedThisRun": true
+      }
+    },
+    {
+      "name": "采购独立审批、收货、库存事实及流水",
+      "layer": "API/DB/UI-read",
+      "passed": false,
+      "evidence": {
+        "message": "{\"error\":{\"code\":\"FULFILLMENT_403_PERMISSION_DENIED\",\"message\":\"当前账号没有执行该操作的权限\",\"suggestion\":\"联系管理员配置对应业务权限\",\"retryable\":false,\"fieldErrors\":null,\"details\":{\"permission\":\"procurement.request.approve\"},\"traceId\":\"6a6\"}}\n\n403 !== 201\n"
+      }
+    },
+    {
+      "name": "采购入库生成正式AP",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "Posted procurement receipt prerequisite failed"
+      }
+    },
+    {
+      "name": "齐套后MRP与APS、正式工单和开工",
+      "layer": "API/DB",
+      "passed": true,
+      "evidence": {
+        "workOrderId": "6d26c49c-436f-462c-b601-78a4cd8e899c",
+        "status": "IN_PROGRESS",
+        "version": 4,
+        "materialReservation": true,
+        "materialSource": "独立WMS测试导入；不代表采购入库闭环"
+      }
+    },
+    {
+      "name": "页面真实报工、缺工序不补造、数量达标不提前完工",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "workOrderId": "6d26c49c-436f-462c-b601-78a4cd8e899c",
+        "status": "IN_PROGRESS",
+        "reportedGoodQty": "10",
+        "reportRows": 1,
+        "operationId": null
+      }
+    },
+    {
+      "name": "生产完工预览必须提供正式仓库资源映射",
+      "layer": "API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "预览缺正式来源：{\"workOrderId\":\"6d26c49c-436f-462c-b601-78a4cd8e899c\",\"qty\":\"10\",\"factoryId\":\"ORG-FAC-01\",\"workCenterResourceId\":\"12128f70-5886-48b7-b1a3-f3aced01084f\",\"inventoryWarehouseId\":\"3cba267f-2f5c-45c5-b3de-50930acafaea\",\"traceMode\":\"NONE\",\"allocationRevision\":1,\"businessDate\":\"2026-10-17\",\"availability\":\"AVAILABLE\",\"missingSources\":[],\"sourceVersions\":{\"workOrderVersion\":5,\"routingSnapshotVersion\":0,\"bomSnapshotVersion\":1},\"allocations\":[{\"id\":\"970156b1-b672-493c-b8c8-2e08d5c73109\",\"tenantId\":\"TENANT-C561AA20\",\"completionId\":\"PREVIEW\",\"demandId\":\"be5b3a67-2a9f-43df-b87a-4f2536f6cad7\",\"qty\":\"10\",\"rank\":1,\"createdAt\":\"2026-10-17T12:33:10.709393Z\",\"ruleEvidence\":{\"customerLocked\":false,\"priorityRank\":1,\"promisedDate\":\"\",\"deterministicTieBreak\":\"be5b3a67-2a9f-43df-b87a-4f2536f6cad7\"}}]}"
+      }
+    },
+    {
+      "name": "生产完工缺来源时前端阻止写入",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "completionRequests": 0,
+        "completionRows": 0,
+        "inspectionId": "6f335a91-632c-4689-a2c9-adee22ba71a2",
+        "inspectionStatus": "PASSED",
+        "inspectionMode": "注册管理员真实权限提交，仅用于完工来源守卫探查；非独立质检权限验收"
+      }
+    },
+    {
+      "name": "平台资源新路由、审计非空分页及页面读取",
+      "layer": "API/DB/UI-read",
+      "passed": true,
+      "evidence": {
+        "resourceId": "fcb2b30f-28d6-4d5e-8411-d63a8f6700d4",
+        "resourceVersion": 1,
+        "total": 5,
+        "databaseCount": 5,
+        "hasMore": true
+      }
+    },
+    {
+      "name": "财务核销缺少lines应返回字段错误",
+      "layer": "API/DB-negative",
+      "passed": false,
+      "evidence": {
+        "message": "缺lines返回500：{\"error\":{\"suggestion\":\"请稍后重试；若持续失败，请提供页面上的追踪 ID\",\"message\":\"服务暂时不可用\",\"traceId\":\"713\",\"code\":\"INTERNAL_ERROR\",\"retryable\":true}}"
+      }
+    },
+    {
+      "name": "财务确认服务端职责分离",
+      "layer": "API/DB-negative",
+      "passed": false,
+      "evidence": {
+        "message": "登记人自确认未被拒绝：{\"status\":200,\"paymentId\":\"0c74fa3c-86ee-4fdf-8304-e830e7f6c8f1\",\"statusInDatabase\":\"done\",\"version\":2}\n\n200 !== 403\n"
+      }
+    },
+    {
+      "name": "财务冲销拒绝伪造审批凭证",
+      "layer": "API/DB-negative",
+      "passed": false,
+      "evidence": {
+        "message": "伪造审批凭证被接受：{\"status\":201,\"paymentId\":\"0c74fa3c-86ee-4fdf-8304-e830e7f6c8f1\",\"statusInDatabase\":\"reversed\",\"version\":3}"
+      }
+    },
+    {
+      "name": "忘记密码页面申请后验证码事实入库",
+      "layer": "UI/API/DB",
+      "passed": false,
+      "evidence": {
+        "message": "页面进入重置步骤但数据库有效验证码条数=0；无外部投递成功验收\n\n0 !== 1\n"
+      }
+    },
+    {
+      "name": "重新登录读取本轮真实单据及localStorage无业务事实",
+      "layer": "UI/API/DB",
+      "passed": true,
+      "evidence": {
+        "tenant": "TENANT-C561AA20",
+        "reauthenticated": true,
+        "localStorageKeys": [
+          "industrial-ai-runtime:tenant:v1:e2e_mvcdnasy1f4494"
+        ],
+        "verifiedIds": [
+          "0598f258-3da8-4cce-bd58-49785c980862",
+          "addc8f6f-20c0-4379-b8b2-4c1f3ff15d2c",
+          "f4fa4f01-6789-4b18-b50a-458f97710be8"
+        ]
+      }
+    },
+    {
+      "name": "浏览器运行异常",
+      "layer": "UI",
+      "passed": true,
+      "evidence": {
+        "pageErrors": []
+      }
+    }
+  ],
+  "pageErrors": [],
+  "fixtureCompatibilityOverrides": [
+    {
+      "path": "/api/v1/platform/employees",
+      "additionalField": "type",
+      "value": "active"
+    },
+    {
+      "path": "/api/v1/platform/accounts",
+      "additionalField": "type",
+      "value": "enabled"
+    }
+  ],
+  "summary": {
+    "passed": 21,
+    "blocked": 18
+  }
+}
