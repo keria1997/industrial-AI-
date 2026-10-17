@@ -34,6 +34,10 @@ try {
       }
       if (path.endsWith('/inventory/warehouses')) return fulfill(route, { items: [warehouse], total: 1 });
       if (path.endsWith('/inventory/products')) return fulfill(route, { items: [product], total: 1 });
+      if (path.endsWith('/inventory/materials')) return fulfill(route, { items: [{ id: 'M-NUM', code: 'MAT-NUM', name: '数字回归物料', uom: 'PCS', status: 'active' }], total: 1 });
+      if (path.endsWith('/platform/permission-resources')) return fulfill(route, [{ id: 'wc1', code: 'WC-NUM', name: '数字回归工作中心', type: 'work_center', status: 'enabled' }]);
+      if (path.endsWith('/platform/employees')) return fulfill(route, [{ id: 'employee-num', employeeNo: 'EMP-NUM', name: '数字回归负责人', status: 'active' }]);
+      if (path.endsWith('/platform/org-units')) return fulfill(route, [{ id: 'factory-num', code: 'FAC-NUM', name: '数字回归工厂', type: 'factory', status: 'enabled' }]);
       if (path.endsWith('/inventory/availability')) return fulfill(route, [{
         warehouseId: 'w1', productId: 'P-NUM', qualifiedOnHandQty: '20', allocatedReservedQty: '0',
         frozenQty: '0', safetyStockQty: '0', fulfillableQty: '20', inTransitQty: '0', uom: 'PCS', factVersion: 1,
@@ -155,6 +159,11 @@ try {
   for (const name of ['数量', '单价', '折扣率', '优惠金额']) await probe(`销售/${name}`, sales.getByLabel(name, { exact: true }), true);
   if (!live) {
     await sales.getByLabel('客户', { exact: true }).fill('数字回归客户');
+    await sales.getByLabel('销售负责人', { exact: true }).selectOption('employee-num');
+    await sales.getByLabel('履约工厂', { exact: true }).selectOption('FAC-NUM');
+    for (const [label, value] of [['收货人', '数字回归收货人'], ['收货联系电话', '13800000000'], ['国家/地区', '中国'], ['省份', '上海'], ['城市', '上海'], ['详细地址', '数字回归地址']]) {
+      await sales.getByLabel(label, { exact: true }).fill(value);
+    }
     await sales.locator('tbody select').nth(0).selectOption('WH-NUM');
     await sales.locator('tbody select').nth(1).selectOption('P-NUM');
     const qty = sales.getByLabel('数量', { exact: true });
@@ -172,7 +181,8 @@ try {
       await field.fill(restored);
     }
     await qty.fill('002'); await price.fill('010'); await discount.fill('00');
-    const response = page.waitForResponse(res => res.request().method() === 'POST' && new URL(res.url()).pathname.includes('/sales/'));
+    const response = page.waitForResponse(res => res.request().method() === 'POST' && new URL(res.url()).pathname.includes('/sales/'))
+      .catch(async error => { throw new Error(`${error.message}; dialog: ${(await sales.innerText()).slice(-600)}`); });
     await save.click(); await response;
     await sales.getByText('数字回归保存失败', { exact: true }).waitFor();
     assert.equal(writes.at(-1).body.lines[0].orderedQty, '2');
@@ -191,10 +201,12 @@ try {
   await bom.getByRole('button', { name: '添加工序', exact: true }).click();
   await probe('生产/BOM工序顺序', bom.getByLabel('sequence-0', { exact: true }));
   if (!live) {
-    await bom.getByLabel('产品编码', { exact: true }).fill('P-NUM');
-    await bom.getByLabel('产品名称', { exact: true }).fill('数字回归产品');
+    await bom.getByLabel('产品', { exact: true }).selectOption('P-NUM');
     await bom.getByRole('button', { name: '添加物料', exact: true }).click();
-    for (const [label, value] of [['materialId-0', 'M-NUM'], ['warehouseId-0', 'w1'], ['uom-0', 'PCS'], ['code-0', 'OP10'], ['name-0', '组装'], ['workCenterResourceId-0', 'wc1']]) {
+    for (const [label, value] of [['materialId-0', 'M-NUM'], ['warehouseId-0', 'w1'], ['workCenterResourceId-0', 'wc1']]) {
+      await bom.getByLabel(label, { exact: true }).selectOption(value);
+    }
+    for (const [label, value] of [['qtyPer-0', '1'], ['standardMinutes-0', '1'], ['uom-0', 'PCS'], ['code-0', 'OP10'], ['name-0', '组装']]) {
       await bom.getByLabel(label, { exact: true }).fill(value);
     }
     const sequence = bom.getByLabel('sequence-0', { exact: true });

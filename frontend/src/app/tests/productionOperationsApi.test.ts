@@ -35,6 +35,8 @@ describe('production operations API client', () => {
     expect(request.headers.Authorization).toBe('Bearer signed-session-token');
     expect(request.headers['If-Match']).toBe('"3"');
     expect(request.headers['X-Idempotency-Key']).toBe('demand-validate:TENANT-SHWS:demand-1:3');
+    expect(request.headers['Idempotency-Key']).toBe(request.headers['X-Idempotency-Key']);
+    expect(JSON.parse(request.body)).toEqual({});
     expect(request.headers['X-Permissions']).toBeUndefined();
   });
 

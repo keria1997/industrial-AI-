@@ -30,7 +30,7 @@
 | ISSUE-021 | 工作台刷新数据失效 | P1 | 工作台 | 🔴 待修复 | [ISSUE-021](ISSUE-021-工作台刷新数据失效.md) |
 | ISSUE-022 | 消息路由占位符 | P2 | 消息 | 🔴 待修复 | [ISSUE-022](ISSUE-022-消息路由占位符.md) |
 | ISSUE-023 | 出库显示 UUID | P1 | 库存 | 🔴 待修复 | [ISSUE-023](ISSUE-023-出库管理显示UUID.md) |
-| ISSUE-024 | 生产 BOM 阻断 + Toast 过短 | P1 | 生产 | 🔴 待修复 | [ISSUE-024](ISSUE-024-生产BOM阻断与Toast过短.md) |
+| ISSUE-024 | 生产 BOM 阻断 + Toast 过短 | P1 | 生产 | ⏭️ 前端已修复、本地闭环通过，原部署待复核 | [ISSUE-024](ISSUE-024-生产BOM阻断与Toast过短.md) |
 | ISSUE-025 | 设备下拉硬编码 | P2 | 生产 | 🔴 待修复 | [ISSUE-025](ISSUE-025-设备下拉硬编码.md) |
 | ISSUE-026 | 数字输入框无法清空 | P1 | 全局 | ✅ 已修复 | [ISSUE-026](ISSUE-026-数字输入框无法清空.md) |
 | ISSUE-027 | 销售履约接口更新 | P1 | 销售 | 📋 待排期 | [ISSUE-027](ISSUE-027-销售履约接口更新.md) |

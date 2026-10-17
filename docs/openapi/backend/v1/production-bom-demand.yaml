@@ -1,0 +1,179 @@
+openapi: 3.0.3
+info:
+  title: Production BOM publication and demand validation
+  version: '1.0.0'
+  description: ISSUE-019; documents existing Java behavior. No draft, hold or resume demand command is defined.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /production/bom-snapshots:
+    parameters:
+      - $ref: '#/components/parameters/Tenant'
+    get:
+      summary: Read effective BOM snapshots for the authorized tenant
+      description: Requires production.bom.manage OR production.demand.review. Returns an unpaged array, keyed by tenant and stable productId.
+      responses:
+        '200':
+          description: Effective snapshots, including an empty array
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/BomSnapshot' } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Publish a BOM and its embedded routing atomically
+      description: Requires production.bom.manage. Creates EFFECTIVE directly; a revision requires the current If-Match version. Stable IDs are distinct from display codes. There is no separate draft publication endpoint.
+      parameters:
+        - $ref: '#/components/parameters/Idempotency'
+        - $ref: '#/components/parameters/LegacyIdempotency'
+        - $ref: '#/components/parameters/Version'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BomInput' }
+      responses:
+        '201':
+          description: Persisted EFFECTIVE BOM with incremented version and publisher
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BomSnapshot' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /production/demands/{id}/validate:
+    post:
+      summary: Validate the persisted demand against server BOM and routing facts
+      description: Requires production.demand.review and state RECEIVED or BLOCKED. The frontend sends an empty object; it must not assert productActive, factoryActive, bomEffective or routingEffective. HTTP 200 with BLOCKED is a business rejection, not successful validation. Only PENDING_REVIEW means validation passed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: Stable demand ID, not its display code }
+        - $ref: '#/components/parameters/Tenant'
+        - $ref: '#/components/parameters/Idempotency'
+        - $ref: '#/components/parameters/LegacyIdempotency'
+        - { name: If-Match, in: header, required: true, schema: { type: string }, description: Quoted current demand version }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, maxProperties: 0 }
+      responses:
+        '200':
+          description: Updated demand with persisted status, reasons and incremented version
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, code, productId, status, blockReasons, version]
+                properties:
+                  id: { type: string }
+                  code: { type: string }
+                  productId: { type: string }
+                  status: { type: string, enum: [BLOCKED, PENDING_REVIEW] }
+                  blockReasons: { type: array, items: { type: string } }
+                  version: { type: integer, minimum: 1 }
+                additionalProperties: true
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Tenant: { name: X-Tenant-Id, in: header, required: true, schema: { type: string } }
+    Idempotency: { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+    LegacyIdempotency:
+      name: X-Idempotency-Key
+      in: header
+      description: Client migration header; identical to Idempotency-Key when sent.
+      schema: { type: string }
+    Version:
+      name: If-Match
+      in: header
+      description: Quoted version, required for revising an existing product BOM.
+      schema: { type: string }
+  schemas:
+    PositiveDecimal:
+      type: string
+      description: Decimal string strictly greater than zero, up to six fractional digits; never encoded as a JSON floating point number. Zero matches the lexical pattern but is rejected by the positive-value business constraint.
+      pattern: '^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$'
+    BomInput:
+      type: object
+      required: [productId, routingSnapshotId, lines, routingSnapshot]
+      properties:
+        productId: { type: string, minLength: 1, description: Stable product ID from the demand or product master }
+        productName: { type: string }
+        routingSnapshotId: { type: string, minLength: 1 }
+        lines:
+          type: array
+          minItems: 1
+          description: warehouseId and materialId pairs must be unique.
+          items:
+            type: object
+            required: [materialId, warehouseId, qtyPer, uom]
+            properties:
+              materialId: { type: string, minLength: 1 }
+              materialName: { type: string }
+              warehouseId: { type: string, minLength: 1 }
+              qtyPer: { $ref: '#/components/schemas/PositiveDecimal' }
+              uom: { type: string, minLength: 1 }
+        routingSnapshot:
+          type: object
+          required: [id, productId, operations]
+          properties:
+            id: { type: string, description: Must equal routingSnapshotId }
+            productId: { type: string, description: Must equal the BOM productId }
+            operations:
+              type: array
+              minItems: 1
+              description: Strictly increasing positive sequence; unique operation codes.
+              items:
+                type: object
+                required: [sequence, code, name, workCenterResourceId, standardMinutes]
+                properties:
+                  sequence: { type: integer, minimum: 1, maximum: 2147483647 }
+                  code: { type: string, minLength: 1 }
+                  name: { type: string, minLength: 1 }
+                  workCenterResourceId: { type: string, minLength: 1 }
+                  standardMinutes: { $ref: '#/components/schemas/PositiveDecimal' }
+    BomSnapshot:
+      allOf:
+        - $ref: '#/components/schemas/BomInput'
+        - type: object
+          required: [id, version, status, publishedBy, updatedAt]
+          properties:
+            id: { type: string }
+            version: { type: integer, minimum: 1 }
+            status: { type: string, enum: [EFFECTIVE] }
+            publishedBy: { type: string }
+            updatedAt: { type: string, format: date-time }
+  responses:
+    Error:
+      description: Preserve server error code. 401 expires the session; 403 denies the action; 409/412 requires reading the latest version; field errors retain the draft. Network/5xx outcomes require readback before retry with the original key and body.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+                  suggestion: { type: string }
+                  traceId: { type: string }
+                  retryable: { type: boolean }
+                  fieldErrors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field: { type: string }
+                        message: { type: string }

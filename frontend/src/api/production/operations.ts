@@ -94,7 +94,8 @@ export const productionOperationsApi = {
   dashboard: (context: ApiContext) => apiRequest<DashboardDto>("/api/v1/production/dashboard/kpis", context),
   listDemands: (context: ApiContext) => readAllPages<DemandDto>('/api/v1/production/demands', context),
   validateDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/validate`, context, {
-    method: "POST", body: JSON.stringify({ productActive: true, factoryActive: true, bomEffective: true, routingEffective: true }),
+    // Browser -> business backend: master-data validation is a server fact.
+    method: "POST", body: JSON.stringify({}),
     expectedVersion: demand.version, idempotencyKey: `demand-validate:${context.tenantId}:${demand.id}:${demand.version}`,
   }),
   approveDemand: (context: ApiContext, demand: DemandDto) => apiRequest<DemandDto>(`/api/v1/production/demands/${demand.id}/approve`, context, {

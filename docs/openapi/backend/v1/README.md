@@ -23,6 +23,7 @@ Curated field-level module contracts:
 - [inventory-master.yaml](inventory-master.yaml)
 - [platform-compat.yaml](platform-compat.yaml)
 - [production-client.yaml](production-client.yaml)
+- [production-bom-demand.yaml](production-bom-demand.yaml)
 - [finance-closure.yaml](finance-closure.yaml)
 - [workbench.yaml](workbench.yaml)
 

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell, AppShellHeader, AppShellMain, AppShellSidebar } from './app/AppShell';
 import { SidebarItem } from './app/SidebarItem';
 import { useAppRuntime } from './app/AppRuntimeProvider';
-import { ApiError } from './api/client';
+import { ApiError, apiContextScope } from './api/client';
 import { isRoleName } from './app/moduleRegistry';
 import { getAuthorizedModules, hasPermission } from './app/permissions';
 import PlatformManagementV2 from './platform/PlatformManagement';
@@ -17,6 +17,8 @@ import { mrpShortageRow, mrpPurchaseState } from './features/production/model/mr
 import { useFormalProduction } from './features/production/model/useFormalProduction';
 import { ProductionReportModal } from './features/production/components/ProductionReportModal';
 import { FormalBomPanel } from './features/production/components/FormalBomPanel';
+import { useProductionToast } from './features/production/model/useProductionToast';
+import { productionError } from './features/production/model/productionError';
 import { procurementApi } from './api/procurement';
 import { purchaseOrderReadOnlyReason, purchaseRequestReadOnlyReason } from './features/procurement/procurementContract';
 import { clearAuthenticatedSession, completeFirstLogin, loginWithPassword, loginWithSms, logoutSession, registerTenant, requestLoginCaptcha, requestPasswordReset, resetPasswordByEmail, saveAuthenticatedSession, sendSmsCode, type LoginCaptcha } from './api/session';
@@ -884,15 +886,15 @@ const CenterToast = ({ toast, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[140] pointer-events-none flex items-center justify-center p-6">
-      <div className={`${tone} pointer-events-auto text-white rounded-2xl shadow-2xl px-6 py-5 min-w-[360px] max-w-[520px] flex items-start gap-4 animate-in fade-in zoom-in-95 duration-200`}>
+      <div role={type === 'error' || type === 'danger' ? 'alert' : 'status'} className={`${tone} pointer-events-auto text-white rounded-2xl shadow-2xl px-6 py-5 w-full max-w-[520px] flex items-start gap-4 animate-in fade-in zoom-in-95 duration-200`}>
         <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
           <Icon size={22} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold leading-snug">{title}</div>
+          <div className="break-words text-[15px] font-bold leading-snug">{title}</div>
           {desc && <div className="text-[13px] text-white/85 leading-relaxed mt-1.5">{desc}</div>}
         </div>
-        {onClose && <button onClick={onClose} className="text-white/70 hover:text-white transition-colors shrink-0"><X size={18} /></button>}
+        {onClose && <button aria-label="关闭提示" onClick={onClose} className="text-white/70 hover:text-white transition-colors shrink-0"><X size={18} /></button>}
       </div>
     </div>
   );
@@ -3882,7 +3884,7 @@ const Prod_DashboardView = ({ workOrders = [], demands = [], error = null, loadi
     />
 );
 
-const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onViewSource, onValidateDemand, onApproveDemand, canCreateMps = true }) => {
+const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onViewSource, onValidateDemand, onApproveDemand, canCreateMps = true }) => {
     const pendingDemands = demands.filter(item => item.apiStatus === 'APPROVED');
     const urgentDemands = pendingDemands.filter(item => ['紧急', '特急VIP'].includes(item.priority));
     const demandTypeMeta = {
@@ -3986,7 +3988,8 @@ const Prod_DemandPool = ({ demands, onCreateMps, onMergePlan, onHoldDemand, onVi
                                               : null}
 	                                            <TableActionButton icon={GitMerge} label="合并" tone="purple" onClick={() => onMergePlan(row.id)} disabled />
 	                                            <TableActionButton icon={Plus} label="生成MPS" onClick={() => onCreateMps(row.id)} disabled={!canPlan || !canCreateMps} />
-                                            <TableActionButton icon={Clock} label="暂缓" tone="amber" onClick={() => onHoldDemand(row.id)} disabled={!row.apiId || ['PLANNED', 'CANCELED'].includes(row.apiStatus)} />
+                                            <TableActionButton icon={Clock} label="暂缓" tone="amber" onClick={undefined} disabled />
+                                            <span className="text-xs text-slate-500">暂缓暂未开放</span>
                                         </TableActionGroup>
                                     </td>
                                 </tr>
@@ -4022,12 +4025,14 @@ const mpsStatusClassMap = {
     '已下发': 'bg-blue-50 text-blue-600 border-blue-100',
 };
 
-const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps, onUpdateMps, onDeleteMps, onCalcMrp, onValidateDemand, onApproveDemand, onClaimDemand, onCreateMpsFromDemand, onRunAps, onCreateFormalOrder, onHoldDemand, onMergeDemand, onViewDemandSource, showToast, canCalcMrp = true, canValidateDemand = true, canApproveDemandAction = true, canClaimDemand = true, canCreateMps = true, canRunAps = true, canCreateWorkOrder = true, onConfirmMps, onConfirmDemandToMps }) => {
+const Prod_MpsView = ({ mps, focusMps, highlightDemandId = '', bomData, productionDemands = [], onAddMps, onUpdateMps, onDeleteMps, onCalcMrp, onValidateDemand, onApproveDemand, onClaimDemand, onCreateMpsFromDemand, onRunAps, onCreateFormalOrder, onMaintainBom, validationPending = new Set(), validationErrors = {}, canManageBom = false, onMergeDemand, onViewDemandSource, showToast, canCalcMrp = true, canValidateDemand = true, canApproveDemandAction = true, canClaimDemand = true, canCreateMps = true, canRunAps = true, canCreateWorkOrder = true, onConfirmMps, onConfirmDemandToMps }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [defaultPriority, setDefaultPriority] = useState('普通');
     const [defaultDemandSource, setDefaultDemandSource] = useState('普通生产');
     const [recordModal, setRecordModal] = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
+    const highlightedRow = useRef<HTMLTableRowElement>(null);
+    useEffect(() => { highlightedRow.current?.scrollIntoView({ block: 'center' }); }, [highlightDemandId]);
 
     const existingDemandIds = new Set(mps.filter(m => m.demandId).map(m => m.demandId));
     const draftRows = productionDemands
@@ -4076,6 +4081,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                     <div>
                         <h4 className="font-bold text-[14px] text-slate-800 flex items-center gap-2"><ListTodo size={16} className="text-blue-600"/> 主生产计划列表 (MPS)</h4>
                 <p className="text-[12px] text-slate-500 mt-1">草稿、待审批、待接收和待展算条目来自销售缺货/订单加急；接收后才能推送 MRP。</p>
+                <p id="demand-hold-unavailable" className="mt-1 text-xs text-slate-500">暂缓暂未开放</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                         <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 text-[12px] font-bold">待处理 {pendingCount}</span>
@@ -4098,7 +4104,7 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                                 const canReview = isDraft && r.apiStatus === 'PENDING_REVIEW';
                                 const canClaim = isDraft && r.apiStatus === 'APPROVED' && !r.rawDemand?.formalDemand?.acceptedAt;
                                 return (
-                                    <tr key={r.id} aria-current={[r.id, r.apiId, r.demandId].includes(focusMps) ? 'true' : undefined} className={`transition-colors group ${[r.id, r.apiId, r.demandId].includes(focusMps) ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
+                                    <tr key={r.id} ref={r.demandId === highlightDemandId ? highlightedRow : undefined} aria-current={[r.id, r.apiId, r.demandId].includes(focusMps) || r.demandId === highlightDemandId ? 'true' : undefined} className={`transition-colors group ${[r.id, r.apiId, r.demandId].includes(focusMps) || r.demandId === highlightDemandId ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50/50'}`}>
                                         <td className="px-5 py-4 font-mono font-bold text-blue-600">{r.id}</td>
                                         <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${meta.className}`}><SourceIcon size={12} /> {ds}</span></td>
                                         <td className="px-5 py-4">{r.priority === '特急VIP' ? <span className="bg-rose-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max"><Zap size={12}/> 特急VIP</span> : r.priority === '紧急' ? <span className="bg-orange-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max">紧急</span> : r.priority === '销售联动' ? <span className="bg-purple-500 text-white px-2 py-0.5 rounded shadow-sm font-bold text-[10px] flex items-center gap-1 w-max">销售联动</span> : <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 w-max">普通</span>}</td>
@@ -4106,17 +4112,25 @@ const Prod_MpsView = ({ mps, focusMps, bomData, productionDemands = [], onAddMps
                                         <td className="px-5 py-4 text-right font-mono font-bold text-slate-800">{r.quantity} {r.unit || 'PCS'}</td>
                                         <td className="px-5 py-4 text-slate-500 font-mono">{r.date}</td>
                                         <td className="px-5 py-4">{r.sourceSalesOrder ? <div className="text-[11px] text-blue-500 font-mono">SO: {String(r.sourceSalesOrder).slice(0, 12)}{r.sourceFactVersion != null ? ` \u00b7 v${r.sourceFactVersion}` : ''}</div> : <div className="text-[11px] text-slate-400">{r.source || '-'}</div>}{r.sourceCustomer && <div className="text-[11px] text-slate-400 mt-0.5">{r.sourceCustomer}</div>}{r.rawDemand?.formalDemand?.handlerRole && <div className="text-[11px] text-slate-500 mt-0.5">{r.rawDemand.formalDemand.handlerRole === 'PRODUCTION_PLANNER' ? '接收池：生产计划员' : `处理角色：${r.rawDemand.formalDemand.handlerRole}`}{r.rawDemand.formalDemand.handlerId ? ` \u00b7 ${r.rawDemand.formalDemand.handlerId}` : ''}</div>}</td>
-                                        <td className="px-5 py-4"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${mpsStatusClassMap[r.status] || mpsStatusClassMap['草稿']}`}>{r.status === '已下发' ? '已推MRP' : r.status}</span>{r.apiStatus === 'BLOCKED' && <div className="mt-2 max-w-[220px] text-[11px] text-rose-600">{r.rawDemand?.formalDemand?.blockReasons?.join('；') || '请补齐生产主数据后重新校验'}</div>}</td>
+                                        <td className="px-5 py-4"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${mpsStatusClassMap[r.status] || mpsStatusClassMap['草稿']}`}>{r.status === '已下发' ? '已推MRP' : r.status}</span>
+                                          {r.apiStatus === 'BLOCKED' && <div className="mt-2 max-w-[260px] whitespace-normal break-words text-[11px] text-rose-600">
+                                            <p>{r.rawDemand?.formalDemand?.blockReasons?.join('；') || '请补齐生产主数据后重新校验'}</p>
+                                            {r.rawDemand?.formalDemand?.blockReasons?.some(reason => /BOM|工艺/.test(reason)) && (canManageBom
+                                              ? <button onClick={() => onMaintainBom?.(r.rawDemand)} disabled={validationPending.has(r.demandId)} className="mt-2 block text-xs text-blue-600 disabled:opacity-40">维护 BOM</button>
+                                              : <p className="mt-2 text-slate-500">请由具备 BOM 管理权限的人员维护。</p>)}
+                                          </div>}
+                                          {validationErrors[r.demandId] && <p role="alert" className="mt-2 max-w-[260px] whitespace-normal break-words text-xs text-rose-600">{validationErrors[r.demandId]}</p>}
+                                        </td>
                                         <td className="px-5 py-4 text-right">
                                             <div className="flex items-center justify-end space-x-1.5">
                                                 {isDraft ? <>
                                                     <button onClick={() => onViewDemandSource?.(r.rawDemand)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看来源"><Eye size={16}/></button>
                                                     {r.status === '草稿' && <button onClick={() => onConfirmDemandToMps?.(r.id)} className="text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200 p-1.5 rounded-lg transition-colors shadow-sm" title="确认需求，进入待展算"><CheckCircle2 size={16}/></button>}
-                                                    {canValidate && <button onClick={() => onValidateDemand?.(r.id)} disabled={!canValidateDemand} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canValidateDemand ? '需求校验' : '无需求校验权限'}><CheckCircle2 size={16}/></button>}
+                                                    {canValidate && <button onClick={() => onValidateDemand?.(r.id)} disabled={!canValidateDemand || validationPending.has(r.demandId)} aria-busy={validationPending.has(r.demandId)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canValidateDemand ? '需求校验' : '无需求校验权限'}>{validationPending.has(r.demandId) ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}</button>}
                                                     {canReview && <button onClick={() => onApproveDemand?.(r.id)} disabled={!canApproveDemandAction} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canApproveDemandAction ? '审批需求' : '无需求审批权限'}><ShieldCheck size={16}/></button>}
                                                     {canClaim && <button onClick={() => onClaimDemand?.(r.id)} disabled={!canClaimDemand} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canClaimDemand ? '计划员接收需求' : '无需求接收权限'}><Inbox size={16}/></button>}
                                                     {canRunMrp && <button onClick={() => onCreateMpsFromDemand?.(r.id)} disabled={!canCalcMrp} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title={canCalcMrp ? '接收后推送 MRP 展算' : '无 MRP 展算权限'}><PlayCircle size={16}/></button>}
-                                                    <button onClick={() => onHoldDemand?.(r.id)} disabled={!r.demandId} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="暂缓"><Clock size={16}/></button>
+                                                    <button disabled aria-label="暂缓" aria-describedby="demand-hold-unavailable" className="cursor-not-allowed p-1.5 text-slate-300" title="暂缓暂未开放"><Clock size={16}/></button>
                                                 </> : <>
                                                     <button onClick={() => setRecordModal({ mode: 'view', record: r })} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看计划"><Eye size={16}/></button>
                                                     <button onClick={() => setRecordModal({ mode: 'edit', record: r })} disabled={r.status === '已下发'} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="编辑计划"><Edit2 size={16}/></button>
@@ -4521,8 +4535,8 @@ const Prod_ImportBomModal = ({ onClose, onImport }) => (
     </div>
 );
 
-const Prod_BomView = ({ formalCtx = null, ..._props }) => formalCtx
-    ? <FormalBomPanel context={formalCtx} />
+const Prod_BomView = ({ formalCtx = null, permissions = [], target, onReturn, ..._props }) => formalCtx
+    ? <FormalBomPanel context={formalCtx} permissions={permissions} target={target} onReturn={onReturn} />
     : <div role="status" className="border border-slate-200 bg-white p-8 text-center text-slate-500">请登录后读取正式 BOM 数据</div>;
 
 const Prod_RouteHeaderModal = ({ action, activeRoute, onClose, onSave }) => {
@@ -4703,15 +4717,20 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   const [bomData, setBomData] = useState(prod_bomListData);
   const [routingData, setRoutingData] = useState(prod_routingListData);
 
-  const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [actionModal, setActionModal] = useState(null);
-
-  const showToast = (msg, type = 'success') => {
-    setToast({ show: true, msg, type });
-    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
-  };
-
-  const formalCtx = useMemo(() => currentUser?.accessToken ? ({ tenantId: currentTenant?.id || '', accessToken: currentUser.accessToken }) : null, [currentTenant?.id, currentUser?.accessToken]);
+  const formalCtx = useMemo(() => currentUser?.accessToken ? ({
+      tenantId: currentTenant?.id || '', accessToken: currentUser.accessToken,
+      permissionVersion: currentUser.permissionVersion, scopeVersion: currentUser.scopeVersion,
+  }) : null, [currentTenant?.id, currentUser?.accessToken, currentUser?.account, currentUser?.permissionVersion, currentUser?.scopeVersion]);
+  const { toast, showToast, closeToast } = useProductionToast(`${apiContextScope(formalCtx)}:${currentUser?.account || ''}`);
+  const [validationPending, setValidationPending] = useState<Set<string>>(new Set());
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const validationInFlight = useRef(new Map<string, symbol>());
+  const productionMounted = useRef(false);
+  const [bomNavigation, setBomNavigation] = useState(null);
+  const bomNavigationRef = useRef(bomNavigation);
+  bomNavigationRef.current = bomNavigation;
+  const [highlightDemandId, setHighlightDemandId] = useState('');
   const productionInventory = useFormalInventory(formalCtx);
   const canReadPurchaseRequests = currentUser?.permissions?.some(code => ['*', 'procurement.pr.read', 'procurement.request.read'].includes(code));
   const loadMrpPurchases = useCallback(scope => procurementApi.listAllRequests(scope), []);
@@ -4721,6 +4740,13 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
   const purchaseAttempts = useRef(new Map<string, string>());
   const productionIdentity = useRef(formalCtx);
   productionIdentity.current = formalCtx;
+  useEffect(() => {
+      productionMounted.current = true;
+      validationInFlight.current.clear();
+      setValidationPending(new Set()); setValidationErrors({}); setBomNavigation(null); setHighlightDemandId('');
+      return () => { productionMounted.current = false; validationInFlight.current.clear(); };
+  }, [formalCtx]);
+  useEffect(() => { if (activeTab !== 'bom') setBomNavigation(null); }, [activeTab]);
   const presentedMrp = mrp.map(row => ({ ...row, ...mrpPurchaseState(row, mrpPurchases.data?.items ?? null) }));
   useEffect(() => {
       let active = true;
@@ -4836,20 +4862,85 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   const handleValidateDemand = async (demandId) => {
       const targetDemand = productionDemands.find(item => item.id === demandId);
-      if (!targetDemand?.formalDemand) return;
+      if (!formalCtx || !targetDemand?.formalDemand || !hasPermission('production.demand.review')) return;
+      const id = targetDemand.apiId;
+      if (validationInFlight.current.has(id)) return;
+      const identity = formalCtx;
+      const request = Symbol();
+      const current = () => productionMounted.current && productionIdentity.current === identity && validationInFlight.current.get(id) === request;
+      validationInFlight.current.set(id, request);
+      setValidationPending(previous => new Set(previous).add(id));
+      setValidationErrors(previous => ({ ...previous, [id]: '' }));
       try {
-          const updated = await productionOperationsApi.validateDemand({
-              tenantId: currentTenant?.id || '',
-              accessToken: currentUser?.accessToken || '',
-          }, targetDemand.formalDemand);
-          setProductionDemands(prev => prev.map(item => item.id === demandId ? mapFormalDemandRow(updated) : item));
+          // Read the authoritative version before a new command; never reuse a stale row version.
+          const demands = await productionOperationsApi.listDemands(identity);
+          if (!current()) return;
+          const latest = demands.items.find(item => item.id === id);
+          if (!latest) throw new Error('需求已不存在或不在当前授权范围，请刷新列表');
+          setProductionDemands(previous => previous.map(item => item.apiId === id ? mapFormalDemandRow(latest) : item));
+          if (!['RECEIVED', 'BLOCKED'].includes(latest.status)) {
+              showToast('需求状态已更新，请按最新状态办理', 'warning');
+              return;
+          }
+          const updated = await productionOperationsApi.validateDemand(identity, latest);
+          if (!current()) return;
+          setProductionDemands(prev => prev.map(item => item.apiId === id ? mapFormalDemandRow(updated) : item));
           showToast(updated.status === 'PENDING_REVIEW'
               ? `生产需求 [${demandId}] 校验通过，等待审批`
-              : `生产需求 [${demandId}] 校验阻断：${updated.blockReasons?.join('；') || '请检查生产主数据'}`,
+              : `生产需求 [${demandId}] 校验未通过：${updated.blockReasons?.join('；') || '请检查生产主数据'}`,
               updated.status === 'PENDING_REVIEW' ? 'success' : 'error');
       } catch (error) {
-          showToast(error instanceof Error ? `需求校验失败：${error.message}` : '需求校验失败', 'error');
+          if (!current()) return;
+          let detail = productionError(error);
+          if (!(error instanceof ApiError) || error.status >= 500 || [408, 409, 412, 429].includes(error.status)) {
+              try {
+                  const latest = (await productionOperationsApi.listDemands(identity)).items.find(item => item.id === id);
+                  if (!current()) return;
+                  if (latest) setProductionDemands(previous => previous.map(item => item.apiId === id ? mapFormalDemandRow(latest) : item));
+                  detail += '；已核对服务端最新状态，请确认后重新操作';
+              } catch (refreshError) {
+                  detail += `；最新状态读取失败：${productionError(refreshError)}`;
+              }
+          }
+          if (!current()) return;
+          setValidationErrors(previous => ({ ...previous, [id]: detail }));
+          showToast(`需求校验失败：${detail}`, 'error');
+      } finally {
+          if (current()) {
+              validationInFlight.current.delete(id);
+              setValidationPending(previous => { const next = new Set(previous); next.delete(id); return next; });
+          }
       }
+  };
+
+  const handleMaintainBom = (row) => {
+      if (!formalCtx || !row?.formalDemand || !hasPermission('production.bom.manage')) return;
+      const demand = row.formalDemand;
+      setBomNavigation({
+          identity: formalCtx, returnSearch: window.location.search,
+          target: { id: demand.id, code: demand.code, productId: demand.productId, productName: demand.productName },
+      });
+      setActiveTab('bom');
+  };
+  const handleReturnFromBom = async () => {
+      const navigation = bomNavigation;
+      if (!formalCtx || navigation?.identity !== formalCtx) return;
+      const identity = formalCtx;
+      const current = () => productionMounted.current && productionIdentity.current === identity && bomNavigationRef.current === navigation;
+      try {
+          const latest = await productionOperationsApi.listDemands(identity);
+          if (!current()) return;
+          setProductionDemands(latest.items.map(mapFormalDemandRow));
+          showToast('已读取最新需求，请重新校验', 'warning');
+      } catch (error) {
+          if (!current()) return;
+          setValidationErrors(previous => ({ ...previous, [navigation.target.id]: `需求刷新失败：${productionError(error)}。再次校验时将重新读取。` }));
+          showToast('需求刷新失败，请核对后重试', 'error');
+      }
+      if (!current()) return;
+      window.history.replaceState({}, '', `${window.location.pathname}${navigation.returnSearch}${window.location.hash}`);
+      setHighlightDemandId(navigation.target.id);
+      setActiveTab('mps'); setBomNavigation(null);
   };
 
   const handleApproveDemand = async (demandId) => {
@@ -5067,10 +5158,6 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 
   const handleMergeDemandToPlan = (demandId) => {
       showToast('请执行全局 MRP，按各需求分别保留来源并统一计算物料', 'warning');
-  };
-
-  const handleHoldDemand = (demandId) => {
-      showToast('该需求仍保留服务端状态，暂缓审批尚未开放', 'warning');
   };
 
   const handleViewDemandSource = (demand) => {
@@ -5384,12 +5471,12 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	      if (kind === 'transfer') handleTransferLine();
 	  };
 
-	  const permissionCodes = formalSnapshot?.permissions || currentUser?.permissions || [];
+	  const permissionCodes = currentUser?.permissions || formalSnapshot?.permissions || [];
 	  const hasPermission = (code) => permissionCodes.includes('*') || permissionCodes.includes(code);
 
 	  return (
       <div className="w-full h-full font-sans flex flex-col relative bg-[#F5F7FA] selection:bg-blue-100">
-          <CenterToast toast={toast} onClose={() => setToast({ show: false, msg: '', type: 'success' })} />
+          <CenterToast toast={toast} onClose={closeToast} />
           <BusinessActionModal action={actionModal} onClose={() => setActionModal(null)} onConfirm={confirmProdAction} />
           {reportOrder && <ProductionReportModal order={reportOrder} onClose={() => setReportOrder(null)} onSubmit={handleSubmitReport} />}
           {workCenterMpsId && <ProductionWorkCenterModal context={formalCtx}
@@ -5440,7 +5527,18 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	          <main className="relative mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-8 pb-8">
 	              <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar relative pr-2 pb-6">
 	                  <BusinessFlowDock moduleName="生产管理" flow={businessFlow} onAction={handleProductionFlowAction} onNavigate={onNavigateModule} />
-	                  {activeTab === 'dashboard' && <Prod_DashboardView workOrders={orders} demands={productionDemands} error={formalError} loading={!formalSnapshot && !formalError} />}{activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} bomData={bomData} productionDemands={productionDemands} onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp} onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand} onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps} onHoldDemand={handleHoldDemand} onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast} canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')} canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')} canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')} canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
+	                  {activeTab === 'dashboard' && <Prod_DashboardView workOrders={orders} demands={productionDemands} error={formalError} loading={!formalSnapshot && !formalError} />}
+                      {activeTab === 'mps' && <Prod_MpsView mps={mps} focusMps={focusedMpsId} highlightDemandId={highlightDemandId}
+                        bomData={bomData} productionDemands={productionDemands} validationPending={validationPending} validationErrors={validationErrors}
+                        canManageBom={hasPermission('production.bom.manage')} onMaintainBom={handleMaintainBom}
+                        onAddMps={handleAddMps} onUpdateMps={handleUpdateMps} onDeleteMps={handleDeleteMps} onCalcMrp={handleCalcMrp}
+                        onValidateDemand={handleValidateDemand} onApproveDemand={handleApproveDemand} onClaimDemand={handleClaimDemand}
+                        onCreateMpsFromDemand={handleCreateMpsFromDemand} onRunAps={handleRunApsFromMps} onCreateFormalOrder={handleCreateFormalOrderFromMps}
+                        onMergeDemand={handleMergeDemandToPlan} onViewDemandSource={handleViewDemandSource} showToast={showToast}
+                        canCalcMrp={hasPermission('production.mrp.run')} canValidateDemand={hasPermission('production.demand.review')}
+                        canApproveDemandAction={hasPermission('production.demand.approve')} canClaimDemand={hasPermission('production.demand.claim')}
+                        canCreateMps={hasPermission('production.demandPool.createMps')} canRunAps={hasPermission('production.aps.run')}
+                        canCreateWorkOrder={hasPermission('production.work-order.create')} onConfirmMps={handleConfirmMps} onConfirmDemandToMps={handleConfirmDemandToMps} />}
 	                  {activeTab === 'mrp' && <Prod_MrpView mrp={presentedMrp} onIssueMrp={handleIssueMrp} onRunGlobalMrp={handleGlobalMrp} onCreatePurchase={handleCreatePurchase} showToast={showToast} onRefreshPurchases={mrpPurchases.reload} purchaseError={canReadPurchaseRequests ? mrpPurchases.error : '无采购申请查询权限'} purchasePending={purchasePending} />}
                   {activeTab === 'aps' && <ProductionScheduleView orders={orders} equipments={equipments} />}
                   {activeTab === 'orders' && <Prod_OrdersView orders={orders} onCheckKit={handleCheckKit} onDispatch={handleDispatch} onUpdateOrder={handleUpdateOrder} onDeleteOrder={handleDeleteOrder} showToast={showToast} />}
@@ -5452,7 +5550,9 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
 	                      </div>
 	                  )}
 	                  {activeTab === 'equipment' && <Prod_EquipmentView productionLines={productionLines} equipments={equipments} onAddEq={handleAddEq} onEditEq={handleEditEq} onDeleteEq={handleDeleteEq} onFixEquipment={handleFixEquipment} onSimulateFailure={handleSimulateFailure} />}
-                  {activeTab === 'bom' && <Prod_BomView bomData={bomData} setBomData={setBomData} showToast={showToast} formalCtx={formalCtx} />}
+                  {activeTab === 'bom' && <Prod_BomView formalCtx={formalCtx} permissions={permissionCodes}
+                    target={bomNavigation?.identity === formalCtx ? bomNavigation.target : undefined}
+                    onReturn={bomNavigation?.identity === formalCtx ? handleReturnFromBom : undefined} />}
                   {activeTab === 'routing' && <Prod_RoutingView routingData={routingData} setRoutingData={setRoutingData} equipments={equipments} showToast={showToast} />}
               </div>
           </main>
