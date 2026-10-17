@@ -319,14 +319,14 @@ try {
     if (!state.reviewer.employeeId) {
       const employee = await platformFixture(page, owner, '/api/v1/platform/employees',
         { employeeNo: `RV-${state.suffix}`, name: '端到端复核员', primaryOrgId: factory.id,
-          primaryPositionId: adminEmployee.primaryPositionId, mobile: state.reviewer.phone, email: state.reviewer.email, status: 'active' });
+          mobile: state.reviewer.phone, email: state.reviewer.email, status: 'active' });
       state.reviewer.employeeId = employee.id; await saveState();
     }
     if (!state.reviewer.accountId) {
       const adminRole = snapshot.roles.find(row => row.code === 'TENANT_ADMIN');
       assert(adminRole, 'Real IAM role required');
       const account = await platformFixture(page, owner, '/api/v1/platform/accounts',
-        { loginName: state.reviewer.account, employeeId: state.reviewer.employeeId, authType: 'password', status: 'enabled', directRoleIds: [adminRole.id] });
+        { loginName: state.reviewer.account, employeeId: state.reviewer.employeeId, authType: 'password', status: 'enabled', roleId: adminRole.id });
       state.reviewer.accountId = account.id; await saveState();
     }
     reviewerPage = await makePage();

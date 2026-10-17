@@ -79,7 +79,7 @@ try {
   sources = [];
   empty = true;
   await refresh();
-  await page.getByText('暂无岗位指标', { exact: true }).waitFor();
+  await page.getByText('暂无角色指标', { exact: true }).waitFor();
   assert.equal(await page.getByText('123.45', { exact: true }).count(), 0);
   check('无业务事实保留空态，不沿用旧数值或生成零');
 

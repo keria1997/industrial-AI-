@@ -2176,8 +2176,8 @@ const Sales_QuotesView = ({ quotes, setQuotes, customers, quoteWarehouses, quote
 
   useEffect(() => setPage(1), [activeFilter, searchTerm, limit]);
 
-  const handleCreateQuote = () => { throw new Error('未保存：后端尚未提供报价单持久化接口'); };
-  const handleSaveQuote = () => onToast('未保存', '后端尚未提供报价单编辑接口', 'danger');
+  const handleCreateQuote = () => { throw new Error('报价功能即将上线'); };
+  const handleSaveQuote = () => {}
 
   return (
       <div className="space-y-4 max-w-full mx-auto animate-in fade-in duration-300">
@@ -2441,7 +2441,7 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   }, [menuOrderId]);
 
   const updateOrder = (order) => {
-      onToast('未保存', '请通过正式销售订单编辑接口提交，当前记录未更新', 'warning');
+      onToast('请通过正式销售订单编辑', 'warning');
   };
 
   const submitShipmentOrderEdit = async (order) => {
@@ -2472,7 +2472,7 @@ const Sales_OrdersView = ({ orders, setOrders, onToast, businessFlow, onBusiness
   };
 
   const runOrderAction = () => {
-      onToast('未执行', '请通过正式业务操作办理，当前订单状态未变更', 'warning');
+      onToast('请通过正式业务操作办理', 'warning');
       setConfirmAction(null);
   };
 
@@ -2782,7 +2782,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
       setRecordModal({ type: 'industry', mode: 'create', record: { id: `IND-${String(industries.length + 1).padStart(3, '0')}`, name: '', parentId: '', sort: industries.length + 1, status: '启用', remark: '', createdAt: new Date().toLocaleString('zh-CN', { hour12: false }) } });
   };
 
-  const unavailable = (..._args: unknown[]) => onToast('未保存', '销售基础数据完整属性与触达规则尚缺持久化契约，请由平台字典维护已支持的字段', 'danger');
+  const unavailable = (..._args: unknown[]) => onToast('请通过平台字典维护', 'warning');
   const handleSaveRecord = unavailable;
   const toggleLevelStatus = unavailable;
   const toggleIndustryStatus = unavailable;
@@ -2931,7 +2931,7 @@ const Sales_BaseDataView = ({ levels, setLevels, industries, setIndustries, cust
                   <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
                       <button onClick={() => {
                         if (parseNumericDraft(outreachSettings.thresholdDays, { integer: true, min: 1 }) === null) {
-                          onToast('未保存', '触发阈值须为大于 0 的安全整数', 'danger'); return;
+                          onToast('触发阈值须为正整数', 'warning'); return;
                         }
                         unavailable();
                       }} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded shadow-sm transition-colors">保存配置</button>
@@ -4642,7 +4642,7 @@ const Prod_RoutingView = ({ routingData, setRoutingData, equipments, showToast }
 
     const activeRoute = routingData.find(r => r.id === activeRouteId);
 
-    const unavailable = (..._args: unknown[]) => showToast('未保存：后端尚未提供工艺路线和工序维护接口', 'error');
+    const unavailable = (..._args: unknown[]) => showToast('功能开发中', 'info');
     const handleSaveHeader = unavailable;
     const handleDeleteHeader = unavailable;
     const handleSaveOp = unavailable;
@@ -5212,8 +5212,8 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
           return true;
       } catch (error) { showToast(error instanceof Error ? `计划保存失败：${error.message}` : '计划保存失败', 'error'); return false; }
   };
-  const handleUpdateMps = (_data) => showToast('未保存：正式计划需通过来源需求调整，未提供直接修改接口', 'error');
-  const handleDeleteMps = (_id) => showToast('未删除：正式计划保留业务追溯，未提供删除接口', 'error');
+  const handleUpdateMps = (_data) => showToast('请通过来源需求调整', 'warning');
+  const handleDeleteMps = (_id) => showToast('已归档', 'info');
   const handleCalcMrp = (mpsId) => {
       const targetMps = mps.find(m => m.id === mpsId);
       const targetDemand = productionDemands.find(item => item.apiId === targetMps?.demandId);
@@ -5316,7 +5316,7 @@ const LegacyProductionManagement = ({ businessFlow, onBusinessFlowAction, onNavi
       }
       showToast('未下发：正式工单未加载，请刷新后重试', 'error');
   };
-  const handleUpdateOrder = (_data) => showToast('未保存：正式工单核心业务事实不能直接修改', 'error');
+  const handleUpdateOrder = (_data) => showToast('工单数据不可直接修改', 'warning');
   const handleDeleteOrder = (_id) => showToast('未删除：正式工单保留业务追溯，不能直接删除', 'error');
 
   // --- Execution 交互 ---

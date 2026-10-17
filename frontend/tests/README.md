@@ -6,7 +6,8 @@
 - `businessFacts.e2e.mjs`：受控接口字段与组件事实映射回归。
 - `numericDraft.e2e.mjs`：数字输入清空、零值回显、小数中间态、提交校验、数量守恒和保存失败保留草稿回归。在 `frontend` 目录运行 `node tests/numericDraft.e2e.mjs` 使用受控 API；`NUMERIC_LIVE=1 node tests/numericDraft.e2e.mjs` 使用本地 `.env.local` 账号真实登录，仅读取和取消草稿，不提交业务数据。结果分别写入根目录 `artifacts/numeric-input-controlled` 和 `artifacts/numeric-input-live`。
 - `backendDeliveryWrite.e2e.mjs`：新增交付的真实写入联调。执行注册/验证码登录、仓库和产品编辑、库存CSV导入、出库幂等、签收及补签、MRP到PR、生产报工、财务反例、重登回读；逐项以只读SQL核对PostgreSQL。报告明确区分UI写入和API写入后页面读取；不拦截请求、不注入会话、不写SQL夹具。
-- `userIdentity.e2e.mjs`：ISSUE-031 岗位与工作台分组分离回归。在 `frontend` 运行 `node tests/userIdentity.e2e.mjs` 使用受控会话/API；`IDENTITY_TEST_MODE=live node tests/userIdentity.e2e.mjs` 使用根目录 `.env.local` 配置的账号真实登录，仅查询。可用 `FRONTEND_TEST_URL` 指定本地或部署环境，`IDENTITY_REPORT_DIR` 指定输出目录。默认报告和截图在 `/tmp/industrial-ai-issue031-controlled` 或 `/tmp/industrial-ai-issue031-live`。真实响应缺少岗位时仅验收缺失状态，不能据此宣布员工主岗位联调通过。
+- `userIdentity.e2e.mjs`：ISSUE-035 账号角色展示回归，替代 ISSUE-031 的旧岗位展示方案。运行 `node tests/userIdentity.e2e.mjs` 使用受控会话/API；`IDENTITY_TEST_MODE=live node tests/userIdentity.e2e.mjs` 使用根目录 `.env.local` 账号真实登录并只读检查工作台与平台页面。`FRONTEND_TEST_URL` 指定环境，`IDENTITY_REPORT_DIR` 指定输出目录。默认结果在 `/tmp/industrial-ai-issue035-identity-controlled` 或 `/tmp/industrial-ai-issue035-identity-live`。验证角色缺失、自定义角色不回退老板、菜单按有效权限、移动端换行；真实会话与页面一致不等于已验证数据库角色来源。
+- `accountRole.e2e.mjs`：ISSUE-035 平台受控回归，运行 `node tests/accountRole.e2e.mjs`。覆盖组织员工、无岗位员工建档、标量角色开户、禁用账号占用绑定、历史多角色修正、旧审批迁移提示、组合开户未确认角色时保留密码提示，以及当前账号变更后的签名会话和权限刷新。所有业务请求均拦截，结果默认保存在 `/tmp/industrial-ai-issue035-platform`，可用 `ACCOUNT_ROLE_REPORT_DIR` 覆盖。
 
 受控回归的通过结果不代表服务端已持久化，更不代表数据库业务闭环已验收。真实联调遇到就绪检查、鉴权或数据库不一致时保留阻断证据并返回非零退出码。
 
