@@ -28,6 +28,10 @@ public abstract class JdbcModuleStoreSupport implements AutoCloseable {
         this.module = module;
     }
 
+    protected DataSource dataSource() { return dataSource; }
+
+    protected ObjectMapper objectMapper() { return objectMapper; }
+
     public <T> T transaction(Supplier<T> work) {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
@@ -261,7 +265,7 @@ public abstract class JdbcModuleStoreSupport implements AutoCloseable {
         }));
     }
 
-    private <T> T scoped(String tenantId, Function<Connection, T> work) {
+    protected <T> T scoped(String tenantId, Function<Connection, T> work) {
         Connection active = transactionConnection.get();
         if (active != null) {
             String bound = transactionTenant.get();

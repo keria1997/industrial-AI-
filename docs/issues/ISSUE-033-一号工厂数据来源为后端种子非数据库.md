@@ -4,7 +4,7 @@
 - 模块：平台管理
 - 层级：L4 基础层
 - 影响范围：后端
-- 状态：🔴 待修复
+- 状态：后端已修复；API 契约不变，待页面回归确认
 
 ## 问题
 
@@ -56,5 +56,13 @@ public static final String FACTORY_ORG_ID = "ORG-FAC-01";
 
 ## 进展
 
-🔴 待修复（已确认根因：种子数据仅存 JSONB 文档，未写入结构化组织表）
+### 2026-10-17 后端修复
+
+- 新增迁移 `037_sync_platform_org_units.sql`：为租户和组织增加稳定来源 ID 映射，回填历史 `module_document` 中的组织记录到 `iam_org_unit`，并保留原始 API 快照。
+- `JdbcPlatformProvisioningStore` 对 `orgUnit` 的列表、详情、创建、更新、删除改为读写 `iam_org_unit`；JSON 文档继续作为平台快照投影同步，API 返回的稳定 ID 保持 `ORG-ROOT`、`ORG-FAC-01` 不变。
+- 租户初始化会先写入租户结构化映射，再写入组织结构化数据；历史租户与组织由迁移回填。
+- 本地 PostgreSQL 已应用迁移，`schema_migrations` 为 37 条，`iam_org_unit` 回填非空。
+- 真实 API 验证：创建部门、查询列表、更新名称/状态、删除均成功；数据库中测试数据创建可见、删除后不可见。
+- 后端测试：`mvn clean test` 166 项通过、0 失败、18 项跳过。
+- 剩余前端只做页面回归确认，不需要修改前端代码。
 
