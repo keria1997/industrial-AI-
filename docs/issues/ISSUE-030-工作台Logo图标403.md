@@ -4,7 +4,7 @@
 - 模块：工作台
 - 层级：L4 基础层
 - 影响范围：前端, 后端（运维）
-- 状态：🔴 待修复
+- 状态：✅ 已修复（2026-10-17 服务器 chmod 644 修复，所有 PNG 返回 200）
 
 ## 问题
 
@@ -38,4 +38,18 @@ GET https://erp.wanshen.top/industrial-ai-logo.png 403 (Forbidden)
 
 ## 进展
 
-🔴 待修复
+✅ 已修复（2026-10-17 服务器 chmod 644 修复，所有 PNG 返回 200）
+
+## 修复记录
+
+- **修复日期**：2026-10-17
+- **修复方式**：服务器上 `chmod 755 dist/` + `chmod 644 dist/*.png dist/*.html dist/*.js dist/*.css`
+- **验证结果**：所有 PNG 文件通过 HTTPS 返回 200
+
+### 预防措施
+
+在部署脚本的 `tar xzf` 后添加：
+```bash
+chmod -R 755 dist/
+find dist/ -type f -exec chmod 644 {} \;
+```
