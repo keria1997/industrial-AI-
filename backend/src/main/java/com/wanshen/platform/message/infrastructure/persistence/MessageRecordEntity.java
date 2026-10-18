@@ -1,6 +1,7 @@
 package com.wanshen.platform.message.infrastructure.persistence;
 
 import com.wanshen.platform.message.AbstractMessageStore.MessageRecord;
+import com.wanshen.platform.message.domain.MessageMetadata;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -89,7 +90,7 @@ public class MessageRecordEntity {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", nullable = false)
-    private Map<String, Object> metadata;
+    private MessageMetadata metadata;
 
     @Column(name = "status", nullable = false)
     private String status;
@@ -118,7 +119,7 @@ public class MessageRecordEntity {
             String recipientId, String recipientName, String senderId, String senderName,
             String sourceType, String sourceId, String sourceDocumentNo,
             boolean read, Instant readAt, boolean archived, Instant archivedAt,
-            boolean starred, Map<String, Object> metadata, String status,
+            boolean starred, MessageMetadata metadata, String status,
             String errorMessage, Instant sentAt, Instant createdAt, Instant updatedAt
     ) {
         this.id = id;
@@ -143,7 +144,7 @@ public class MessageRecordEntity {
         this.archived = archived;
         this.archivedAt = archivedAt;
         this.starred = starred;
-        this.metadata = metadata == null ? Map.of() : metadata;
+        this.metadata = metadata == null ? MessageMetadata.empty() : metadata;
         this.status = status;
         this.errorMessage = errorMessage;
         this.sentAt = sentAt;
@@ -157,7 +158,7 @@ public class MessageRecordEntity {
         archived = record.isArchived();
         archivedAt = parse(record.archivedAt());
         starred = record.isStarred();
-        metadata = record.metadata() == null ? Map.of() : record.metadata();
+        metadata = record.metadata() == null ? MessageMetadata.empty() : record.metadata();
         status = record.status();
         errorMessage = record.errorMessage();
         sentAt = parse(record.sentAt());
@@ -186,7 +187,7 @@ public class MessageRecordEntity {
     public boolean archived() { return archived; }
     public Instant archivedAt() { return archivedAt; }
     public boolean starred() { return starred; }
-    public Map<String, Object> metadata() { return metadata == null ? Map.of() : metadata; }
+    public MessageMetadata metadata() { return metadata == null ? MessageMetadata.empty() : metadata; }
     public String status() { return status; }
     public String errorMessage() { return errorMessage; }
     public Instant sentAt() { return sentAt; }

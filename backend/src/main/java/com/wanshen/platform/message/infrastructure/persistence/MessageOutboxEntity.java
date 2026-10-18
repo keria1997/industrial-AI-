@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import com.wanshen.platform.message.domain.MessageOutboxPayload;
 
 import java.time.Instant;
 import java.util.Map;
@@ -48,7 +49,7 @@ public class MessageOutboxEntity {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "payload", nullable = false)
-    private Map<String, Object> payload;
+    private MessageOutboxPayload payload;
 
     @Column(name = "status", nullable = false)
     private String status;
@@ -67,7 +68,7 @@ public class MessageOutboxEntity {
     public MessageOutboxEntity(
             UUID id, String tenantId, String eventId, String eventType,
             String aggregateType, String aggregateId, long aggregateVersion,
-            String correlationId, String traceId, Map<String, Object> payload,
+            String correlationId, String traceId, MessageOutboxPayload payload,
             String status, int attempts, String lastError, Instant createdAt
     ) {
         this.id = id;
@@ -79,7 +80,7 @@ public class MessageOutboxEntity {
         this.aggregateVersion = aggregateVersion;
         this.correlationId = correlationId;
         this.traceId = traceId;
-        this.payload = payload == null ? Map.of() : payload;
+        this.payload = payload == null ? MessageOutboxPayload.empty() : payload;
         this.status = status;
         this.attempts = attempts;
         this.lastError = lastError;
@@ -105,7 +106,7 @@ public class MessageOutboxEntity {
     public long aggregateVersion() { return aggregateVersion; }
     public String correlationId() { return correlationId; }
     public String traceId() { return traceId; }
-    public Map<String, Object> payload() { return payload == null ? Map.of() : payload; }
+    public MessageOutboxPayload payload() { return payload == null ? MessageOutboxPayload.empty() : payload; }
     public String status() { return status; }
     public int attempts() { return attempts; }
     public String lastError() { return lastError; }

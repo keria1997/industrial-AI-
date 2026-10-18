@@ -1,9 +1,10 @@
 package com.wanshen.platform.message;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.wanshen.platform.storage.ModuleInfra.AuditLog;
+import com.wanshen.platform.message.domain.MessageAuditEntry;
+import com.wanshen.platform.message.domain.MessageMetadata;
+import com.wanshen.platform.message.domain.MessageOutboxEvent;
 import com.wanshen.platform.storage.ModuleInfra.IdempotencyRecord;
-import com.wanshen.platform.storage.ModuleInfra.OutboxEvent;
 
 import java.util.List;
 import java.util.Map;
@@ -29,10 +30,31 @@ public interface AbstractMessageStore {
             String sourceType, String sourceId, String sourceDocNo,
             boolean isRead, @JsonInclude(JsonInclude.Include.NON_NULL) String readAt,
             boolean isArchived, @JsonInclude(JsonInclude.Include.NON_NULL) String archivedAt,
-            boolean isStarred, Map<String, Object> metadata, String status, String errorMessage,
+            boolean isStarred, MessageMetadata metadata, String status, String errorMessage,
             @JsonInclude(JsonInclude.Include.NON_NULL) String sentAt,
             int version, String createdAt, String updatedAt
-    ) {}
+    ) {
+        public MessageRecord read(String readAt, String updatedAt, int version) {
+            return new MessageRecord(id, tenantId, msgNo, templateCode, category, channel, priority,
+                    title, body, recipientId, recipientName, senderId, senderName, sourceType,
+                    sourceId, sourceDocNo, true, readAt, isArchived, archivedAt, isStarred,
+                    metadata, status, errorMessage, sentAt, version, createdAt, updatedAt);
+        }
+
+        public MessageRecord archive(String archivedAt, String updatedAt, int version) {
+            return new MessageRecord(id, tenantId, msgNo, templateCode, category, channel, priority,
+                    title, body, recipientId, recipientName, senderId, senderName, sourceType,
+                    sourceId, sourceDocNo, isRead, readAt, true, archivedAt, isStarred,
+                    metadata, status, errorMessage, sentAt, version, createdAt, updatedAt);
+        }
+
+        public MessageRecord star(boolean starred, String updatedAt, int version) {
+            return new MessageRecord(id, tenantId, msgNo, templateCode, category, channel, priority,
+                    title, body, recipientId, recipientName, senderId, senderName, sourceType,
+                    sourceId, sourceDocNo, isRead, readAt, isArchived, archivedAt, starred,
+                    metadata, status, errorMessage, sentAt, version, createdAt, updatedAt);
+        }
+    }
 
     public record UserPreference(
             String id, String tenantId, String userId, String category, String channel,
@@ -79,12 +101,12 @@ public interface AbstractMessageStore {
     void saveSubscription(Subscription value);
     void deleteSubscription(String tenantId, String id);
 
-    void addOutbox(OutboxEvent event);
-    List<OutboxEvent> pendingOutbox(String tenantId);
+    void addOutbox(MessageOutboxEvent event);
+    List<MessageOutboxEvent> pendingOutbox(String tenantId);
     List<String> pendingOutboxTenantIds();
     void markOutboxPublished(String tenantId, String eventId);
     void markOutboxFailed(String tenantId, String eventId, String error, int maxAttempts);
-    void addAuditLog(AuditLog log);
+    void addAuditLog(MessageAuditEntry log);
     Optional<IdempotencyRecord> idempotency(String tenantId, String commandType, String key);
     void saveIdempotency(
             String tenantId, String commandType, String key, String requestHash,

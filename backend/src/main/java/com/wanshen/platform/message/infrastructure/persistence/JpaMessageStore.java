@@ -1,9 +1,9 @@
 package com.wanshen.platform.message.infrastructure.persistence;
 
 import com.wanshen.platform.message.AbstractMessageStore;
-import com.wanshen.platform.storage.ModuleInfra.AuditLog;
+import com.wanshen.platform.message.domain.MessageAuditEntry;
+import com.wanshen.platform.message.domain.MessageOutboxEvent;
 import com.wanshen.platform.storage.ModuleInfra.IdempotencyRecord;
-import com.wanshen.platform.storage.ModuleInfra.OutboxEvent;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.PageRequest;
@@ -254,7 +254,7 @@ public class JpaMessageStore implements AbstractMessageStore {
     }
 
     @Override
-    public void addOutbox(OutboxEvent event) {
+    public void addOutbox(MessageOutboxEvent event) {
         inTenant(event.tenantId(), () -> {
             MessageOutboxEntity entity = outbox.findByTenantIdAndEventId(event.tenantId(), event.eventId())
                     .orElseGet(() -> new MessageOutboxEntity(
@@ -269,7 +269,7 @@ public class JpaMessageStore implements AbstractMessageStore {
     }
 
     @Override
-    public List<OutboxEvent> pendingOutbox(String tenantId) {
+    public List<MessageOutboxEvent> pendingOutbox(String tenantId) {
         return inTenant(tenantId, () -> outbox
                 .findByTenantIdAndStatusOrderByCreatedAtAsc(tenantId, "PENDING")
                 .stream().map(this::toDomain).toList());
@@ -302,7 +302,7 @@ public class JpaMessageStore implements AbstractMessageStore {
     }
 
     @Override
-    public void addAuditLog(AuditLog log) {
+    public void addAuditLog(MessageAuditEntry log) {
         inTenant(log.tenantId(), () -> {
             auditLogs.save(new MessageAuditLogEntity(
                     UUID.fromString(log.id()), log.tenantId(), log.aggregateType(), log.aggregateId(),
@@ -437,8 +437,8 @@ public class JpaMessageStore implements AbstractMessageStore {
         );
     }
 
-    private OutboxEvent toDomain(MessageOutboxEntity entity) {
-        return new OutboxEvent(
+    private MessageOutboxEvent toDomain(MessageOutboxEntity entity) {
+        return new MessageOutboxEvent(
                 entity.eventId(), entity.tenantId(), entity.eventType(), entity.aggregateType(),
                 entity.aggregateId(), (int) entity.aggregateVersion(), entity.correlationId(),
                 entity.traceId(), entity.payload(), entity.status(), entity.attempts(),

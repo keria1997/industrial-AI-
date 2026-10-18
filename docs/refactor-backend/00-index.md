@@ -27,6 +27,7 @@
 | 编号 | 文档 | 状态 |
 | --- | --- | --- |
 | 001 | [result/001-message-module-jpa-refactor.md](result/001-message-module-jpa-refactor.md) | 消息模块持久化切换已完成并通过后端与契约校验；Controller DTO 分层重构列入下一切片。 |
+| 002 | [result/002-message-controller-layer-refactor.md](result/002-message-controller-layer-refactor.md) | 消息 Controller/Service/Domain 分层和具名 DTO 已完成；内存 Store、旧 Map 适配和幂等模型仍列入下一切片。 |
 
 ## 当前结论
 

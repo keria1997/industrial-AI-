@@ -1,6 +1,6 @@
 package com.wanshen.platform.message;
 
-import com.wanshen.platform.storage.ModuleInfra.OutboxEvent;
+import com.wanshen.platform.message.domain.MessageOutboxEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -47,8 +47,8 @@ public class MessageOutboxWorker {
     public DrainResult drain(String tenantId) {
         int published = 0;
         int failed = 0;
-        List<OutboxEvent> events = store.pendingOutbox(tenantId);
-        for (OutboxEvent event : events) {
+        List<MessageOutboxEvent> events = store.pendingOutbox(tenantId);
+        for (MessageOutboxEvent event : events) {
             try {
                 store.markOutboxPublished(tenantId, event.eventId());
                 published++;

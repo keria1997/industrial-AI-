@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import com.wanshen.platform.message.domain.MessageAuditState;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -38,11 +39,11 @@ public class MessageAuditLogEntity {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "before")
-    private Object stateBefore;
+    private MessageAuditState stateBefore;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "after")
-    private Object stateAfter;
+    private MessageAuditState stateAfter;
 
     @Column(name = "correlation_id", nullable = false)
     private String correlationId = "";
@@ -60,7 +61,7 @@ public class MessageAuditLogEntity {
 
     public MessageAuditLogEntity(
             UUID id, String tenantId, String aggregateType, String aggregateId,
-            long aggregateVersion, String action, Object stateBefore, Object stateAfter,
+            long aggregateVersion, String action, MessageAuditState stateBefore, MessageAuditState stateAfter,
             String correlationId, String traceId, String operatorId, Instant occurredAt
     ) {
         this.id = id;

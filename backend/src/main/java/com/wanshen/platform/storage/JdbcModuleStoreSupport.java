@@ -140,7 +140,7 @@ public abstract class JdbcModuleStoreSupport implements AutoCloseable {
         }));
     }
 
-    public List<OutboxEvent> pendingOutbox(String tenantId) {
+    public List<OutboxEvent> pendingModuleOutbox(String tenantId) {
         return scoped(tenantId, connection -> {
             List<OutboxEvent> result = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement(

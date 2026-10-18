@@ -1,7 +1,10 @@
 package com.wanshen.platform.web;
 
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -10,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.LinkedHashMap;
+import java.util.List;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -32,6 +36,24 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(exception.status())
                 .header("X-Trace-Id", traceId)
                 .body(Map.of("error", error));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<?> handleInvalidArgument(MethodArgumentNotValidException exception, HttpServletRequest request) {
+        List<ApiException.FieldError> fieldErrors = exception.getBindingResult().getFieldErrors().stream()
+                .map(error -> new ApiException.FieldError(error.getField(), error.getDefaultMessage()))
+                .toList();
+        ApiException normalized = new ApiException(400, "PRODUCTION_400_INVALID_ARGUMENT",
+                "请求字段不符合规则", "检查请求字段后重试", fieldErrors, null);
+        return handle(normalized, request);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<?> handleUnreadableBody(HttpMessageNotReadableException exception, HttpServletRequest request) {
+        String message = exception.getCause() instanceof InvalidFormatException
+                ? "请求字段类型不合法" : "请求体不是合法 JSON";
+        return handle(new ApiException(400, "PRODUCTION_400_INVALID_ARGUMENT", message,
+                "检查请求字段后重试"), request);
     }
 
     @ExceptionHandler(Exception.class)

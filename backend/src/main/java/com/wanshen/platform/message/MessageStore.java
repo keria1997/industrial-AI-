@@ -1,8 +1,8 @@
 package com.wanshen.platform.message;
 
-import com.wanshen.platform.storage.ModuleInfra.AuditLog;
 import com.wanshen.platform.storage.ModuleInfra.IdempotencyRecord;
-import com.wanshen.platform.storage.ModuleInfra.OutboxEvent;
+import com.wanshen.platform.message.domain.MessageAuditEntry;
+import com.wanshen.platform.message.domain.MessageOutboxEvent;
 
 import java.util.*;
 import java.util.function.Supplier;
@@ -14,8 +14,8 @@ public class MessageStore implements AbstractMessageStore {
     private final Map<String, MessageRecord> records = new ConcurrentHashMap<>();
     private final Map<String, UserPreference> preferences = new ConcurrentHashMap<>();
     private final Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
-    private final Map<String, OutboxEvent> outbox = new ConcurrentHashMap<>();
-    private final List<AuditLog> auditLogs = Collections.synchronizedList(new ArrayList<>());
+    private final Map<String, MessageOutboxEvent> outbox = new ConcurrentHashMap<>();
+    private final List<MessageAuditEntry> auditLogs = Collections.synchronizedList(new ArrayList<>());
     private final Map<String, IdempotencyRecord> idempotency = new ConcurrentHashMap<>();
 
     @Override
@@ -129,13 +129,13 @@ public class MessageStore implements AbstractMessageStore {
     }
 
     @Override
-    public void addOutbox(OutboxEvent event) { outbox.put(key(event.tenantId(), event.eventId()), event); }
+    public void addOutbox(MessageOutboxEvent event) { outbox.put(key(event.tenantId(), event.eventId()), event); }
 
     @Override
-    public synchronized List<OutboxEvent> pendingOutbox(String tenantId) {
+    public synchronized List<MessageOutboxEvent> pendingOutbox(String tenantId) {
         return outbox.values().stream()
                 .filter(event -> "PENDING".equals(event.status()) && event.tenantId().equals(tenantId))
-                .sorted(Comparator.comparing(OutboxEvent::createdAt))
+                .sorted(Comparator.comparing(MessageOutboxEvent::createdAt))
                 .toList();
     }
 
@@ -143,7 +143,7 @@ public class MessageStore implements AbstractMessageStore {
     public synchronized List<String> pendingOutboxTenantIds() {
         return outbox.values().stream()
                 .filter(event -> "PENDING".equals(event.status()))
-                .map(OutboxEvent::tenantId)
+                .map(MessageOutboxEvent::tenantId)
                 .distinct()
                 .sorted()
                 .toList();
@@ -151,9 +151,9 @@ public class MessageStore implements AbstractMessageStore {
 
     @Override
     public synchronized void markOutboxPublished(String tenantId, String eventId) {
-        OutboxEvent event = outbox.get(key(tenantId, eventId));
+        MessageOutboxEvent event = outbox.get(key(tenantId, eventId));
         if (event == null) return;
-        outbox.put(key(tenantId, eventId), new OutboxEvent(
+        outbox.put(key(tenantId, eventId), new MessageOutboxEvent(
                 event.eventId(), event.tenantId(), event.eventType(), event.aggregateType(),
                 event.aggregateId(), event.aggregateVersion(), event.correlationId(), event.traceId(),
                 event.payload(), "PUBLISHED", event.attempts(), event.lastError(), event.createdAt()
@@ -162,10 +162,10 @@ public class MessageStore implements AbstractMessageStore {
 
     @Override
     public synchronized void markOutboxFailed(String tenantId, String eventId, String error, int maxAttempts) {
-        OutboxEvent event = outbox.get(key(tenantId, eventId));
+        MessageOutboxEvent event = outbox.get(key(tenantId, eventId));
         if (event == null) return;
         int attempts = event.attempts() + 1;
-        outbox.put(key(tenantId, eventId), new OutboxEvent(
+        outbox.put(key(tenantId, eventId), new MessageOutboxEvent(
                 event.eventId(), event.tenantId(), event.eventType(), event.aggregateType(),
                 event.aggregateId(), event.aggregateVersion(), event.correlationId(), event.traceId(),
                 event.payload(), attempts >= maxAttempts ? "DEAD_LETTER" : "PENDING", attempts,
@@ -174,7 +174,7 @@ public class MessageStore implements AbstractMessageStore {
     }
 
     @Override
-    public void addAuditLog(AuditLog log) { auditLogs.add(log); }
+    public void addAuditLog(MessageAuditEntry log) { auditLogs.add(log); }
 
     @Override
     public Optional<IdempotencyRecord> idempotency(String tenantId, String commandType, String key) {

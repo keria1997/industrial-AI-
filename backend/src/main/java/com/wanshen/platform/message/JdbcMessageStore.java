@@ -1,14 +1,22 @@
 package com.wanshen.platform.message;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.wanshen.platform.message.domain.MessageAuditEntry;
+import com.wanshen.platform.message.domain.MessageAuditState;
+import com.wanshen.platform.message.domain.MessageMetadata;
+import com.wanshen.platform.message.domain.MessageOutboxEvent;
+import com.wanshen.platform.message.domain.MessageOutboxPayload;
 import com.wanshen.platform.storage.JdbcModuleStoreSupport;
 import com.wanshen.platform.storage.ModuleInfra.AuditLog;
 import com.wanshen.platform.storage.ModuleInfra.IdempotencyRecord;
 import com.wanshen.platform.storage.ModuleInfra.OutboxEvent;
 
 import javax.sql.DataSource;
+import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class JdbcMessageStore extends JdbcModuleStoreSupport implements AbstractMessageStore {
@@ -121,6 +129,54 @@ public class JdbcMessageStore extends JdbcModuleStoreSupport implements Abstract
     @Override
     public void deleteSubscription(String tenantId, String id) {
         deleteDocument(tenantId, "subscription", id);
+    }
+
+    @Override
+    public void addOutbox(MessageOutboxEvent event) {
+        super.addOutbox(new OutboxEvent(
+                event.eventId(), event.tenantId(), event.eventType(), event.aggregateType(),
+                event.aggregateId(), event.aggregateVersion(), event.correlationId(), event.traceId(),
+                legacyPayload(event.payload()), event.status(), event.attempts(),
+                event.lastError(), event.createdAt()
+        ));
+    }
+
+    public List<MessageOutboxEvent> pendingOutbox(String tenantId) {
+        return pendingLegacyEvents(tenantId).stream().map(this::messageEvent).toList();
+    }
+
+    @Override
+    public void addAuditLog(MessageAuditEntry log) {
+        super.addAuditLog(new AuditLog(
+                log.id(), log.tenantId(), log.aggregateType(), log.aggregateId(),
+                log.aggregateVersion(), log.action(), log.actorId(), legacyAuditState(log.before()),
+                legacyAuditState(log.after()), log.correlationId(), log.traceId(), log.occurredAt()
+        ));
+    }
+
+    private Map<String, Object> legacyPayload(MessageOutboxPayload payload) {
+        return objectMapper().convertValue(payload == null ? MessageOutboxPayload.empty() : payload,
+                new TypeReference<LinkedHashMap<String, Object>>() {});
+    }
+
+    private Object legacyAuditState(MessageAuditState state) {
+        return objectMapper().convertValue(state == null ? MessageAuditState.empty() : state,
+                new TypeReference<LinkedHashMap<String, Object>>() {});
+    }
+
+    private List<OutboxEvent> pendingLegacyEvents(String tenantId) {
+        return super.pendingModuleOutbox(tenantId);
+    }
+
+    private MessageOutboxEvent messageEvent(OutboxEvent event) {
+        MessageOutboxPayload payload = objectMapper().convertValue(
+                event.payload() == null ? Map.of() : event.payload(), MessageOutboxPayload.class
+        );
+        return new MessageOutboxEvent(
+                event.eventId(), event.tenantId(), event.eventType(), event.aggregateType(),
+                event.aggregateId(), event.aggregateVersion(), event.correlationId(), event.traceId(),
+                payload, event.status(), event.attempts(), event.lastError(), event.createdAt()
+        );
     }
 
     private <T> Page<T> page(List<T> values, Integer page, Integer pageSize) {

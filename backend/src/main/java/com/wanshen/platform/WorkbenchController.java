@@ -409,7 +409,8 @@ public class WorkbenchController {
 
     private boolean isKeyEvent(AbstractMessageStore.MessageRecord item) {
         return "high".equalsIgnoreCase(item.priority())
-                || item.metadata() != null && Boolean.TRUE.equals(item.metadata().get("keyEvent"));
+                || item.metadata() != null && item.metadata().entries().stream()
+                        .anyMatch(entry -> "keyEvent".equals(entry.name()) && Boolean.parseBoolean(entry.value()));
     }
 
     private String encodeActivityCursor(int offset, RequestContext context) {

@@ -2,6 +2,7 @@ package com.wanshen.platform.supplychain;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wanshen.platform.storage.JdbcModuleStoreSupport;
+import com.wanshen.platform.storage.ModuleInfra.OutboxEvent;
 
 import javax.sql.DataSource;
 import java.util.Arrays;
@@ -13,6 +14,11 @@ import java.util.Optional;
 public class JdbcSupplyChainStore extends JdbcModuleStoreSupport implements AbstractSupplyChainStore {
     public JdbcSupplyChainStore(DataSource dataSource, ObjectMapper objectMapper) {
         super(dataSource, objectMapper, "supplychain");
+    }
+
+    @Override
+    public List<OutboxEvent> pendingOutbox(String tenantId) {
+        return super.pendingModuleOutbox(tenantId);
     }
 
     @Override

@@ -295,7 +295,7 @@ components:
         isRead: { type: boolean }
         isArchived: { type: boolean }
         isStarred: { type: boolean }
-        metadata: { type: object, additionalProperties: true }
+        metadata: { type: object, additionalProperties: { type: string } }
         status: { type: string }
         errorMessage: { type: string }
         sentAt: { type: string, format: date-time, nullable: true }
@@ -315,7 +315,7 @@ components:
         sourceType: { type: string }
         sourceId: { type: string }
         sourceDocNo: { type: string }
-        metadata: { type: object, additionalProperties: true }
+        metadata: { type: object, additionalProperties: { type: string } }
         variables: { type: object, additionalProperties: { type: string } }
     UserPreference:
       type: object

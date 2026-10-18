@@ -3,6 +3,7 @@ package com.wanshen.platform.message;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wanshen.platform.auth.TokenService;
+import com.wanshen.platform.message.application.MessageApplicationService;
 import com.wanshen.platform.web.ApiExceptionHandler;
 import com.wanshen.platform.web.RequestContextService;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,7 @@ class MessageControllerTests {
         TokenService tokenService = new TokenService("test-secret", new ObjectMapper());
         RequestContextService contexts = new RequestContextService(tokenService);
         mockMvc = MockMvcBuilders.standaloneSetup(new MessageController(
-                new MessageStore(), contexts, objectMapper
+                new MessageApplicationService(new MessageStore(), objectMapper), contexts
         )).setControllerAdvice(new ApiExceptionHandler()).build();
         token = tokenService.issue("admin", "系统管理员", "超级管理员",
                 List.of("TENANT-SHWS", "TENANT-HDJG"), List.of("*"),
