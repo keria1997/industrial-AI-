@@ -22,6 +22,12 @@
 | 10 | [10-testing-and-acceptance.md](10-testing-and-acceptance.md) | 测试、验收和回归门槛 |
 | 11 | [11-risk-and-delivery-control.md](11-risk-and-delivery-control.md) | 风险、回滚和交付控制 |
 
+## 实施记录
+
+| 编号 | 文档 | 状态 |
+| --- | --- | --- |
+| 001 | [result/001-message-module-jpa-refactor.md](result/001-message-module-jpa-refactor.md) | 消息模块持久化切换已完成并通过后端与契约校验；Controller DTO 分层重构列入下一切片。 |
+
 ## 当前结论
 
 1. 当前系统存在两套数据访问方式：一部分模块使用既有物理表定义，另一部分实际读写 `module_document` JSONB。
